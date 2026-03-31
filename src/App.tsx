@@ -65,6 +65,7 @@ type SampleAccount = {
 };
 
 const STORAGE_KEY = 'review-buddy-state';
+const APP_VERSION = '1.1.0';
 
 const COLOR_MAP: Record<string, string> = {
   Red: '#ef4444',
@@ -355,6 +356,7 @@ function App() {
   const [quizState, setQuizState] = useState<QuizState | null>(null);
   const [isReady, setIsReady] = useState(false);
   const [isSliding, setIsSliding] = useState(false);
+  const [speakingKey, setSpeakingKey] = useState<string | null>(null);
 
   useEffect(() => {
     const raw = window.localStorage.getItem(STORAGE_KEY);
@@ -464,22 +466,18 @@ function App() {
   function speakPrompt(text: string) {
     if (!('speechSynthesis' in window)) return;
 
+    if (speakingKey === text && window.speechSynthesis.speaking) {
+      return;
+    }
+
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.rate = 0.9;
     window.speechSynthesis.cancel();
+    utterance.onend = () => setSpeakingKey(null);
+    utterance.onerror = () => setSpeakingKey(null);
+    setSpeakingKey(text);
     window.speechSynthesis.speak(utterance);
   }
-
-  useEffect(() => {
-    if (screen !== 'quiz' || !currentQuestion || profile.stage !== 'kindergarten') return;
-
-    const spoken = currentQuestion.visual?.soundText ?? currentQuestion.prompt;
-    const timer = window.setTimeout(() => {
-      speakPrompt(spoken);
-    }, 250);
-
-    return () => window.clearTimeout(timer);
-  }, [currentQuestion?.id, profile.stage, screen]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const themeButtons = [
     { id: 'country' as const, label: 'Country', Icon: GlobeIcon },
@@ -529,6 +527,10 @@ function App() {
   }
 
   function logout() {
+    if ('speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+    }
+    setSpeakingKey(null);
     setScreen('auth');
     setQuizState(null);
   }
@@ -603,6 +605,10 @@ function App() {
   }
 
   function quitQuiz() {
+    if ('speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+    }
+    setSpeakingKey(null);
     setScreen('student');
     setQuizState(null);
     setIsSliding(false);
@@ -612,7 +618,7 @@ function App() {
   const colorFill = selectedAnswer ? COLOR_MAP[selectedAnswer] : undefined;
 
   return (
-    <div className="app-shell" style={themeStyle}>
+    <div className="app-shell" data-theme={themeMode} style={themeStyle}>
       <div className="page-glow page-glow-left" />
       <div className="page-glow page-glow-right" />
 
@@ -1153,7 +1159,7 @@ function App() {
           <p>{MOTTO}</p>
         </div>
         <div className="footer-meta">
-          <span>Version 1.0.0</span>
+          <span>Version {APP_VERSION}</span>
           <span>Creator: Review Buddy</span>
         </div>
       </footer>

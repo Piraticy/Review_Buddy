@@ -15,7 +15,10 @@ export type ThemePalette = {
 export type CountryProfile = {
   code: string;
   name: string;
+  continent: string;
+  capital: string;
   curriculum: string;
+  curriculumFocus: string;
   description: string;
   palette: ThemePalette;
   subjects: Record<Stage, string[]>;
@@ -152,7 +155,10 @@ export const COUNTRIES: CountryProfile[] = [
   {
     code: 'KE',
     name: 'Kenya',
+    continent: 'Africa',
+    capital: 'Nairobi',
     curriculum: 'CBC',
+    curriculumFocus: 'competency-based learning and practical problem solving',
     description: 'Competency-based learning support for young and growing learners.',
     palette: {
       primary: '#0f766e',
@@ -170,7 +176,10 @@ export const COUNTRIES: CountryProfile[] = [
   {
     code: 'TZ',
     name: 'Tanzania',
+    continent: 'Africa',
+    capital: 'Dodoma',
     curriculum: 'NECTA-aligned',
+    curriculumFocus: 'foundational literacy, numeracy, and structured assessment',
     description: 'Clear revision routes for school learning and after-school practice.',
     palette: {
       primary: '#0f766e',
@@ -188,7 +197,10 @@ export const COUNTRIES: CountryProfile[] = [
   {
     code: 'AE',
     name: 'United Arab Emirates',
+    continent: 'Asia',
+    capital: 'Abu Dhabi',
     curriculum: 'MOE / International blend',
+    curriculumFocus: 'global learning, bilingual readiness, and STEM pathways',
     description: 'Friendly learning flows with broad subject choice and simple practice paths.',
     palette: {
       primary: '#111827',
@@ -206,7 +218,10 @@ export const COUNTRIES: CountryProfile[] = [
   {
     code: 'GB',
     name: 'United Kingdom',
+    continent: 'Europe',
+    capital: 'London',
     curriculum: 'National Curriculum',
+    curriculumFocus: 'subject knowledge, reading fluency, and analytical thinking',
     description: 'Balanced practice for literacy, numeracy, sciences, and humanities.',
     palette: {
       primary: '#1d4ed8',
@@ -224,7 +239,10 @@ export const COUNTRIES: CountryProfile[] = [
   {
     code: 'US',
     name: 'United States',
+    continent: 'North America',
+    capital: 'Washington, D.C.',
     curriculum: 'Common Core-inspired',
+    curriculumFocus: 'standards-based literacy, numeracy, and critical thinking',
     description: 'Easy-to-start review for school support, homework help, and revision.',
     palette: {
       primary: '#1d4ed8',
@@ -242,7 +260,10 @@ export const COUNTRIES: CountryProfile[] = [
   {
     code: 'IN',
     name: 'India',
+    continent: 'Asia',
+    capital: 'New Delhi',
     curriculum: 'CBSE / State board blend',
+    curriculumFocus: 'concept mastery, exam readiness, and applied reasoning',
     description: 'Flexible subject practice for daily learning and exam revision.',
     palette: {
       primary: '#ea580c',
@@ -484,7 +505,10 @@ function buildPrimarySession(subject: string, country: CountryProfile, total: nu
 
       return {
         id: `${nonce}-primary-math-${index}`,
-        prompt: `What is ${left} + ${right}?`,
+        prompt:
+          index % 2 === 0
+            ? `A class in ${country.capital} is counting ${left} books and ${right} more are added. How many books are there now?`
+            : `What is ${left} + ${right}?`,
         choices: uniqueChoices(answer, [
           answer,
           String(left + right + 2),
@@ -499,7 +523,9 @@ function buildPrimarySession(subject: string, country: CountryProfile, total: nu
     }),
     'General Studies': ([
       ['Which tool helps us find places on Earth?', 'Map', ['Bell', 'Brush', 'Desk'], 'Places'],
-      [`Which guide is common in ${country.name}?`, country.curriculum, ['Sports list', 'Cinema guide', 'Dance list'], 'School systems'],
+      [`Which curriculum is common in ${country.name}?`, country.curriculum, ['Sports list', 'Cinema guide', 'Dance list'], 'School systems'],
+      [`${country.name} is in which continent?`, country.continent, ['Europe', 'South America', 'Australia'], 'Continent awareness'],
+      [`What is the capital city of ${country.name}?`, country.capital, ['Kampala', 'Cairo', 'Lusaka'], 'Country knowledge'],
       ['Why do people need clean water?', 'To stay healthy', ['To break toys', 'To stop reading', 'To change colours'], 'Daily life'],
       ['Which place helps people learn every day?', 'School', ['Garage', 'Forest only', 'Boat'], 'Community'],
       ['Why do we plant trees?', 'To help the environment', ['To hide roads', 'To remove shade', 'To stop birds'], 'Care for nature'],
@@ -514,10 +540,10 @@ function buildPrimarySession(subject: string, country: CountryProfile, total: nu
     })),
     'Communication Skills': ([
       ['Choose the correct greeting for the morning.', 'Good morning', ['Good night', 'Goodbye', 'Well done'], 'Speaking kindly'],
+      [`In ${country.name}, learners often practise ${country.curriculumFocus}. Which habit helps communication the most?`, 'Listening first', ['Talking over others', 'Ignoring questions', 'Leaving the room'], 'Listening'],
       ['Which word is spelled correctly?', 'friend', ['freind', 'frend', 'friand'], 'Spelling'],
       ['Which sentence sounds polite?', 'Please may I join?', ['Move now', 'Give me that', 'I will not listen'], 'Polite speech'],
       ['Which word is a noun?', 'teacher', ['quickly', 'happy', 'bright'], 'Word types'],
-      ['What should you do before you speak in class?', 'Listen first', ['Shout at once', 'Hide the book', 'Run away'], 'Listening'],
       ['Which sentence is complete?', 'The class is reading.', ['The class', 'Reading quickly', 'On the desk'], 'Sentence building'],
     ] satisfies PromptTuple[]).slice(0, total).map(([prompt, answer, distractors, skill], index) => ({
       id: `${nonce}-primary-comm-${index}`,
@@ -529,6 +555,7 @@ function buildPrimarySession(subject: string, country: CountryProfile, total: nu
     })),
     History: ([
       ['What does a timeline help us do?', 'Put events in order', ['Measure rain', 'Draw triangles', 'Mix colours'], 'Timeline use'],
+      [`A learner in ${country.capital} is studying ${country.curriculum}. Why do they learn local history?`, 'To understand their community and country', ['To skip lessons', 'To avoid reading', 'To forget the past'], 'Local history'],
       ['Why do we learn about heroes from the past?', 'To understand important events', ['To stop reading', 'To avoid books', 'To skip class'], 'Learning from history'],
       ['Which word means something that happened long ago?', 'Past', ['Future', 'Today only', 'Soon'], 'Time words'],
       ['Old buildings can teach us about:', 'How people lived before', ['Only sports', 'Just weather', 'Only traffic'], 'Local history'],
@@ -550,7 +577,7 @@ function buildPrimarySession(subject: string, country: CountryProfile, total: nu
 function buildTeenSession(subject: string, country: CountryProfile, total: number, nonce: string) {
   const prompts: Record<string, Question[]> = {
     Biology: ([
-      ['What is the basic unit of life?', 'Cell', ['Atom', 'Tissue', 'Planet'], 'Cells'],
+      [`In ${country.name}, science learners study living things through ${country.curriculumFocus}. What is the basic unit of life?`, 'Cell', ['Atom', 'Tissue', 'Planet'], 'Cells'],
       ['Which organ pumps blood around the body?', 'Heart', ['Liver', 'Skin', 'Lung'], 'Body systems'],
       ['Plants make food through:', 'Photosynthesis', ['Evaporation', 'Condensation', 'Fermentation'], 'Plant processes'],
       ['Which part of a plant absorbs water?', 'Roots', ['Leaf', 'Petal', 'Fruit'], 'Plant structure'],
@@ -567,7 +594,7 @@ function buildTeenSession(subject: string, country: CountryProfile, total: numbe
       skill,
     })),
     Chemistry: ([
-      ['What is the chemical formula for water?', 'H2O', ['CO2', 'NaCl', 'O2'], 'Formulas'],
+      [`Students in ${country.capital} are revising chemistry. What is the chemical formula for water?`, 'H2O', ['CO2', 'NaCl', 'O2'], 'Formulas'],
       ['A substance with pH 2 is:', 'Acidic', ['Neutral', 'Basic', 'Metallic'], 'Acids and bases'],
       ['When a solid melts, its particles:', 'Move more freely', ['Disappear', 'Stop moving', 'Become louder'], 'States of matter'],
       ['Which gas do plants use in photosynthesis?', 'Carbon dioxide', ['Helium', 'Hydrogen', 'Nitrogen only'], 'Gases'],
@@ -584,7 +611,7 @@ function buildTeenSession(subject: string, country: CountryProfile, total: numbe
       skill,
     })),
     Physics: ([
-      ['Which force pulls objects toward Earth?', 'Gravity', ['Magnetism', 'Friction', 'Heat'], 'Forces'],
+      [`A physics learner in ${country.name} asks: which force pulls objects toward Earth?`, 'Gravity', ['Magnetism', 'Friction', 'Heat'], 'Forces'],
       ['The unit of electric current is:', 'Ampere', ['Meter', 'Kelvin', 'Newton'], 'Units'],
       ['When speed changes over time, the object is:', 'Accelerating', ['Sleeping', 'Freezing', 'Condensing'], 'Motion'],
       ['Sound travels fastest through:', 'Solids', ['Vacuum', 'Clouds', 'Shadows'], 'Sound'],
@@ -605,7 +632,10 @@ function buildTeenSession(subject: string, country: CountryProfile, total: numbe
       const answer = String(3 * x + 4);
       return {
         id: `${nonce}-teen-math-${index}`,
-        prompt: `If y = 3x + 4 and x = ${x}, what is y?`,
+        prompt:
+          index % 2 === 0
+            ? `A learner in ${country.capital} is revising algebra. If y = 3x + 4 and x = ${x}, what is y?`
+            : `If y = 3x + 4 and x = ${x}, what is y?`,
         choices: uniqueChoices(answer, [
           answer,
           String(x + 4),
@@ -620,6 +650,7 @@ function buildTeenSession(subject: string, country: CountryProfile, total: numbe
     }),
     History: ([
       ['Why do historians compare many sources?', 'To check accuracy and bias', ['To shorten essays', 'To remove facts', 'To avoid evidence'], 'Historical thinking'],
+      [`A history class in ${country.name} is studying national and world events. Why is local history important?`, 'It connects learners to their country and community', ['It removes context', 'It replaces evidence', 'It stops comparison'], 'Country context'],
       ['A timeline is most useful for:', 'Placing events in order', ['Mixing chemicals', 'Measuring speed', 'Drawing circles'], 'Chronology'],
       [`Which curriculum does Review Buddy show for ${country.name}?`, country.curriculum, ['No curriculum', 'Film script', 'Holiday list'], 'School systems'],
       ['Primary sources are valuable because they come from:', 'The time being studied', ['A future date', 'Only fiction books', 'Advertisements'], 'Sources'],
@@ -637,6 +668,8 @@ function buildTeenSession(subject: string, country: CountryProfile, total: numbe
     })),
     'General Studies': ([
       ['Which action helps a community stay healthy?', 'Keeping water clean', ['Throwing litter anywhere', 'Ignoring waste', 'Breaking taps'], 'Community care'],
+      [`${country.name} is in which continent?`, country.continent, ['Europe', 'South America', 'Australia'], 'Continents'],
+      [`What is the capital city of ${country.name}?`, country.capital, ['Kampala', 'Cairo', 'Lusaka'], 'Country capitals'],
       ['A map is used to:', 'Show places and direction', ['Measure temperature', 'Write music', 'Mix paint'], 'Maps'],
       ['Why do countries have rules and leaders?', 'To help people live together well', ['To remove schools', 'To stop teamwork', 'To hide roads'], 'Citizenship'],
       ['Which source gives current information quickly?', 'News report', ['Old stone only', 'Empty notebook', 'Broken ruler'], 'Information sources'],
@@ -653,7 +686,7 @@ function buildTeenSession(subject: string, country: CountryProfile, total: numbe
       skill,
     })),
     'Communication Skills': ([
-      ['What is the main purpose of a thesis statement?', 'To present the main idea', ['To count pages', 'To repeat the title only', 'To avoid structure'], 'Writing'],
+      [`Learners in ${country.name} often practise ${country.curriculumFocus}. What is the main purpose of a thesis statement?`, 'To present the main idea', ['To count pages', 'To repeat the title only', 'To avoid structure'], 'Writing'],
       ['Which sentence uses correct punctuation?', 'After class, we revised our notes.', ['After class we revised our notes', 'After class; we revised our notes,', 'After class we revised our notes?'], 'Punctuation'],
       ['Which word best matches "analyse"?', 'Examine carefully', ['Forget quickly', 'Decorate brightly', 'Repeat loudly'], 'Vocabulary'],
       ['A good listener usually:', 'Pays attention and asks clear questions', ['Interrupts all the time', 'Looks away always', 'Ignores the speaker'], 'Listening'],

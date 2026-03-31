@@ -91,6 +91,8 @@ type BeforeInstallPromptEvent = Event & {
 
 const STORAGE_KEY = 'review-buddy-state';
 const INSTALL_DISMISS_KEY = 'review-buddy-install-dismissed';
+const APP_VERSION = '1.5.2';
+const APP_CREATED_ON = 'March 31, 2026';
 const DEFAULT_ADMIN_USERNAME = 'Admin';
 const DEFAULT_ADMIN_PASSWORD = 'admin';
 const GENERATED_AVATARS: Record<LearnerGender, string[]> = {
@@ -197,9 +199,53 @@ function createDefaultAdminUser(): RegisteredUser {
   };
 }
 
+function normalizeLearnerProfile(input?: Partial<LearnerProfile>): LearnerProfile {
+  const base = input?.role === 'admin' ? createDefaultAdminUser() : createInitialProfile();
+  const countryCode = input?.countryCode ?? base.countryCode;
+  const stage = input?.stage ?? base.stage;
+  const plan = input?.plan ?? base.plan;
+  const subjectOptions = getAvailableSubjects(countryCode, stage, plan);
+  const gender = input?.gender ?? base.gender ?? 'boy';
+
+  return {
+    ...base,
+    ...input,
+    countryCode,
+    stage,
+    plan,
+    gender,
+    avatarMode:
+      input?.avatarMode === 'upload' && input.avatarImage
+        ? 'upload'
+        : input?.avatarMode ?? base.avatarMode,
+    avatarEmoji: input?.avatarEmoji ?? base.avatarEmoji ?? getGeneratedAvatarOptions(gender)[0],
+    avatarImage: input?.avatarImage,
+    level:
+      input?.level && getLevelOptions(stage).includes(input.level)
+        ? input.level
+        : getLevelOptions(stage)[0],
+    subject:
+      input?.subject && subjectOptions.includes(input.subject)
+        ? input.subject
+        : subjectOptions[0],
+  };
+}
+
+function normalizeRegisteredUser(user: Partial<RegisteredUser>): RegisteredUser {
+  const normalizedProfile = normalizeLearnerProfile(user);
+
+  return {
+    ...normalizedProfile,
+    id: user.id ?? `user-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+    username: user.username ?? createUsername(normalizedProfile.fullName, normalizedProfile.email),
+    createdAt: user.createdAt ?? new Date().toISOString(),
+    lastLoginAt: user.lastLoginAt,
+  };
+}
+
 function ensureRegisteredUsers(users?: RegisteredUser[]) {
   const adminUser = createDefaultAdminUser();
-  const safeUsers = users ?? [];
+  const safeUsers = (users ?? []).map((user) => normalizeRegisteredUser(user));
   const hasAdmin = safeUsers.some(
     (user) =>
       user.role === 'admin' &&
@@ -522,7 +568,7 @@ function App() {
     try {
       const saved = JSON.parse(raw) as StoredState;
 
-      if (saved.profile) setProfile(saved.profile);
+      if (saved.profile) setProfile(normalizeLearnerProfile(saved.profile));
       if (saved.attempts) setAttempts(saved.attempts);
       if (saved.registeredUsers) setRegisteredUsers(ensureRegisteredUsers(saved.registeredUsers));
       if (saved.authMode) setAuthMode(saved.authMode);
@@ -656,6 +702,10 @@ function App() {
   const recentRegistrations = [...learnerRegistrations].sort(
     (left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime(),
   );
+  const registrationsGroupedByCountry = COUNTRIES.map((countryEntry) => ({
+    country: countryEntry,
+    learners: recentRegistrations.filter((entry) => entry.countryCode === countryEntry.code),
+  })).filter((entry) => entry.learners.length > 0);
   const firstName = profile.fullName.trim().split(' ')[0] || 'Learner';
   const learningMaterial = getLearningMaterial(profile.countryCode, activeStudentSubject, profile.stage);
   const hasEliteReview = profile.plan === 'elite' && reviewSnapshot?.subject === activeStudentSubject;
@@ -812,12 +862,13 @@ function App() {
   }
 
   function enterWorkspace(nextProfile: LearnerProfile) {
-    setProfile(nextProfile);
+    const normalized = normalizeLearnerProfile(nextProfile);
+    setProfile(normalized);
     setQuizState(null);
-    setSelectedSubject(nextProfile.subject);
+    setSelectedSubject(normalized.subject);
     setStudentView('home');
     setAdminView('overview');
-    setScreen(nextProfile.role === 'admin' ? 'admin' : 'student');
+    setScreen(normalized.role === 'admin' ? 'admin' : 'student');
   }
 
   function handleAuthSubmit(event: FormEvent) {
@@ -1315,11 +1366,13 @@ function App() {
                 onClick={() => {
                   setAuthMode('signup');
                   setAuthNotice('');
-                  setProfile((current) => ({
-                    ...current,
-                    role: 'student',
-                    password: '',
-                  }));
+                  setProfile((current) =>
+                    normalizeLearnerProfile({
+                      ...current,
+                      role: 'student',
+                      password: '',
+                    }),
+                  );
                 }}
               >
                 Register
@@ -2245,29 +2298,40 @@ function App() {
                     <span className="page-chip page-chip-active">Registered learners</span>
                     <span className="page-chip">Staff</span>
                   </div>
-                  <div className="history-list">
-                    {recentRegistrations.length > 0 ? recentRegistrations.map((entry) => (
-                      <article key={entry.id} className="history-row">
-                        <div>
-                          <strong>{entry.fullName}</strong>
-                          <span>
-                            {getCountryByCode(entry.countryCode).name} · {getStageLabel(entry.stage)} · {getPlanLabel(entry.plan)}
-                          </span>
-                          <span>
-                            {entry.email} · Joined {new Date(entry.createdAt).toLocaleDateString()}
-                          </span>
+                  <div className="country-groups">
+                    {registrationsGroupedByCountry.length > 0 ? registrationsGroupedByCountry.map(({ country, learners }) => (
+                      <section key={country.code} className="country-group-card">
+                        <div className="panel-heading">
+                          <p className="eyebrow">{country.name}</p>
+                          <h2>{learners.length} learner{learners.length === 1 ? '' : 's'}</h2>
+                          <p>{country.curriculum}</p>
                         </div>
-                        <div className="row-actions">
-                          <strong>{entry.lastLoginAt ? `Last login ${new Date(entry.lastLoginAt).toLocaleDateString()}` : 'New account'}</strong>
-                          <button
-                            type="button"
-                            className="ghost-button ghost-button-small"
-                            onClick={() => removeRegisteredLearner(entry.id)}
-                          >
-                            Remove
-                          </button>
+                        <div className="history-list">
+                          {learners.map((entry) => (
+                            <article key={entry.id} className="history-row">
+                              <div>
+                                <strong>{entry.fullName}</strong>
+                                <span>
+                                  {getStageLabel(entry.stage)} · {getPlanLabel(entry.plan)} · {entry.gender === 'boy' ? 'Boy' : 'Girl'}
+                                </span>
+                                <span>
+                                  {entry.email} · Joined {new Date(entry.createdAt).toLocaleDateString()}
+                                </span>
+                              </div>
+                              <div className="row-actions">
+                                <strong>{entry.lastLoginAt ? `Last login ${new Date(entry.lastLoginAt).toLocaleDateString()}` : 'New account'}</strong>
+                                <button
+                                  type="button"
+                                  className="ghost-button ghost-button-small"
+                                  onClick={() => removeRegisteredLearner(entry.id)}
+                                >
+                                  Remove
+                                </button>
+                              </div>
+                            </article>
+                          ))}
                         </div>
-                      </article>
+                      </section>
                     )) : (
                       <p className="empty-state">Learner sign-ups will appear here after registration.</p>
                     )}
@@ -2475,6 +2539,8 @@ function App() {
           <p>{MOTTO}</p>
         </div>
         <div className="footer-meta">
+          <span>Version {APP_VERSION}</span>
+          <span>Created: {APP_CREATED_ON}</span>
           <span>Creator: Review Buddy</span>
         </div>
       </footer>

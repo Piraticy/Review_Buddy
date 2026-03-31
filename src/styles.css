@@ -626,7 +626,8 @@ button:disabled {
 }
 
 .app-shell[data-theme='night'] .country-button,
-.app-shell[data-theme='night'] .certificate-card {
+.app-shell[data-theme='night'] .certificate-card,
+.app-shell[data-theme='night'] .country-group-card {
   border-color: rgba(148, 163, 184, 0.24);
   background: rgba(15, 23, 42, 0.9);
 }
@@ -925,6 +926,20 @@ button:disabled {
 .country-list {
   display: grid;
   gap: 12px;
+}
+
+.country-groups {
+  display: grid;
+  gap: 18px;
+}
+
+.country-group-card {
+  display: grid;
+  gap: 12px;
+  padding: 18px;
+  border-radius: 24px;
+  border: 1px solid color-mix(in srgb, var(--theme-primary) 14%, white);
+  background: color-mix(in srgb, var(--theme-surface) 94%, white 6%);
 }
 
 .row-actions {

@@ -3,7 +3,7 @@
 Review Buddy is a responsive after-school learning app for kids and teens.
 It supports country-aware onboarding, age-level learning paths, learner and admin roles, and a cleaner public-facing register/sign-in flow.
 
-Current version: `1.5.1`
+Current version: `1.5.2`
 
 Production URL: `https://review-buddy-gray.vercel.app`
 
@@ -90,8 +90,7 @@ npm run build
 Learner registration and admin records are currently stored in the browser for this frontend build.
 That means new learner accounts appear in the admin pages on the same browser/device unless a backend is added later.
 
-Real email verification and automatic password delivery are not included in this static frontend build yet.
-Those need a backend, database, and email service before they can work for public users.
+This version uses direct account creation without email verification so learners can register immediately.
 
 ## Product message
 

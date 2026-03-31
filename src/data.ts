@@ -77,6 +77,7 @@ export type AdminSession = {
   status: string;
   plan: string;
   support: string;
+  staff: string;
 };
 
 export type AdminAlert = {
@@ -95,6 +96,20 @@ export type AdminPlanMix = {
   label: string;
   count: number;
   detail: string;
+};
+
+export type AdminCountryRegistration = {
+  code: string;
+  learners: number;
+  families: number;
+  staffLead: string;
+};
+
+export type AdminStaffMember = {
+  name: string;
+  role: string;
+  focus: string;
+  status: string;
 };
 
 export type SubjectMeta = {
@@ -381,9 +396,15 @@ export function getAvailableSubjects(countryCode: string, stage: Stage, plan: Pl
 }
 
 export function getQuestionCount(plan: Plan, stage: Stage) {
-  if (plan === 'free') return stage === 'kindergarten' ? 4 : 5;
-  if (plan === 'trial') return stage === 'kindergarten' ? 5 : 6;
-  return stage === 'kindergarten' ? 6 : 8;
+  if (stage === 'kindergarten') {
+    if (plan === 'free') return 4;
+    if (plan === 'trial') return 5;
+    return 6;
+  }
+
+  if (plan === 'free') return 15;
+  if (plan === 'trial') return 18;
+  return 22;
 }
 
 export function getSubjectMeta(subject: string) {
@@ -416,6 +437,38 @@ function uniqueChoices(answer: string, pool: string[], count = 4) {
 
 function randomInt(min: number, max: number) {
   return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+function buildPromptDeck(
+  tuples: PromptTuple[],
+  total: number,
+  nonce: string,
+  prefix: string,
+  explanationBuilder: (answer: string, prompt: string, skill: string) => string = (answer) =>
+    `${answer} is the correct answer.`,
+) {
+  const working = shuffle(tuples);
+  const rounds = Math.ceil(total / working.length);
+  const expanded = Array.from({ length: rounds }, (_, round) =>
+    shuffle(working).map((tuple) => ({ tuple, round })),
+  )
+    .flat()
+    .slice(0, total);
+
+  return expanded.map(({ tuple, round }, index) => {
+    const [prompt, answer, distractors, skill] = tuple;
+    const roundIntro =
+      round === 0 ? '' : round === 1 ? 'Quick follow-up: ' : round === 2 ? 'Challenge check: ' : 'Final practice: ';
+
+    return {
+      id: `${nonce}-${prefix}-${index}`,
+      prompt: `${roundIntro}${prompt}`,
+      choices: shuffle([answer, ...distractors]),
+      answer,
+      explanation: explanationBuilder(answer, prompt, skill),
+      skill,
+    };
+  });
 }
 
 function buildKindergartenSession(subject: string, level: string, total: number, nonce: string) {
@@ -547,7 +600,7 @@ function buildPrimarySession(subject: string, country: CountryProfile, total: nu
         skill: 'Addition fluency',
       };
     }),
-    'General Studies': ([
+    'General Studies': buildPromptDeck([
       ['Which tool helps us find places on Earth?', 'Map', ['Bell', 'Brush', 'Desk'], 'Places'],
       [`Which curriculum is common in ${country.name}?`, country.curriculum, ['Sports list', 'Cinema guide', 'Dance list'], 'School systems'],
       [`${country.name} is in which continent?`, country.continent, ['Europe', 'South America', 'Australia'], 'Continent awareness'],
@@ -556,30 +609,30 @@ function buildPrimarySession(subject: string, country: CountryProfile, total: nu
       ['Which place helps people learn every day?', 'School', ['Garage', 'Forest only', 'Boat'], 'Community'],
       ['Why do we plant trees?', 'To help the environment', ['To hide roads', 'To remove shade', 'To stop birds'], 'Care for nature'],
       ['Which object tells time?', 'Clock', ['Broom', 'Plate', 'Pillow'], 'Everyday objects'],
-    ] satisfies PromptTuple[]).slice(0, total).map(([prompt, answer, distractors, skill], index) => ({
-      id: `${nonce}-primary-general-${index}`,
-      prompt,
-      choices: shuffle([answer, ...distractors]),
-      answer,
-      explanation: `${answer} is the best answer here.`,
-      skill,
-    })),
-    'Communication Skills': ([
+      ['Which helper keeps our classroom clean?', 'Dustbin', ['Ball', 'Kite', 'Radio'], 'Classroom care'],
+      [`What do learners in ${country.capital} use to read directions or find new places?`, 'Map', ['Pillow', 'Drum', 'Whistle'], 'Navigation'],
+      ['Why do we wash our hands before eating?', 'To stay healthy', ['To hide books', 'To skip class', 'To change shoes'], 'Healthy habits'],
+      ['Which person helps patients in a clinic?', 'Nurse', ['Pilot', 'Tailor', 'Driver'], 'Community helpers'],
+      ['What should we do when crossing the road?', 'Look carefully and stay safe', ['Run quickly without checking', 'Close our eyes', 'Drop our bag'], 'Road safety'],
+      ['Why do we keep our water sources clean?', 'To protect people and animals', ['To make more dust', 'To stop plants growing', 'To hide the road'], 'Environment'],
+      ['Which item helps us know today’s weather?', 'Weather report', ['Spoon', 'School bag', 'Chalk'], 'Weather awareness'],
+    ] satisfies PromptTuple[], total, nonce, 'primary-general', (answer) => `${answer} is the best answer here.`),
+    'Communication Skills': buildPromptDeck([
       ['Choose the correct greeting for the morning.', 'Good morning', ['Good night', 'Goodbye', 'Well done'], 'Speaking kindly'],
       [`In ${country.name}, learners often practise ${country.curriculumFocus}. Which habit helps communication the most?`, 'Listening first', ['Talking over others', 'Ignoring questions', 'Leaving the room'], 'Listening'],
       ['Which word is spelled correctly?', 'friend', ['freind', 'frend', 'friand'], 'Spelling'],
       ['Which sentence sounds polite?', 'Please may I join?', ['Move now', 'Give me that', 'I will not listen'], 'Polite speech'],
       ['Which word is a noun?', 'teacher', ['quickly', 'happy', 'bright'], 'Word types'],
       ['Which sentence is complete?', 'The class is reading.', ['The class', 'Reading quickly', 'On the desk'], 'Sentence building'],
-    ] satisfies PromptTuple[]).slice(0, total).map(([prompt, answer, distractors, skill], index) => ({
-      id: `${nonce}-primary-comm-${index}`,
-      prompt,
-      choices: shuffle([answer, ...distractors]),
-      answer,
-      explanation: `${answer} is correct.`,
-      skill,
-    })),
-    History: ([
+      ['Which word is the opposite of loud?', 'Quiet', ['Heavy', 'Late', 'Sharp'], 'Vocabulary'],
+      ['Choose the sentence with kind words.', 'Thank you for helping me.', ['Move away now.', 'I do not care.', 'Stop talking forever.'], 'Kind language'],
+      ['Which sentence asks a question?', 'Can we read together?', ['We read together.', 'Please read together.', 'Reading together now.'], 'Question forms'],
+      ['Which word names a person?', 'Farmer', ['Quickly', 'Blue', 'Slowly'], 'Naming words'],
+      ['Which word should start with a capital letter?', 'Kenya', ['school', 'river', 'book'], 'Capital letters'],
+      ['Which ending mark fits this sentence: We won the game', 'Full stop', ['Comma', 'Colon', 'Dash'], 'Punctuation'],
+      ['A good speaker should:', 'Talk clearly', ['Whisper into a bag', 'Hide the message', 'Rush every word'], 'Clear speaking'],
+    ] satisfies PromptTuple[], total, nonce, 'primary-comm', (answer) => `${answer} is correct.`),
+    History: buildPromptDeck([
       ['What does a timeline help us do?', 'Put events in order', ['Measure rain', 'Draw triangles', 'Mix colours'], 'Timeline use'],
       [`A learner in ${country.capital} is studying ${country.curriculum}. Why do they learn local history?`, 'To understand their community and country', ['To skip lessons', 'To avoid reading', 'To forget the past'], 'Local history'],
       ['Why do we learn about heroes from the past?', 'To understand important events', ['To stop reading', 'To avoid books', 'To skip class'], 'Learning from history'],
@@ -587,14 +640,14 @@ function buildPrimarySession(subject: string, country: CountryProfile, total: nu
       ['Old buildings can teach us about:', 'How people lived before', ['Only sports', 'Just weather', 'Only traffic'], 'Local history'],
       ['A story from long ago is part of our:', 'History', ['Lunch', 'Homework only', 'Colouring'], 'History meaning'],
       ['A museum helps keep:', 'Important objects and stories', ['Broken pencils only', 'Rain clouds', 'Traffic lights'], 'Museums'],
-    ] satisfies PromptTuple[]).slice(0, total).map(([prompt, answer, distractors, skill], index) => ({
-      id: `${nonce}-primary-history-${index}`,
-      prompt,
-      choices: shuffle([answer, ...distractors]),
-      answer,
-      explanation: `${answer} is the correct answer.`,
-      skill,
-    })),
+      ['People who lived before us are part of our:', 'Past', ['Future', 'Lunch time', 'Play time only'], 'Time words'],
+      ['Which place keeps old objects safe for learning?', 'Museum', ['Playground', 'Kitchen', 'Garage'], 'Museums'],
+      ['A family story from grandparents helps us learn:', 'Our history', ['Only maths', 'Only colours', 'Only music'], 'Family stories'],
+      ['Old maps and letters can teach us about:', 'Life long ago', ['Next week only', 'Toy colours', 'Running speed'], 'Sources'],
+      ['Why do schools celebrate important national days?', 'To remember key events and people', ['To remove lessons forever', 'To stop reading', 'To forget the country'], 'National memory'],
+      ['A monument is often built to:', 'Remember an important person or event', ['Store shoes only', 'Hide a classroom', 'Grow vegetables'], 'Monuments'],
+      ['Which word matches something from long ago?', 'Ancient', ['Tomorrow', 'Freshly baked', 'Electric'], 'History words'],
+    ] satisfies PromptTuple[], total, nonce, 'primary-history'),
   };
 
   return prompts[subject] ?? prompts.Mathematics;
@@ -602,7 +655,7 @@ function buildPrimarySession(subject: string, country: CountryProfile, total: nu
 
 function buildTeenSession(subject: string, country: CountryProfile, total: number, nonce: string) {
   const prompts: Record<string, Question[]> = {
-    Biology: ([
+    Biology: buildPromptDeck([
       [`In ${country.name}, science learners study living things through ${country.curriculumFocus}. What is the basic unit of life?`, 'Cell', ['Atom', 'Tissue', 'Planet'], 'Cells'],
       ['Which organ pumps blood around the body?', 'Heart', ['Liver', 'Skin', 'Lung'], 'Body systems'],
       ['Plants make food through:', 'Photosynthesis', ['Evaporation', 'Condensation', 'Fermentation'], 'Plant processes'],
@@ -611,15 +664,15 @@ function buildTeenSession(subject: string, country: CountryProfile, total: numbe
       ['Which system helps us breathe?', 'Respiratory system', ['Solar system', 'Digestive system', 'Transport system'], 'Human systems'],
       ['A habitat is:', 'The natural home of an organism', ['A type of exam', 'A music sheet', 'A drawing tool'], 'Habitats'],
       ['Which blood cells help fight infection?', 'White blood cells', ['Red blood cells', 'Skin cells', 'Bone cells'], 'Immunity'],
-    ] satisfies PromptTuple[]).slice(0, total).map(([prompt, answer, distractors, skill], index) => ({
-      id: `${nonce}-teen-biology-${index}`,
-      prompt,
-      choices: shuffle([answer, ...distractors]),
-      answer,
-      explanation: `${answer} is the correct answer.`,
-      skill,
-    })),
-    Chemistry: ([
+      ['The process of cell division for growth is called:', 'Mitosis', ['Boiling', 'Reflection', 'Evaporation'], 'Cell division'],
+      ['Which part of the eye controls how much light enters?', 'Iris', ['Retina', 'Cornea', 'Lens case'], 'Sense organs'],
+      ['Which group of animals feeds only on plants?', 'Herbivores', ['Carnivores', 'Omnivores', 'Decomposers'], 'Feeding relationships'],
+      ['Which vessel carries blood away from the heart?', 'Artery', ['Vein', 'Capillary only', 'Nerve'], 'Circulation'],
+      ['Water moves through a plant stem by:', 'Xylem', ['Phloem only', 'Chlorophyll', 'Pollen'], 'Plant transport'],
+      ['Which gas do humans breathe in for respiration?', 'Oxygen', ['Carbon dioxide', 'Helium', 'Steam'], 'Respiration'],
+      ['A producer in a food chain is usually a:', 'Green plant', ['Lion', 'Fungus', 'Bird'], 'Food chains'],
+    ] satisfies PromptTuple[], total, nonce, 'teen-biology'),
+    Chemistry: buildPromptDeck([
       [`Students in ${country.capital} are revising chemistry. What is the chemical formula for water?`, 'H2O', ['CO2', 'NaCl', 'O2'], 'Formulas'],
       ['A substance with pH 2 is:', 'Acidic', ['Neutral', 'Basic', 'Metallic'], 'Acids and bases'],
       ['When a solid melts, its particles:', 'Move more freely', ['Disappear', 'Stop moving', 'Become louder'], 'States of matter'],
@@ -628,15 +681,15 @@ function buildTeenSession(subject: string, country: CountryProfile, total: numbe
       ['Which piece of equipment measures liquid volume?', 'Measuring cylinder', ['Magnet', 'Balance beam', 'Thermometer only'], 'Lab equipment'],
       ['Boiling changes a liquid into a:', 'Gas', ['Rock', 'Solid only', 'Colour'], 'Heating'],
       ['Salt dissolved in water makes a:', 'Solution', ['Metal', 'Flame', 'Planet'], 'Solutions'],
-    ] satisfies PromptTuple[]).slice(0, total).map(([prompt, answer, distractors, skill], index) => ({
-      id: `${nonce}-teen-chemistry-${index}`,
-      prompt,
-      choices: shuffle([answer, ...distractors]),
-      answer,
-      explanation: `${answer} is the correct answer.`,
-      skill,
-    })),
-    Physics: ([
+      ['Rusting happens when iron reacts with:', 'Oxygen and water', ['Light and sound', 'Salt only', 'Plastic'], 'Corrosion'],
+      ['The tiny particles that make up matter are called:', 'Atoms', ['Forests', 'Cells', 'Planets'], 'Atomic structure'],
+      ['A base with pH 12 is:', 'Alkaline', ['Acidic', 'Neutral', 'Radioactive'], 'Acids and bases'],
+      ['Which change forms a new substance?', 'Burning paper', ['Melting ice', 'Boiling water', 'Cutting cloth'], 'Chemical change'],
+      ['The center of an atom is the:', 'Nucleus', ['Shell', 'Valve', 'Screen'], 'Atomic structure'],
+      ['What name is given to substances that speed up reactions?', 'Catalysts', ['Metals', 'Buffers', 'Gases'], 'Rates of reaction'],
+      ['When a gas cools and becomes a liquid, it is called:', 'Condensation', ['Combustion', 'Neutralisation', 'Filtration'], 'State changes'],
+    ] satisfies PromptTuple[], total, nonce, 'teen-chemistry'),
+    Physics: buildPromptDeck([
       [`A physics learner in ${country.name} asks: which force pulls objects toward Earth?`, 'Gravity', ['Magnetism', 'Friction', 'Heat'], 'Forces'],
       ['The unit of electric current is:', 'Ampere', ['Meter', 'Kelvin', 'Newton'], 'Units'],
       ['When speed changes over time, the object is:', 'Accelerating', ['Sleeping', 'Freezing', 'Condensing'], 'Motion'],
@@ -645,14 +698,14 @@ function buildTeenSession(subject: string, country: CountryProfile, total: numbe
       ['A mirror that curves inward is:', 'Concave', ['Convex', 'Flat only', 'Transparent'], 'Light'],
       ['Voltage is measured in:', 'Volts', ['Watts', 'Newtons', 'Meters'], 'Electricity'],
       ['Friction usually acts to:', 'Slow motion down', ['Speed everything up', 'Change water to fire', 'Create clouds'], 'Forces'],
-    ] satisfies PromptTuple[]).slice(0, total).map(([prompt, answer, distractors, skill], index) => ({
-      id: `${nonce}-teen-physics-${index}`,
-      prompt,
-      choices: shuffle([answer, ...distractors]),
-      answer,
-      explanation: `${answer} is the correct answer.`,
-      skill,
-    })),
+      ['The energy stored in food is:', 'Chemical energy', ['Sound energy', 'Light only', 'Kinetic energy only'], 'Energy stores'],
+      ['The speed of an object is found by:', 'Distance divided by time', ['Time multiplied by mass', 'Force minus weight', 'Current times voltage'], 'Motion'],
+      ['Which device is used to measure force?', 'Newton meter', ['Thermometer', 'Voltmeter', 'Beaker'], 'Measurements'],
+      ['A circuit that has a gap will be:', 'Open', ['Closed', 'Magnetic', 'Balanced'], 'Electric circuits'],
+      ['The image formed by a plane mirror is usually:', 'Virtual and upright', ['Real and inverted', 'Blue and blurred', 'Smaller and heavy'], 'Light'],
+      ['The turning effect of a force is called:', 'Moment', ['Power', 'Current', 'Charge'], 'Mechanics'],
+      ['Which wave can travel through a vacuum?', 'Light wave', ['Sound wave', 'Water ripple only', 'Seismic surface wave'], 'Waves'],
+    ] satisfies PromptTuple[], total, nonce, 'teen-physics'),
     Mathematics: Array.from({ length: total }, (_, index) => {
       const x = randomInt(2, 8);
       const answer = String(3 * x + 4);
@@ -674,7 +727,7 @@ function buildTeenSession(subject: string, country: CountryProfile, total: numbe
         skill: 'Algebra',
       };
     }),
-    History: ([
+    History: buildPromptDeck([
       ['Why do historians compare many sources?', 'To check accuracy and bias', ['To shorten essays', 'To remove facts', 'To avoid evidence'], 'Historical thinking'],
       [`A history class in ${country.name} is studying national and world events. Why is local history important?`, 'It connects learners to their country and community', ['It removes context', 'It replaces evidence', 'It stops comparison'], 'Country context'],
       ['A timeline is most useful for:', 'Placing events in order', ['Mixing chemicals', 'Measuring speed', 'Drawing circles'], 'Chronology'],
@@ -684,15 +737,14 @@ function buildTeenSession(subject: string, country: CountryProfile, total: numbe
       ['An important reason to learn history is to:', 'Understand change over time', ['Stop asking questions', 'Avoid reading', 'Forget earlier events'], 'Change over time'],
       ['A speech made during an event is an example of:', 'A primary source', ['A myth only', 'A timetable', 'A machine'], 'Source types'],
       ['What can history teach us?', 'How people lived and made decisions', ['Only sport scores', 'Only colour names', 'Nothing useful'], 'Life lessons'],
-    ] satisfies PromptTuple[]).slice(0, total).map(([prompt, answer, distractors, skill], index) => ({
-      id: `${nonce}-teen-history-${index}`,
-      prompt,
-      choices: shuffle([answer, ...distractors]),
-      answer,
-      explanation: `${answer} is the correct answer.`,
-      skill,
-    })),
-    'General Studies': ([
+      ['An archive is a place where people keep:', 'Historical records', ['Sports shoes', 'Lunch boxes', 'Bicycles'], 'Archives'],
+      ['A reliable source usually gives:', 'Evidence and context', ['Rumours only', 'Only one opinion', 'No dates'], 'Evidence'],
+      ['Why do nations remember important dates?', 'To honour key events and people', ['To erase the past', 'To avoid reading', 'To remove culture'], 'National memory'],
+      ['An eyewitness account is useful because it comes from:', 'Someone who was there', ['A random future guess', 'A machine only', 'A song lyric'], 'Sources'],
+      ['Historical cause and effect helps learners understand:', 'Why events happened and what followed', ['Only colours', 'Only weather', 'Only prices'], 'Cause and effect'],
+      ['When two sources disagree, a historian should:', 'Compare the evidence carefully', ['Delete both', 'Pick the shortest one', 'Ignore the topic'], 'Comparing sources'],
+    ] satisfies PromptTuple[], total, nonce, 'teen-history'),
+    'General Studies': buildPromptDeck([
       ['Which action helps a community stay healthy?', 'Keeping water clean', ['Throwing litter anywhere', 'Ignoring waste', 'Breaking taps'], 'Community care'],
       [`${country.name} is in which continent?`, country.continent, ['Europe', 'South America', 'Australia'], 'Continents'],
       [`What is the capital city of ${country.name}?`, country.capital, ['Kampala', 'Cairo', 'Lusaka'], 'Country capitals'],
@@ -703,15 +755,14 @@ function buildTeenSession(subject: string, country: CountryProfile, total: numbe
       ['A budget helps you:', 'Plan money use', ['Draw only maps', 'Grow plants', 'Measure light'], 'Money skills'],
       ['Which place helps people borrow books?', 'Library', ['Stadium', 'Garage', 'Factory'], 'Public services'],
       ['Good digital behaviour includes:', 'Respecting privacy online', ['Sharing every password', 'Posting hurtful messages', 'Ignoring safety'], 'Digital citizenship'],
-    ] satisfies PromptTuple[]).slice(0, total).map(([prompt, answer, distractors, skill], index) => ({
-      id: `${nonce}-teen-general-${index}`,
-      prompt,
-      choices: shuffle([answer, ...distractors]),
-      answer,
-      explanation: `${answer} is the correct answer.`,
-      skill,
-    })),
-    'Communication Skills': ([
+      ['A census helps a country understand its:', 'Population', ['Weather only', 'Music charts', 'Traffic lights'], 'Citizenship'],
+      ['Which document is most useful for planning a journey?', 'Map', ['Whistle', 'Pencil case', 'Storybook'], 'Navigation'],
+      ['Saving money regularly helps with:', 'Future plans', ['Breaking rules', 'Losing time', 'Avoiding study'], 'Financial habits'],
+      ['A community leader should help people by:', 'Listening and guiding fairly', ['Ignoring everyone', 'Keeping all information secret', 'Removing schools'], 'Leadership'],
+      ['Which action helps online safety?', 'Using strong passwords', ['Sharing private details publicly', 'Clicking every unknown link', 'Turning off all updates forever'], 'Digital safety'],
+      ['Public transport can help a city by:', 'Moving many people efficiently', ['Stopping all travel', 'Removing markets', 'Closing roads'], 'Transport'],
+    ] satisfies PromptTuple[], total, nonce, 'teen-general'),
+    'Communication Skills': buildPromptDeck([
       [`Learners in ${country.name} often practise ${country.curriculumFocus}. What is the main purpose of a thesis statement?`, 'To present the main idea', ['To count pages', 'To repeat the title only', 'To avoid structure'], 'Writing'],
       ['Which sentence uses correct punctuation?', 'After class, we revised our notes.', ['After class we revised our notes', 'After class; we revised our notes,', 'After class we revised our notes?'], 'Punctuation'],
       ['Which word best matches "analyse"?', 'Examine carefully', ['Forget quickly', 'Decorate brightly', 'Repeat loudly'], 'Vocabulary'],
@@ -720,14 +771,13 @@ function buildTeenSession(subject: string, country: CountryProfile, total: numbe
       ['A summary should:', 'Keep the main points only', ['Add random ideas', 'Be longer than the text', 'Ignore the topic'], 'Summarising'],
       ['When presenting to others, it helps to:', 'Speak clearly and confidently', ['Hide the main point', 'Mumble quickly', 'Avoid eye contact always'], 'Presenting'],
       ['Which word connects two ideas in a sentence?', 'Conjunction', ['Noun', 'Number', 'Map'], 'Grammar'],
-    ] satisfies PromptTuple[]).slice(0, total).map(([prompt, answer, distractors, skill], index) => ({
-      id: `${nonce}-teen-communication-${index}`,
-      prompt,
-      choices: shuffle([answer, ...distractors]),
-      answer,
-      explanation: `${answer} is the correct answer.`,
-      skill,
-    })),
+      ['A persuasive paragraph should include:', 'A clear point with support', ['Only a title', 'Random facts only', 'No audience in mind'], 'Persuasion'],
+      ['Which of these is the best transition word for contrast?', 'However', ['Because', 'Firstly', 'Also'], 'Linking words'],
+      ['Proofreading helps a writer to:', 'Find and correct mistakes', ['Hide the topic', 'Delete every paragraph', 'Avoid readers'], 'Editing'],
+      ['Which sentence shows active listening?', 'I understand your point, and here is my question.', ['I was not listening at all.', 'That does not matter.', 'I will leave now.'], 'Listening'],
+      ['An introduction should usually:', 'Prepare the reader for the main topic', ['Repeat the ending only', 'List random facts', 'Ignore the subject'], 'Structure'],
+      ['When speaking to a group, a calm pace helps people:', 'Understand the message', ['Forget the topic', 'Stop listening at once', 'Avoid the room'], 'Public speaking'],
+    ] satisfies PromptTuple[], total, nonce, 'teen-communication'),
   };
 
   return prompts[subject] ?? prompts.Mathematics;
@@ -787,20 +837,20 @@ export function getPlanDetails(plan: Plan) {
   if (plan === 'free') {
     return {
       badge: 'Starter plan',
-      description: 'A few subjects, fewer questions, and score tracking for daily practice.',
+      description: 'Up to 15 questions for growing and teen learners, with starter access for daily practice.',
     };
   }
 
   if (plan === 'trial') {
     return {
       badge: '5-day Elite trial',
-      description: 'A full preview of the richer Elite learning experience for five days.',
+      description: 'A 5-day preview with longer quizzes, more subjects, and richer learning support.',
     };
   }
 
   return {
     badge: 'Elite access',
-    description: 'Full subject access, more questions, and deeper review support.',
+    description: 'Full subject access, longer quiz sets, and certificate rewards for strong results.',
   };
 }
 
@@ -816,10 +866,10 @@ export function getAdminMetrics(countryCode: string) {
     weeklyGrowth: 14,
     country,
     liveActivity: [
-      { learner: 'Asha M.', subject: 'Mathematics', status: 'Working now', plan: 'Elite', support: 'On track' },
-      { learner: 'Noah R.', subject: 'History', status: 'Finished', plan: 'Free', support: 'Review tomorrow' },
-      { learner: 'Little Star', subject: 'Colouring', status: 'Playing', plan: 'Trial', support: 'Needs a parent check-in' },
-      { learner: 'Zuri T.', subject: 'Communication Skills', status: 'Reading', plan: 'Elite', support: 'Strong progress' },
+      { learner: 'Asha M.', subject: 'Mathematics', status: 'Working now', plan: 'Elite', support: 'On track', staff: 'Mr. James' },
+      { learner: 'Noah R.', subject: 'History', status: 'Finished', plan: 'Free', support: 'Review tomorrow', staff: 'Ms. Rehema' },
+      { learner: 'Little Star', subject: 'Colouring', status: 'Playing', plan: 'Trial', support: 'Needs a parent check-in', staff: 'Teacher Ada' },
+      { learner: 'Zuri T.', subject: 'Communication Skills', status: 'Reading', plan: 'Elite', support: 'Strong progress', staff: 'Mrs. Njeri' },
     ] satisfies AdminSession[],
     supportQueue: [
       {
@@ -845,5 +895,19 @@ export function getAdminMetrics(countryCode: string) {
       { label: 'Trial learners', count: 146, detail: 'Exploring the full experience' },
       { label: 'Elite learners', count: 526, detail: 'Using the full learning library' },
     ] satisfies AdminPlanMix[],
+    registeredCountries: [
+      { code: 'KE', learners: 344, families: 181, staffLead: 'Ms. Njeri' },
+      { code: 'TZ', learners: 289, families: 153, staffLead: 'Mr. Baraka' },
+      { code: 'US', learners: 254, families: 142, staffLead: 'Mrs. Lopez' },
+      { code: 'AE', learners: 211, families: 119, staffLead: 'Ms. Noor' },
+      { code: 'GB', learners: 118, families: 63, staffLead: 'Mr. Evans' },
+      { code: 'IN', learners: 68, families: 34, staffLead: 'Mrs. Priya' },
+    ] satisfies AdminCountryRegistration[],
+    staffMembers: [
+      { name: 'Mr. James', role: 'Head of learning', focus: 'Senior revision', status: 'Online' },
+      { name: 'Ms. Rehema', role: 'Family success lead', focus: 'Follow-up queue', status: 'Online' },
+      { name: 'Teacher Ada', role: 'Kindergarten guide', focus: 'Little learners', status: 'In session' },
+      { name: 'Mrs. Njeri', role: 'Curriculum manager', focus: `${country.curriculum} review`, status: 'Reviewing reports' },
+    ] satisfies AdminStaffMember[],
   };
 }

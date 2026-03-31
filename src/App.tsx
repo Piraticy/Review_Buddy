@@ -71,7 +71,7 @@ type BeforeInstallPromptEvent = Event & {
 
 const STORAGE_KEY = 'review-buddy-state';
 const INSTALL_DISMISS_KEY = 'review-buddy-install-dismissed';
-const APP_VERSION = '1.2.0';
+const APP_VERSION = '1.3.0';
 
 const COLOR_MAP: Record<string, string> = {
   Red: '#ef4444',
@@ -353,6 +353,78 @@ function ColoringBoard({ art, fillColor }: { art?: QuestionArt; fillColor?: stri
   );
 }
 
+function getCertificateGrade(percent: number) {
+  if (percent >= 85) return 'A';
+  if (percent >= 75) return 'B';
+  if (percent >= 65) return 'C';
+  return 'D';
+}
+
+function getCertificatePassLevel(percent: number) {
+  if (percent >= 90) return 'Excellent pass';
+  if (percent >= 75) return 'Merit pass';
+  if (percent >= 60) return 'Pass';
+  return 'Practice needed';
+}
+
+function CertificatePreview({
+  profile,
+  result,
+  subject,
+  onDownload,
+}: {
+  profile: LearnerProfile;
+  result: QuizResult;
+  subject: string;
+  onDownload: () => void;
+}) {
+  return (
+    <section className="certificate-card">
+      <div className="certificate-top">
+        <LogoMark />
+        <div>
+          <p className="eyebrow">Elite certificate</p>
+          <h3>Review Buddy Achievement Certificate</h3>
+        </div>
+      </div>
+
+      <p className="certificate-copy">
+        This certificate is proudly presented to <strong>{profile.fullName}</strong> for completing
+        the <strong>{subject}</strong> level in Review Buddy.
+      </p>
+
+      <div className="certificate-grid">
+        <article className="info-card">
+          <strong>Level</strong>
+          <p>{profile.level}</p>
+        </article>
+        <article className="info-card">
+          <strong>Grade</strong>
+          <p>{getCertificateGrade(result.percent)}</p>
+        </article>
+        <article className="info-card">
+          <strong>Pass level</strong>
+          <p>{getCertificatePassLevel(result.percent)}</p>
+        </article>
+        <article className="info-card">
+          <strong>Score</strong>
+          <p>{result.percent}%</p>
+        </article>
+      </div>
+
+      <div className="certificate-footer">
+        <div>
+          <strong>Review Buddy Owner</strong>
+          <p className="certificate-signature">Review Buddy Signature</p>
+        </div>
+        <button type="button" className="primary-button" onClick={onDownload}>
+          Download certificate
+        </button>
+      </div>
+    </section>
+  );
+}
+
 function App() {
   const [profile, setProfile] = useState<LearnerProfile>(createInitialProfile);
   const [attempts, setAttempts] = useState<AttemptRecord[]>([]);
@@ -366,6 +438,9 @@ function App() {
   const [installPromptEvent, setInstallPromptEvent] = useState<BeforeInstallPromptEvent | null>(null);
   const [showInstallPrompt, setShowInstallPrompt] = useState(false);
   const [isInstalled, setIsInstalled] = useState(false);
+  const [adminFocusCode, setAdminFocusCode] = useState(() => createInitialProfile().countryCode);
+  const [staffMembers, setStaffMembers] = useState(() => getAdminMetrics(createInitialProfile().countryCode).staffMembers);
+  const [adminNotice, setAdminNotice] = useState('Choose a tool to manage staff, countries, or reports.');
   const speechKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -469,15 +544,22 @@ function App() {
     });
   }, [profile.countryCode, profile.plan, profile.stage]);
 
+  useEffect(() => {
+    if (screen === 'admin') {
+      setAdminFocusCode(profile.countryCode);
+    }
+  }, [profile.countryCode, screen]);
+
   const country = getCountryByCode(profile.countryCode);
   const availableSubjects = getAvailableSubjects(profile.countryCode, profile.stage, profile.plan);
   const currentQuestion = quizState?.questions[quizState.currentIndex];
+  const adminMetricsCode = screen === 'admin' ? adminFocusCode : profile.countryCode;
   const leaderboard = getLeaderboard(
     quizState?.activeSubject ?? profile.subject,
     profile,
     quizState?.result ?? undefined,
   );
-  const metrics = getAdminMetrics(profile.countryCode);
+  const metrics = getAdminMetrics(adminMetricsCode);
   const firstName = profile.fullName.trim().split(' ')[0] || 'Learner';
 
   useEffect(() => {
@@ -487,6 +569,11 @@ function App() {
     setSpeakingKey(null);
     speechKeyRef.current = null;
   }, [currentQuestion?.id]);
+
+  useEffect(() => {
+    if (screen !== 'admin') return;
+    setStaffMembers(getAdminMetrics(adminFocusCode).staffMembers);
+  }, [adminFocusCode, screen]);
 
   const countryTheme: ThemeVars = {
     '--theme-primary': country.palette.primary,
@@ -620,6 +707,35 @@ function App() {
     window.localStorage.setItem(INSTALL_DISMISS_KEY, 'true');
   }
 
+  function addSampleStaffMember() {
+    const focusCountry = getCountryByCode(adminFocusCode);
+    setStaffMembers((current) => [
+      ...current,
+      {
+        name: `Coach ${current.length + 1}`,
+        role: 'Learning guide',
+        focus: `${focusCountry.name} learner support`,
+        status: 'Ready to assign',
+      },
+    ]);
+    setAdminNotice(`A sample staff profile was added for ${focusCountry.name}.`);
+  }
+
+  function removeSampleStaffMember() {
+    setStaffMembers((current) => current.slice(0, -1));
+    setAdminNotice('The last sample staff profile was removed.');
+  }
+
+  function addCountryFollowUp() {
+    const focusCountry = getCountryByCode(adminFocusCode);
+    setAdminNotice(`A new sample follow-up was created for families in ${focusCountry.name}.`);
+  }
+
+  function exportCountryReport() {
+    const focusCountry = getCountryByCode(adminFocusCode);
+    setAdminNotice(`Sample report prepared for ${focusCountry.name}.`);
+  }
+
   function startQuiz(subject: string) {
     const nextProfile = { ...profile, subject };
     const questions = generateQuestions(nextProfile);
@@ -697,6 +813,135 @@ function App() {
     setScreen('student');
     setQuizState(null);
     setIsSliding(false);
+  }
+
+  function downloadCertificate() {
+    if (!quizState?.result) return;
+
+    const grade = getCertificateGrade(quizState.result.percent);
+    const passLevel = getCertificatePassLevel(quizState.result.percent);
+    const printWindow = window.open('', '_blank', 'noopener,noreferrer');
+
+    if (!printWindow) return;
+
+    printWindow.document.write(`
+      <!doctype html>
+      <html lang="en">
+        <head>
+          <meta charset="utf-8" />
+          <title>Review Buddy Certificate</title>
+          <style>
+            body {
+              margin: 0;
+              font-family: Arial, sans-serif;
+              background: #f8fbff;
+              color: #0f172a;
+            }
+            .sheet {
+              width: 900px;
+              margin: 32px auto;
+              padding: 40px;
+              border: 10px solid #1d4ed8;
+              border-radius: 32px;
+              background: white;
+              box-shadow: 0 20px 50px rgba(15, 23, 42, 0.12);
+            }
+            .brand {
+              display: flex;
+              align-items: center;
+              gap: 16px;
+            }
+            .mark {
+              width: 72px;
+              height: 72px;
+              border-radius: 22px;
+              background: linear-gradient(135deg, #1d4ed8, #06b6d4);
+              color: white;
+              font-size: 30px;
+              font-weight: 700;
+              display: inline-flex;
+              align-items: center;
+              justify-content: center;
+            }
+            h1 {
+              margin: 16px 0 8px;
+              font-size: 42px;
+            }
+            .eyebrow {
+              text-transform: uppercase;
+              letter-spacing: 0.18em;
+              font-size: 12px;
+              font-weight: 700;
+              color: #1d4ed8;
+            }
+            .name {
+              font-size: 38px;
+              font-weight: 700;
+              margin: 18px 0;
+            }
+            .grid {
+              display: grid;
+              grid-template-columns: repeat(4, 1fr);
+              gap: 16px;
+              margin: 24px 0;
+            }
+            .card {
+              padding: 18px;
+              border-radius: 20px;
+              background: #eff6ff;
+              border: 1px solid #bfdbfe;
+            }
+            .signature {
+              font-family: "Brush Script MT", cursive;
+              font-size: 34px;
+              color: #0f766e;
+              margin-top: 10px;
+            }
+            .footer {
+              display: flex;
+              justify-content: space-between;
+              margin-top: 32px;
+            }
+          </style>
+        </head>
+        <body>
+          <section class="sheet">
+            <div class="brand">
+              <div class="mark">RB</div>
+              <div>
+                <div class="eyebrow">Elite certificate</div>
+                <h1>Review Buddy Achievement Certificate</h1>
+              </div>
+            </div>
+            <p>This certificate is proudly presented to</p>
+            <div class="name">${profile.fullName}</div>
+            <p>
+              for completing <strong>${quizState.activeSubject}</strong> at <strong>${profile.level}</strong>
+              with a score of <strong>${quizState.result.percent}%</strong>.
+            </p>
+            <div class="grid">
+              <div class="card"><strong>Grade</strong><div>${grade}</div></div>
+              <div class="card"><strong>Pass level</strong><div>${passLevel}</div></div>
+              <div class="card"><strong>Country</strong><div>${country.name}</div></div>
+              <div class="card"><strong>Date</strong><div>${new Date().toLocaleDateString()}</div></div>
+            </div>
+            <div class="footer">
+              <div>
+                <strong>Review Buddy Owner</strong>
+                <div class="signature">Review Buddy Signature</div>
+              </div>
+              <div>
+                <strong>Level:</strong> ${profile.level}<br />
+                <strong>Subject:</strong> ${quizState.activeSubject}
+              </div>
+            </div>
+          </section>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+    printWindow.focus();
+    window.setTimeout(() => printWindow.print(), 250);
   }
 
   const selectedAnswer = currentQuestion && quizState ? quizState.answers[currentQuestion.id] : '';
@@ -1147,18 +1392,26 @@ function App() {
                     {quizState.result.percent}% score ({quizState.result.score}/{quizState.result.total})
                   </h3>
                   <p>
-                  {quizState.result.passed
+                    {quizState.result.passed
                       ? 'Well done. You finished this practice with a strong score.'
                       : 'Good effort. Try another fresh set when you are ready.'}
                   </p>
                   <div className="result-actions">
                     <button type="button" className="primary-button" onClick={() => startQuiz(quizState.activeSubject)}>
-                      Play again
+                      Retry quiz
                     </button>
                     <button type="button" className="ghost-button" onClick={quitQuiz}>
                       Back to subjects
                     </button>
                   </div>
+                  {profile.plan === 'elite' && quizState.result.passed && (
+                    <CertificatePreview
+                      profile={profile}
+                      result={quizState.result}
+                      subject={quizState.activeSubject}
+                      onDownload={downloadCertificate}
+                    />
+                  )}
                 </div>
               )}
             </article>
@@ -1222,6 +1475,7 @@ function App() {
                       <span>{session.plan}</span>
                       <span>{session.status}</span>
                       <span>{session.support}</span>
+                      <span>{session.staff}</span>
                     </div>
                   ))}
                 </div>
@@ -1243,6 +1497,7 @@ function App() {
                 <div className="panel-heading">
                   <p className="eyebrow">Follow-up queue</p>
                   <h2>Families and learners needing attention</h2>
+                  <p>Sample follow-up items update when you choose another country.</p>
                 </div>
                 <div className="history-list">
                   {metrics.supportQueue.map((item) => (
@@ -1255,10 +1510,58 @@ function App() {
                   ))}
                 </div>
               </article>
+
+              <article className="side-card">
+                <div className="panel-heading">
+                  <p className="eyebrow">Admin tools</p>
+                  <h2>Manage staff and reports</h2>
+                  <p>{adminNotice}</p>
+                </div>
+                <div className="banner-actions">
+                  <button type="button" className="ghost-button ghost-button-small" onClick={addSampleStaffMember}>
+                    Add staff
+                  </button>
+                  <button type="button" className="ghost-button ghost-button-small" onClick={removeSampleStaffMember}>
+                    Remove staff
+                  </button>
+                  <button type="button" className="ghost-button ghost-button-small" onClick={addCountryFollowUp}>
+                    Add follow-up
+                  </button>
+                  <button type="button" className="ghost-button ghost-button-small" onClick={exportCountryReport}>
+                    Export report
+                  </button>
+                </div>
+              </article>
             </section>
           </section>
 
           <aside className="dashboard-side">
+            <section className="side-card">
+              <div className="panel-heading">
+                <p className="eyebrow">Registered countries</p>
+                <h2>Where learners are joining from</h2>
+                <p>Select a country to refresh the support queue and admin view.</p>
+              </div>
+              <div className="country-list">
+                {metrics.registeredCountries.map((entry) => {
+                  const entryCountry = getCountryByCode(entry.code);
+
+                  return (
+                    <button
+                      key={entry.code}
+                      type="button"
+                      className={`country-button${adminFocusCode === entry.code ? ' country-button-active' : ''}`}
+                      onClick={() => setAdminFocusCode(entry.code)}
+                    >
+                      <strong>{entryCountry.name}</strong>
+                      <span>{entry.learners} learners · {entry.families} families</span>
+                      <span>Lead: {entry.staffLead}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </section>
+
             <section className="side-card">
               <div className="panel-heading">
                 <p className="eyebrow">Top performers</p>
@@ -1291,6 +1594,24 @@ function App() {
                       <span>{item.learners} learners · average {item.averageScore}%</span>
                     </div>
                     <strong>{item.trend}</strong>
+                  </article>
+                ))}
+              </div>
+            </section>
+
+            <section className="side-card">
+              <div className="panel-heading">
+                <p className="eyebrow">Staff team</p>
+                <h2>Who is managing the app</h2>
+              </div>
+              <div className="history-list">
+                {staffMembers.map((member) => (
+                  <article key={`${member.name}-${member.role}`} className="history-row">
+                    <div>
+                      <strong>{member.name}</strong>
+                      <span>{member.role} · {member.focus}</span>
+                    </div>
+                    <strong>{member.status}</strong>
                   </article>
                 ))}
               </div>

@@ -33,6 +33,8 @@ jobs:
         run: npm ci
 
       - name: Build app
+        env:
+          VITE_BASE_PATH: /Review_Buddy/
         run: npm run build
 
       - name: Configure Pages

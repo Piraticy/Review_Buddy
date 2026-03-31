@@ -3,7 +3,7 @@
 Review Buddy is a responsive after-school learning app for kids and teens.
 It supports country-aware onboarding, age-level learning paths, student and admin roles, and quiz access based on Free, Elite Trial, or Elite plans.
 
-Current version: `1.1.0`
+Current version: `1.2.0`
 
 ## What the app includes
 
@@ -14,9 +14,11 @@ Current version: `1.1.0`
 - Dynamic quiz generation so each session feels different
 - Full-screen quiz page with one-card-at-a-time questions
 - Kindergarten colouring, alphabet, numbers, picture puzzle, and spoken prompt support
+- Installable app support with manifest, offline shell, and automatic install prompt handling
 - Solo and group quiz modes
 - Free, 5-day Elite Trial, and Elite access rules
 - Score tracking and subject leaderboards
+- Softer learner-facing wording and a more family-friendly admin dashboard
 - Responsive design for mobile, tablet, and desktop
 
 ## Roles
@@ -31,10 +33,10 @@ Current version: `1.1.0`
 
 ### Admin
 
-- View active learner activity
-- Monitor live sessions, average scores, and plan usage
-- Review leaderboards and country theme setup
-- Access control and monitoring screens without editing learner answers
+- View live learner activity and support status
+- Track trials, family follow-ups, and weekly growth
+- Review leaderboards, popular subjects, and plan usage
+- Keep a simple oversight screen without editing learner answers
 
 ## Access plans
 
@@ -66,6 +68,7 @@ npm run build
 ## Free deployment
 
 Review Buddy is configured for GitHub Pages deployment through GitHub Actions.
+GitHub Pages is free for public repositories, although GitHub account restrictions can still block Actions from running.
 
 - Workflow file: `.github/workflows/deploy.yml`
 - Expected deployment URL: `https://piraticy.github.io/Review_Buddy/`

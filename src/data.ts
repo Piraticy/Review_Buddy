@@ -71,6 +71,32 @@ export type LeaderboardEntry = {
   plan: Plan;
 };
 
+export type AdminSession = {
+  learner: string;
+  subject: string;
+  status: string;
+  plan: string;
+  support: string;
+};
+
+export type AdminAlert = {
+  title: string;
+  detail: string;
+};
+
+export type AdminSubjectInsight = {
+  subject: string;
+  learners: number;
+  averageScore: number;
+  trend: string;
+};
+
+export type AdminPlanMix = {
+  label: string;
+  count: number;
+  detail: string;
+};
+
 export type SubjectMeta = {
   icon: string;
   title: string;
@@ -786,6 +812,38 @@ export function getAdminMetrics(countryCode: string) {
     liveSessions: 312,
     averageScore: 81,
     trialUsers: 146,
+    familiesWaiting: 23,
+    weeklyGrowth: 14,
     country,
+    liveActivity: [
+      { learner: 'Asha M.', subject: 'Mathematics', status: 'Working now', plan: 'Elite', support: 'On track' },
+      { learner: 'Noah R.', subject: 'History', status: 'Finished', plan: 'Free', support: 'Review tomorrow' },
+      { learner: 'Little Star', subject: 'Colouring', status: 'Playing', plan: 'Trial', support: 'Needs a parent check-in' },
+      { learner: 'Zuri T.', subject: 'Communication Skills', status: 'Reading', plan: 'Elite', support: 'Strong progress' },
+    ] satisfies AdminSession[],
+    supportQueue: [
+      {
+        title: 'Trial families to follow up',
+        detail: `23 families in ${country.name} are close to the end of their 5-day trial.`,
+      },
+      {
+        title: 'Learners needing encouragement',
+        detail: '12 learners scored below 50% twice this week and may need simpler revision.',
+      },
+      {
+        title: 'Most requested help topic',
+        detail: `${country.curriculum} learners are asking for extra help in Mathematics and Communication Skills.`,
+      },
+    ] satisfies AdminAlert[],
+    subjectInsights: [
+      { subject: 'Mathematics', learners: 428, averageScore: 84, trend: 'Up this week' },
+      { subject: 'Communication Skills', learners: 316, averageScore: 79, trend: 'Steady' },
+      { subject: 'Biology', learners: 204, averageScore: 82, trend: 'More teen activity' },
+    ] satisfies AdminSubjectInsight[],
+    planMix: [
+      { label: 'Free learners', count: 612, detail: 'Daily practice with starter access' },
+      { label: 'Trial learners', count: 146, detail: 'Exploring the full experience' },
+      { label: 'Elite learners', count: 526, detail: 'Using the full learning library' },
+    ] satisfies AdminPlanMix[],
   };
 }

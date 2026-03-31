@@ -1,4 +1,4 @@
-import { CSSProperties, FormEvent, SVGProps, useEffect, useState } from 'react';
+import { CSSProperties, FormEvent, SVGProps, useEffect, useRef, useState } from 'react';
 import {
   COUNTRIES,
   MOTTO,
@@ -64,8 +64,14 @@ type SampleAccount = {
   profile: LearnerProfile;
 };
 
+type BeforeInstallPromptEvent = Event & {
+  prompt: () => Promise<void>;
+  userChoice: Promise<{ outcome: 'accepted' | 'dismissed'; platform: string }>;
+};
+
 const STORAGE_KEY = 'review-buddy-state';
-const APP_VERSION = '1.1.0';
+const INSTALL_DISMISS_KEY = 'review-buddy-install-dismissed';
+const APP_VERSION = '1.2.0';
 
 const COLOR_MAP: Record<string, string> = {
   Red: '#ef4444',
@@ -188,24 +194,24 @@ const themePresets: Record<Exclude<ThemeMode, 'country'>, ThemeVars> = {
 
 const benefitCards = [
   {
-    title: 'Quick to start',
-    detail: 'Short setup for parents, learners, and schools.',
+    title: 'Easy to begin',
+    detail: 'Join in a moment and move straight into learning.',
   },
   {
-    title: 'Fresh every time',
-    detail: 'Question sets change often so practice feels new.',
+    title: 'Practice feels fresh',
+    detail: 'New question sets keep revision from feeling repeated.',
   },
   {
-    title: 'Clear progress',
-    detail: 'Scores, attempts, and top performers stay easy to follow.',
+    title: 'Progress stays clear',
+    detail: 'Scores and activity are simple for learners and families to follow.',
   },
 ];
 
 const adminPrivileges = [
-  'Watch live learner activity',
-  'Check score trends and plan usage',
-  'See subject leaderboards',
-  'Manage from one simple overview',
+  'See who is learning right now',
+  'Track scores, trial progress, and family follow-ups',
+  'Spot the most active subjects and learner groups',
+  'Keep one calm overview for schools and families',
 ];
 
 function createInitialProfile(): LearnerProfile {
@@ -357,6 +363,10 @@ function App() {
   const [isReady, setIsReady] = useState(false);
   const [isSliding, setIsSliding] = useState(false);
   const [speakingKey, setSpeakingKey] = useState<string | null>(null);
+  const [installPromptEvent, setInstallPromptEvent] = useState<BeforeInstallPromptEvent | null>(null);
+  const [showInstallPrompt, setShowInstallPrompt] = useState(false);
+  const [isInstalled, setIsInstalled] = useState(false);
+  const speechKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
     const raw = window.localStorage.getItem(STORAGE_KEY);
@@ -380,6 +390,45 @@ function App() {
     } finally {
       setIsReady(true);
     }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const standalone =
+      window.matchMedia?.('(display-mode: standalone)').matches ||
+      Boolean((window.navigator as Navigator & { standalone?: boolean }).standalone);
+
+    if (standalone) {
+      setIsInstalled(true);
+      return;
+    }
+
+    const dismissed = window.localStorage.getItem(INSTALL_DISMISS_KEY) === 'true';
+
+    const handleBeforeInstallPrompt = (event: Event) => {
+      const installEvent = event as BeforeInstallPromptEvent;
+      installEvent.preventDefault();
+      setInstallPromptEvent(installEvent);
+      if (!dismissed) {
+        setShowInstallPrompt(true);
+      }
+    };
+
+    const handleInstalled = () => {
+      setIsInstalled(true);
+      setInstallPromptEvent(null);
+      setShowInstallPrompt(false);
+      window.localStorage.removeItem(INSTALL_DISMISS_KEY);
+    };
+
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    window.addEventListener('appinstalled', handleInstalled);
+
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+      window.removeEventListener('appinstalled', handleInstalled);
+    };
   }, []);
 
   useEffect(() => {
@@ -429,6 +478,15 @@ function App() {
     quizState?.result ?? undefined,
   );
   const metrics = getAdminMetrics(profile.countryCode);
+  const firstName = profile.fullName.trim().split(' ')[0] || 'Learner';
+
+  useEffect(() => {
+    if ('speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+    }
+    setSpeakingKey(null);
+    speechKeyRef.current = null;
+  }, [currentQuestion?.id]);
 
   const countryTheme: ThemeVars = {
     '--theme-primary': country.palette.primary,
@@ -466,15 +524,21 @@ function App() {
   function speakPrompt(text: string) {
     if (!('speechSynthesis' in window)) return;
 
-    if (speakingKey === text && window.speechSynthesis.speaking) {
+    if (speechKeyRef.current === text || window.speechSynthesis.speaking) {
       return;
     }
 
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.rate = 0.9;
-    window.speechSynthesis.cancel();
-    utterance.onend = () => setSpeakingKey(null);
-    utterance.onerror = () => setSpeakingKey(null);
+    speechKeyRef.current = text;
+    utterance.onend = () => {
+      speechKeyRef.current = null;
+      setSpeakingKey(null);
+    };
+    utterance.onerror = () => {
+      speechKeyRef.current = null;
+      setSpeakingKey(null);
+    };
     setSpeakingKey(text);
     window.speechSynthesis.speak(utterance);
   }
@@ -533,6 +597,27 @@ function App() {
     setSpeakingKey(null);
     setScreen('auth');
     setQuizState(null);
+  }
+
+  async function handleInstallApp() {
+    if (!installPromptEvent) return;
+
+    setShowInstallPrompt(false);
+    await installPromptEvent.prompt();
+    const outcome = await installPromptEvent.userChoice;
+
+    if (outcome.outcome === 'accepted') {
+      window.localStorage.removeItem(INSTALL_DISMISS_KEY);
+      setInstallPromptEvent(null);
+      return;
+    }
+
+    window.localStorage.setItem(INSTALL_DISMISS_KEY, 'true');
+  }
+
+  function dismissInstallPrompt() {
+    setShowInstallPrompt(false);
+    window.localStorage.setItem(INSTALL_DISMISS_KEY, 'true');
   }
 
   function startQuiz(subject: string) {
@@ -622,6 +707,24 @@ function App() {
       <div className="page-glow page-glow-left" />
       <div className="page-glow page-glow-right" />
 
+      {!isInstalled && showInstallPrompt && installPromptEvent && (
+        <section className="install-sheet" role="dialog" aria-live="polite" aria-label="Install Review Buddy">
+          <div>
+            <p className="eyebrow">Install app</p>
+            <h2>Add Review Buddy to this device</h2>
+            <p>Open learning faster from your home screen with fewer browser steps.</p>
+          </div>
+          <div className="install-actions">
+            <button type="button" className="ghost-button ghost-button-small" onClick={dismissInstallPrompt}>
+              Not now
+            </button>
+            <button type="button" className="primary-button install-button" onClick={handleInstallApp}>
+              Install now
+            </button>
+          </div>
+        </section>
+      )}
+
       <header className="topbar">
         <div className="brand-lockup">
           <LogoMark />
@@ -657,10 +760,10 @@ function App() {
         <main className="auth-layout">
           <section className="hero-card">
             <p className="eyebrow">After-school support</p>
-            <h2>Learning that feels welcoming for kids, teens, and families.</h2>
+            <h2>Friendly learning for kids, teens, and the grown-ups helping them.</h2>
             <p className="hero-copy">
-              Sign in or create an account, then move into a clean learning page with subject
-              cards, full-screen question cards, scores, and simple progress tracking.
+              Choose a country, pick the right learner level, and start with a clear learning
+              space that feels simple on phones, tablets, and computers.
             </p>
 
             <div className="benefit-grid">
@@ -675,9 +778,9 @@ function App() {
 
           <section className="auth-card">
             <div className="panel-heading">
-              <p className="eyebrow">Get started</p>
+              <p className="eyebrow">Welcome</p>
               <h2>{authMode === 'signin' ? 'Sign in to continue' : 'Create a new account'}</h2>
-              <p>New student accounts begin with a 5-day Elite trial.</p>
+              <p>New learner accounts begin with a 5-day Elite trial.</p>
             </div>
 
             <div className="mode-toggle" role="tablist" aria-label="Account mode">
@@ -698,7 +801,7 @@ function App() {
             </div>
 
             <div className="sample-strip">
-              <p className="small-label">Try a sample account</p>
+              <p className="small-label">Try a sample sign-in</p>
               <div className="sample-buttons">
                 {sampleAccounts.map((sample) => (
                   <button
@@ -720,7 +823,7 @@ function App() {
                   className={`role-pill${profile.role === 'student' ? ' role-pill-active' : ''}`}
                   onClick={() => updateProfile('role', 'student')}
                 >
-                  Student
+                  Learner
                 </button>
                 <button
                   type="button"
@@ -808,9 +911,9 @@ function App() {
           <section className="dashboard-main">
             <section className="welcome-banner">
               <div>
-                <p className="eyebrow">Student page</p>
-                <h2>{getStageLabel(profile.stage)}</h2>
-                <p>{country.name} · {getPlanLabel(profile.plan)}</p>
+                <p className="eyebrow">Learning home</p>
+                <h2>{firstName}, choose what to practise next</h2>
+                <p>{country.name} · {getStageLabel(profile.stage)} · {getPlanLabel(profile.plan)}</p>
               </div>
               <div className="banner-actions">
                 <button type="button" className="ghost-button" onClick={logout}>
@@ -821,9 +924,9 @@ function App() {
 
             <section className="setup-panel">
               <div className="panel-heading">
-                <p className="eyebrow">Learning setup</p>
-                <h2>Pick a subject card to begin</h2>
-                <p>Each subject opens a full-screen question page and creates a fresh quiz set.</p>
+                <p className="eyebrow">Today&apos;s learning</p>
+                <h2>Choose a subject to begin</h2>
+                <p>Every subject opens a full learning page and brings a fresh set of questions.</p>
               </div>
 
               <div className="field-grid">
@@ -906,9 +1009,9 @@ function App() {
           <aside className="dashboard-side">
             <section className="side-card">
               <div className="panel-heading">
-                <p className="eyebrow">Leaderboard</p>
+                <p className="eyebrow">Top learners</p>
                 <h2>{profile.subject}</h2>
-                <p>Top scores for this subject.</p>
+                <p>Strong scores from learners practising this subject.</p>
               </div>
               <div className="leaderboard-list">
                 {leaderboard.map((entry, index) => (
@@ -925,9 +1028,9 @@ function App() {
 
             <section className="side-card">
               <div className="panel-heading">
-                <p className="eyebrow">Recent scores</p>
-                <h2>Latest results</h2>
-                <p>Your quiz history appears here.</p>
+                <p className="eyebrow">My progress</p>
+                <h2>Recent results</h2>
+                <p>Your latest quiz scores stay here for a quick check-in.</p>
               </div>
               <div className="history-list">
                 {attempts.length > 0 ? (
@@ -956,7 +1059,7 @@ function App() {
                 <h2>{quizState.activeSubject}</h2>
               </div>
               <button type="button" className="ghost-button ghost-button-small" onClick={quitQuiz}>
-                Quit
+                Back
               </button>
             </div>
 
@@ -983,9 +1086,10 @@ function App() {
                       <button
                         type="button"
                         className="speak-button"
+                        disabled={speakingKey === currentQuestion.visual.soundText}
                         onClick={() => speakPrompt(currentQuestion.visual?.soundText ?? currentQuestion.prompt)}
                       >
-                        Hear it
+                        {speakingKey === currentQuestion.visual.soundText ? 'Playing...' : 'Hear it'}
                       </button>
                     )}
                   </div>
@@ -1043,9 +1147,9 @@ function App() {
                     {quizState.result.percent}% score ({quizState.result.score}/{quizState.result.total})
                   </h3>
                   <p>
-                    {quizState.result.passed
-                      ? 'Well done. You completed this quiz successfully.'
-                      : 'Good effort. Try another fresh quiz to improve your score.'}
+                  {quizState.result.passed
+                      ? 'Well done. You finished this practice with a strong score.'
+                      : 'Good effort. Try another fresh set when you are ready.'}
                   </p>
                   <div className="result-actions">
                     <button type="button" className="primary-button" onClick={() => startQuiz(quizState.activeSubject)}>
@@ -1065,9 +1169,9 @@ function App() {
           <section className="dashboard-main">
             <section className="welcome-banner">
               <div>
-                <p className="eyebrow">Admin page</p>
-                <h2>Learning overview</h2>
-                <p>{metrics.country.name} · {metrics.country.curriculum}</p>
+                <p className="eyebrow">School overview</p>
+                <h2>Today&apos;s learning picture</h2>
+                <p>{metrics.country.name} · {metrics.country.curriculum} · family and learner view</p>
               </div>
               <div className="banner-actions">
                 <button type="button" className="ghost-button" onClick={logout}>
@@ -1078,11 +1182,11 @@ function App() {
 
             <section className="stats-grid">
               <article className="info-card">
-                <strong>Active learners</strong>
+                <strong>Learners today</strong>
                 <p>{metrics.activeLearners}</p>
               </article>
               <article className="info-card">
-                <strong>Live sessions</strong>
+                <strong>Learning right now</strong>
                 <p>{metrics.liveSessions}</p>
               </article>
               <article className="info-card">
@@ -1090,28 +1194,34 @@ function App() {
                 <p>{metrics.averageScore}%</p>
               </article>
               <article className="info-card">
-                <strong>Trial users</strong>
+                <strong>Trials running</strong>
                 <p>{metrics.trialUsers}</p>
+              </article>
+              <article className="info-card">
+                <strong>Families waiting</strong>
+                <p>{metrics.familiesWaiting}</p>
+              </article>
+              <article className="info-card">
+                <strong>Weekly growth</strong>
+                <p>+{metrics.weeklyGrowth}%</p>
               </article>
             </section>
 
             <section className="admin-grid">
               <article className="side-card">
                 <div className="panel-heading">
-                  <p className="eyebrow">Live sessions</p>
+                  <p className="eyebrow">Live learning</p>
                   <h2>Current learner activity</h2>
+                  <p>See who is active, what they are learning, and who may need support.</p>
                 </div>
                 <div className="table-list">
-                  {[
-                    { learner: 'Asha M.', subject: 'Mathematics', status: 'In progress', plan: 'Elite' },
-                    { learner: 'Noah R.', subject: 'History', status: 'Submitted', plan: 'Free' },
-                    { learner: 'Little Star', subject: 'Colouring', status: 'Playing', plan: 'Trial' },
-                  ].map((session) => (
+                  {metrics.liveActivity.map((session) => (
                     <div key={`${session.learner}-${session.subject}`} className="table-row">
                       <strong>{session.learner}</strong>
                       <span>{session.subject}</span>
                       <span>{session.plan}</span>
                       <span>{session.status}</span>
+                      <span>{session.support}</span>
                     </div>
                   ))}
                 </div>
@@ -1119,14 +1229,31 @@ function App() {
 
               <article className="side-card">
                 <div className="panel-heading">
-                  <p className="eyebrow">Admin access</p>
-                  <h2>What admins can do</h2>
+                  <p className="eyebrow">Support tools</p>
+                  <h2>What admins can see and manage</h2>
                 </div>
                 <ul className="simple-list">
                   {adminPrivileges.map((item) => (
                     <li key={item}>{item}</li>
                   ))}
                 </ul>
+              </article>
+
+              <article className="side-card">
+                <div className="panel-heading">
+                  <p className="eyebrow">Follow-up queue</p>
+                  <h2>Families and learners needing attention</h2>
+                </div>
+                <div className="history-list">
+                  {metrics.supportQueue.map((item) => (
+                    <article key={item.title} className="history-row">
+                      <div>
+                        <strong>{item.title}</strong>
+                        <span>{item.detail}</span>
+                      </div>
+                    </article>
+                  ))}
+                </div>
               </article>
             </section>
           </section>
@@ -1136,6 +1263,7 @@ function App() {
               <div className="panel-heading">
                 <p className="eyebrow">Top performers</p>
                 <h2>Leaderboard preview</h2>
+                <p>A quick look at the strongest recent subject scores.</p>
               </div>
               <div className="leaderboard-list">
                 {leaderboard.map((entry, index) => (
@@ -1145,6 +1273,42 @@ function App() {
                       <span>{getCountryByCode(entry.countryCode).name}</span>
                     </div>
                     <strong>{entry.score}%</strong>
+                  </article>
+                ))}
+              </div>
+            </section>
+
+            <section className="side-card">
+              <div className="panel-heading">
+                <p className="eyebrow">Popular subjects</p>
+                <h2>Where learners are spending time</h2>
+              </div>
+              <div className="history-list">
+                {metrics.subjectInsights.map((item) => (
+                  <article key={item.subject} className="history-row">
+                    <div>
+                      <strong>{item.subject}</strong>
+                      <span>{item.learners} learners · average {item.averageScore}%</span>
+                    </div>
+                    <strong>{item.trend}</strong>
+                  </article>
+                ))}
+              </div>
+            </section>
+
+            <section className="side-card">
+              <div className="panel-heading">
+                <p className="eyebrow">Plan mix</p>
+                <h2>How families are using access plans</h2>
+              </div>
+              <div className="history-list">
+                {metrics.planMix.map((item) => (
+                  <article key={item.label} className="history-row">
+                    <div>
+                      <strong>{item.label}</strong>
+                      <span>{item.detail}</span>
+                    </div>
+                    <strong>{item.count}</strong>
                   </article>
                 ))}
               </div>

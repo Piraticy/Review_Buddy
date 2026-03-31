@@ -32,6 +32,12 @@ button {
   cursor: pointer;
 }
 
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.7;
+  transform: none;
+}
+
 .app-shell {
   position: relative;
   overflow: hidden;
@@ -82,6 +88,49 @@ button {
   z-index: 1;
   max-width: 1240px;
   margin-inline: auto;
+}
+
+.install-sheet {
+  position: sticky;
+  top: 14px;
+  z-index: 3;
+  max-width: 1240px;
+  margin: 0 auto 18px;
+  padding: 16px 18px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border-radius: 24px;
+  background: color-mix(in srgb, var(--theme-surface) 90%, white 10%);
+  border: 1px solid color-mix(in srgb, var(--theme-primary) 18%, white);
+  box-shadow: 0 18px 34px rgba(15, 23, 42, 0.12);
+}
+
+.app-shell[data-theme='night'] .install-sheet {
+  background: rgba(15, 23, 42, 0.94);
+  border-color: rgba(148, 163, 184, 0.22);
+  box-shadow: 0 20px 36px rgba(2, 6, 23, 0.42);
+}
+
+.install-sheet h2 {
+  margin: 0 0 4px;
+  font-family: 'Baloo 2', 'Nunito', sans-serif;
+  line-height: 1;
+}
+
+.install-sheet p:last-child {
+  margin: 0;
+}
+
+.install-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.install-button {
+  min-width: 144px;
 }
 
 .topbar {
@@ -240,7 +289,7 @@ button {
 .empty-quiz,
 .side-card,
 .quiz-shell {
-  border-radius: 28px;
+  border-radius: 30px;
   padding: 24px;
 }
 
@@ -300,8 +349,9 @@ button {
 }
 
 .info-card {
-  border-radius: 22px;
+  border-radius: 24px;
   padding: 18px;
+  border: 1px solid color-mix(in srgb, var(--theme-primary) 14%, white);
 }
 
 .info-card strong {
@@ -445,8 +495,11 @@ button {
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  border-radius: 24px;
-  border: 1px solid color-mix(in srgb, var(--theme-primary) 8%, white);
+  border-radius: 28px;
+  padding: 22px 24px;
+  background: color-mix(in srgb, var(--theme-surface) 90%, white 10%);
+  border: 1px solid color-mix(in srgb, var(--theme-primary) 18%, white);
+  box-shadow: 0 18px 34px rgba(15, 23, 42, 0.08);
 }
 
 .ghost-button {
@@ -459,7 +512,7 @@ button {
 }
 
 .stats-grid {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .setup-panel {
@@ -488,9 +541,10 @@ button {
   text-align: left;
   border-radius: 24px;
   padding: 18px;
-  border: 1px solid color-mix(in srgb, var(--theme-primary) 16%, white);
+  border: 1px solid color-mix(in srgb, var(--theme-primary) 24%, white);
   background: color-mix(in srgb, var(--theme-surface) 92%, white 8%);
   color: var(--theme-ink);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--theme-primary) 8%, white);
 }
 
 .subject-icon {
@@ -513,7 +567,8 @@ button {
 }
 
 .app-shell[data-theme='night'] .subject-card {
-  border-color: rgba(148, 163, 184, 0.18);
+  border-color: rgba(148, 163, 184, 0.28);
+  box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.08);
 }
 
 .subject-card strong,
@@ -681,6 +736,11 @@ button {
   gap: 14px;
 }
 
+.table-row {
+  display: grid;
+  grid-template-columns: minmax(120px, 1.1fr) repeat(4, minmax(0, 0.9fr));
+}
+
 .leaderboard-list,
 .history-list,
 .table-list {
@@ -752,6 +812,10 @@ button {
   .dashboard-layout {
     grid-template-columns: 1fr;
   }
+
+  .stats-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 820px) {
@@ -782,6 +846,12 @@ button {
     grid-template-columns: 1fr;
   }
 
+  .install-sheet,
+  .install-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
   .footer-meta {
     align-items: flex-start;
   }
@@ -805,5 +875,9 @@ button {
   .choice-button,
   .palette-button {
     width: 100%;
+  }
+
+  .table-row {
+    grid-template-columns: 1fr;
   }
 }

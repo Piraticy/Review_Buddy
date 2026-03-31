@@ -1,0 +1,24 @@
+{
+  "name": "Review Buddy",
+  "short_name": "Review Buddy",
+  "description": "Friendly after-school learning for kids and teens on any device.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f3f7ff",
+  "theme_color": "#1d4ed8",
+  "icons": [
+    {
+      "src": "./review-buddy-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "./review-buddy-icon-maskable.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ]
+}

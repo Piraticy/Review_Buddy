@@ -33,7 +33,7 @@ type AuthMode = 'signin' | 'signup';
 type ThemeMode = 'country' | 'sunny' | 'ocean' | 'night';
 type Screen = 'auth' | 'student' | 'admin' | 'quiz';
 type StudentView = 'home' | 'subject' | 'review';
-type AdminView = 'overview' | 'countries' | 'staff' | 'followups' | 'reports';
+type AdminView = 'overview' | 'countries' | 'staff' | 'learners' | 'followups' | 'reports';
 type AssessmentKind = 'quiz' | 'exam';
 type ThemeVars = {
   '--theme-primary': string;
@@ -61,9 +61,17 @@ type ReviewSnapshot = {
   date: string;
 };
 
+type RegisteredUser = LearnerProfile & {
+  id: string;
+  username: string;
+  createdAt: string;
+  lastLoginAt?: string;
+};
+
 type StoredState = {
   profile?: LearnerProfile;
   attempts?: AttemptRecord[];
+  registeredUsers?: RegisteredUser[];
   authMode?: AuthMode;
   themeMode?: ThemeMode;
   screen?: Screen;
@@ -72,13 +80,7 @@ type StoredState = {
   adminView?: AdminView;
   selectedSubject?: string | null;
   reviewSnapshot?: ReviewSnapshot | null;
-};
-
-type SampleAccount = {
-  id: string;
-  label: string;
-  short: string;
-  profile: LearnerProfile;
+  staffMembers?: ReturnType<typeof getAdminMetrics>['staffMembers'];
 };
 
 type BeforeInstallPromptEvent = Event & {
@@ -88,8 +90,10 @@ type BeforeInstallPromptEvent = Event & {
 
 const STORAGE_KEY = 'review-buddy-state';
 const INSTALL_DISMISS_KEY = 'review-buddy-install-dismissed';
-const APP_VERSION = '1.4.1';
+const APP_VERSION = '1.5.0';
 const PRODUCTION_URL = 'https://review-buddy-gray.vercel.app';
+const DEFAULT_ADMIN_USERNAME = 'Admin';
+const DEFAULT_ADMIN_PASSWORD = 'admin';
 
 const COLOR_MAP: Record<string, string> = {
   Red: '#ef4444',
@@ -97,94 +101,6 @@ const COLOR_MAP: Record<string, string> = {
   Green: '#22c55e',
   Yellow: '#facc15',
 };
-
-const sampleAccounts: SampleAccount[] = [
-  {
-    id: 'free',
-    label: 'Free sample',
-    short: 'Free',
-    profile: {
-      fullName: 'Daniel Free',
-      email: 'free@reviewbuddy.app',
-      password: 'demo123',
-      role: 'student',
-      countryCode: 'US',
-      plan: 'free',
-      stage: 'teen',
-      level: 'Year 8',
-      mode: 'solo',
-      subject: 'Mathematics',
-    },
-  },
-  {
-    id: 'trial',
-    label: 'Trial sample',
-    short: 'Trial',
-    profile: {
-      fullName: 'Amina Trial',
-      email: 'trial@reviewbuddy.app',
-      password: 'demo123',
-      role: 'student',
-      countryCode: 'KE',
-      plan: 'trial',
-      stage: 'primary',
-      level: 'Grade 4',
-      mode: 'solo',
-      subject: 'Mathematics',
-    },
-  },
-  {
-    id: 'elite',
-    label: 'Elite sample',
-    short: 'Elite',
-    profile: {
-      fullName: 'Noor Elite',
-      email: 'elite@reviewbuddy.app',
-      password: 'demo123',
-      role: 'student',
-      countryCode: 'AE',
-      plan: 'elite',
-      stage: 'teen',
-      level: 'Year 10',
-      mode: 'solo',
-      subject: 'Biology',
-    },
-  },
-  {
-    id: 'kindergarten',
-    label: 'Kindergarten sample',
-    short: 'Kinder',
-    profile: {
-      fullName: 'Little Star',
-      email: 'kinder@reviewbuddy.app',
-      password: 'demo123',
-      role: 'student',
-      countryCode: 'TZ',
-      plan: 'trial',
-      stage: 'kindergarten',
-      level: 'Middle Class',
-      mode: 'solo',
-      subject: 'Colouring',
-    },
-  },
-  {
-    id: 'admin',
-    label: 'Admin sample',
-    short: 'Admin',
-    profile: {
-      fullName: 'Grace Admin',
-      email: 'admin@reviewbuddy.app',
-      password: 'demo123',
-      role: 'admin',
-      countryCode: 'GB',
-      plan: 'elite',
-      stage: 'teen',
-      level: 'Year 9',
-      mode: 'solo',
-      subject: 'Mathematics',
-    },
-  },
-];
 
 const themePresets: Record<Exclude<ThemeMode, 'country'>, ThemeVars> = {
   sunny: {
@@ -235,7 +151,7 @@ const adminPrivileges = [
 function createInitialProfile(): LearnerProfile {
   const countryCode = inferCountryCode();
   const stage: Stage = 'primary';
-  const subject = getAvailableSubjects(countryCode, stage, 'trial')[0];
+  const subject = getAvailableSubjects(countryCode, stage, 'free')[0];
 
   return {
     fullName: '',
@@ -243,12 +159,50 @@ function createInitialProfile(): LearnerProfile {
     password: '',
     role: 'student',
     countryCode,
-    plan: 'trial',
+    plan: 'free',
     stage,
     level: getLevelOptions(stage)[0],
     mode: 'solo',
     subject,
   };
+}
+
+function createDefaultAdminUser(): RegisteredUser {
+  const countryCode = 'US';
+
+  return {
+    id: 'default-admin',
+    username: DEFAULT_ADMIN_USERNAME,
+    fullName: 'Review Buddy Admin',
+    email: 'admin@reviewbuddy.app',
+    password: DEFAULT_ADMIN_PASSWORD,
+    role: 'admin',
+    countryCode,
+    plan: 'elite',
+    stage: 'teen',
+    level: 'Year 10',
+    mode: 'solo',
+    subject: 'Mathematics',
+    createdAt: new Date('2026-03-31T00:00:00.000Z').toISOString(),
+    lastLoginAt: undefined,
+  };
+}
+
+function ensureRegisteredUsers(users?: RegisteredUser[]) {
+  const adminUser = createDefaultAdminUser();
+  const safeUsers = users ?? [];
+  const hasAdmin = safeUsers.some(
+    (user) =>
+      user.role === 'admin' &&
+      (user.username.toLowerCase() === DEFAULT_ADMIN_USERNAME.toLowerCase() ||
+        user.email.toLowerCase() === adminUser.email.toLowerCase()),
+  );
+
+  if (hasAdmin) {
+    return safeUsers;
+  }
+
+  return [adminUser, ...safeUsers];
 }
 
 function getLearningMaterial(countryCode: string, subject: string, stage: Stage) {
@@ -489,9 +443,19 @@ function getCertificatePassLevel(percent: number) {
   return 'Practice needed';
 }
 
+function createUsername(fullName: string, email: string) {
+  const base = fullName.trim() || email.split('@')[0] || 'learner';
+
+  return base
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '.')
+    .replace(/^\.+|\.+$/g, '') || 'learner';
+}
+
 function App() {
   const [profile, setProfile] = useState<LearnerProfile>(createInitialProfile);
   const [attempts, setAttempts] = useState<AttemptRecord[]>([]);
+  const [registeredUsers, setRegisteredUsers] = useState<RegisteredUser[]>(() => ensureRegisteredUsers());
   const [authMode, setAuthMode] = useState<AuthMode>('signin');
   const [themeMode, setThemeMode] = useState<ThemeMode>('country');
   const [screen, setScreen] = useState<Screen>('auth');
@@ -500,6 +464,8 @@ function App() {
   const [selectedSubject, setSelectedSubject] = useState<string | null>(null);
   const [reviewSnapshot, setReviewSnapshot] = useState<ReviewSnapshot | null>(null);
   const [quizState, setQuizState] = useState<QuizState | null>(null);
+  const [signinIdentifier, setSigninIdentifier] = useState('');
+  const [authNotice, setAuthNotice] = useState('');
   const [isReady, setIsReady] = useState(false);
   const [isSliding, setIsSliding] = useState(false);
   const [speakingKey, setSpeakingKey] = useState<string | null>(null);
@@ -509,6 +475,11 @@ function App() {
   const [adminFocusCode, setAdminFocusCode] = useState(() => createInitialProfile().countryCode);
   const [staffMembers, setStaffMembers] = useState(() => getAdminMetrics(createInitialProfile().countryCode).staffMembers);
   const [adminNotice, setAdminNotice] = useState('Choose a tool to manage staff, countries, or reports.');
+  const [staffDraft, setStaffDraft] = useState({
+    name: '',
+    role: '',
+    focus: '',
+  });
   const speechKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -524,6 +495,7 @@ function App() {
 
       if (saved.profile) setProfile(saved.profile);
       if (saved.attempts) setAttempts(saved.attempts);
+      if (saved.registeredUsers) setRegisteredUsers(ensureRegisteredUsers(saved.registeredUsers));
       if (saved.authMode) setAuthMode(saved.authMode);
       if (saved.themeMode) setThemeMode(saved.themeMode);
       if (saved.screen) setScreen(saved.screen);
@@ -532,6 +504,7 @@ function App() {
       if (saved.selectedSubject) setSelectedSubject(saved.selectedSubject);
       if (saved.reviewSnapshot) setReviewSnapshot(saved.reviewSnapshot);
       if (saved.quizState) setQuizState(saved.quizState);
+      if (saved.staffMembers) setStaffMembers(saved.staffMembers);
     } catch {
       window.localStorage.removeItem(STORAGE_KEY);
     } finally {
@@ -586,6 +559,7 @@ function App() {
       JSON.stringify({
         profile,
         attempts,
+        registeredUsers,
         authMode,
         themeMode,
         screen,
@@ -594,9 +568,10 @@ function App() {
         selectedSubject,
         reviewSnapshot,
         quizState,
+        staffMembers,
       } satisfies StoredState),
     );
-  }, [adminView, attempts, authMode, isReady, profile, quizState, reviewSnapshot, screen, selectedSubject, studentView, themeMode]);
+  }, [adminView, attempts, authMode, isReady, profile, quizState, registeredUsers, reviewSnapshot, screen, selectedSubject, staffMembers, studentView, themeMode]);
 
   useEffect(() => {
     const levelOptions = getLevelOptions(profile.stage);
@@ -637,6 +612,21 @@ function App() {
     quizState?.result ?? undefined,
   );
   const metrics = getAdminMetrics(adminMetricsCode);
+  const learnerRegistrations = registeredUsers.filter((entry) => entry.role === 'student');
+  const registrationsByCountry = COUNTRIES.map((entry) => {
+    const matchingUsers = learnerRegistrations.filter((user) => user.countryCode === entry.code);
+    const sampleCountry = metrics.registeredCountries.find((countryEntry) => countryEntry.code === entry.code);
+
+    return {
+      code: entry.code,
+      learners: matchingUsers.length,
+      families: matchingUsers.length === 0 ? 0 : Math.max(1, Math.ceil(matchingUsers.length * 0.6)),
+      staffLead: sampleCountry?.staffLead ?? 'Waiting for staff assignment',
+    };
+  }).filter((entry) => entry.learners > 0);
+  const recentRegistrations = [...learnerRegistrations].sort(
+    (left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime(),
+  );
   const firstName = profile.fullName.trim().split(' ')[0] || 'Learner';
   const learningMaterial = getLearningMaterial(profile.countryCode, activeStudentSubject, profile.stage);
   const hasEliteReview = profile.plan === 'elite' && reviewSnapshot?.subject === activeStudentSubject;
@@ -740,6 +730,22 @@ function App() {
     };
   }
 
+  function createRegisteredUser(next: LearnerProfile): RegisteredUser {
+    const enriched = withDisplayName({
+      ...next,
+      email: next.email.trim(),
+      role: 'student',
+    });
+
+    return {
+      ...enriched,
+      id: `user-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+      username: createUsername(enriched.fullName, enriched.email),
+      createdAt: new Date().toISOString(),
+      lastLoginAt: new Date().toISOString(),
+    };
+  }
+
   function enterWorkspace(nextProfile: LearnerProfile) {
     setProfile(nextProfile);
     setQuizState(null);
@@ -751,12 +757,49 @@ function App() {
 
   function handleAuthSubmit(event: FormEvent) {
     event.preventDefault();
-    enterWorkspace(withDisplayName(profile));
-  }
+    setAuthNotice('');
 
-  function useSampleAccount(sample: SampleAccount) {
-    setAuthMode('signin');
-    enterWorkspace(sample.profile);
+    if (authMode === 'signup') {
+      const email = profile.email.trim().toLowerCase();
+      const alreadyExists = registeredUsers.some((user) => user.email.toLowerCase() === email);
+
+      if (alreadyExists) {
+        setAuthNotice('That email is already registered. Please sign in instead.');
+        return;
+      }
+
+      const newUser = createRegisteredUser(profile);
+      setRegisteredUsers((current) => ensureRegisteredUsers([...current, newUser]));
+      setSigninIdentifier(newUser.email);
+      setAdminNotice(`${newUser.fullName} was added to registered learners.`);
+      enterWorkspace(newUser);
+      return;
+    }
+
+    const identifier = signinIdentifier.trim().toLowerCase();
+    const matchedUser = registeredUsers.find(
+      (user) =>
+        user.email.toLowerCase() === identifier ||
+        user.username.toLowerCase() === identifier ||
+        (user.role === 'admin' && identifier === DEFAULT_ADMIN_USERNAME.toLowerCase()),
+    );
+
+    if (!matchedUser || matchedUser.password !== profile.password) {
+      setAuthNotice('We could not find that login. Check the details and try again.');
+      return;
+    }
+
+    const nextUser = {
+      ...matchedUser,
+      lastLoginAt: new Date().toISOString(),
+    };
+
+    setRegisteredUsers((current) =>
+      ensureRegisteredUsers(
+        current.map((user) => (user.id === matchedUser.id ? nextUser : user)),
+      ),
+    );
+    enterWorkspace(nextUser);
   }
 
   function logout() {
@@ -764,6 +807,13 @@ function App() {
       window.speechSynthesis.cancel();
     }
     setSpeakingKey(null);
+    setAuthMode('signin');
+    setAuthNotice('');
+    setSigninIdentifier('');
+    setProfile((current) => ({
+      ...createInitialProfile(),
+      countryCode: current.countryCode,
+    }));
     setScreen('auth');
     setStudentView('home');
     setAdminView('overview');
@@ -793,33 +843,51 @@ function App() {
     window.localStorage.setItem(INSTALL_DISMISS_KEY, 'true');
   }
 
-  function addSampleStaffMember() {
+  function addStaffMember() {
     const focusCountry = getCountryByCode(adminFocusCode);
+    if (!staffDraft.name.trim() || !staffDraft.role.trim() || !staffDraft.focus.trim()) {
+      setAdminNotice('Add a staff name, role, and support focus before saving.');
+      return;
+    }
+
     setStaffMembers((current) => [
       ...current,
       {
-        name: `Coach ${current.length + 1}`,
-        role: 'Learning guide',
-        focus: `${focusCountry.name} learner support`,
+        name: staffDraft.name.trim(),
+        role: staffDraft.role.trim(),
+        focus: `${staffDraft.focus.trim()} · ${focusCountry.name}`,
         status: 'Ready to assign',
       },
     ]);
-    setAdminNotice(`A sample staff profile was added for ${focusCountry.name}.`);
+    setStaffDraft({
+      name: '',
+      role: '',
+      focus: '',
+    });
+    setAdminNotice(`A new staff profile was added for ${focusCountry.name}.`);
   }
 
-  function removeSampleStaffMember() {
-    setStaffMembers((current) => current.slice(0, -1));
-    setAdminNotice('The last sample staff profile was removed.');
+  function removeStaffMember(name: string) {
+    setStaffMembers((current) => current.filter((member) => member.name !== name));
+    setAdminNotice(`${name} was removed from the staff list.`);
   }
 
   function addCountryFollowUp() {
     const focusCountry = getCountryByCode(adminFocusCode);
-    setAdminNotice(`A new sample follow-up was created for families in ${focusCountry.name}.`);
+    setAdminNotice(`A new follow-up item was created for families in ${focusCountry.name}.`);
   }
 
   function exportCountryReport() {
     const focusCountry = getCountryByCode(adminFocusCode);
-    setAdminNotice(`Sample report prepared for ${focusCountry.name}.`);
+    setAdminNotice(`A country report is ready for ${focusCountry.name}.`);
+  }
+
+  function removeRegisteredLearner(userId: string) {
+    const learner = registeredUsers.find((entry) => entry.id === userId);
+    if (!learner || learner.role !== 'student') return;
+
+    setRegisteredUsers((current) => current.filter((entry) => entry.id !== userId));
+    setAdminNotice(`${learner.fullName} was removed from registered learners.`);
   }
 
   function openSubject(subject: string) {
@@ -1168,60 +1236,48 @@ function App() {
             <div className="panel-heading">
               <p className="eyebrow">Welcome</p>
               <h2>{authMode === 'signin' ? 'Sign in to continue' : 'Create a new account'}</h2>
-              <p>New learner accounts begin with a 5-day Elite trial.</p>
+              <p>
+                All plans are open during live testing, so learners can pick the one that fits them
+                best without any charging step.
+              </p>
             </div>
 
             <div className="mode-toggle" role="tablist" aria-label="Account mode">
               <button
                 type="button"
                 className={`mode-toggle-button${authMode === 'signin' ? ' mode-toggle-button-active' : ''}`}
-                onClick={() => setAuthMode('signin')}
+                onClick={() => {
+                  setAuthMode('signin');
+                  setAuthNotice('');
+                  updateProfile('password', '');
+                }}
               >
                 Sign in
               </button>
               <button
                 type="button"
                 className={`mode-toggle-button${authMode === 'signup' ? ' mode-toggle-button-active' : ''}`}
-                onClick={() => setAuthMode('signup')}
+                onClick={() => {
+                  setAuthMode('signup');
+                  setAuthNotice('');
+                  setProfile((current) => ({
+                    ...current,
+                    role: 'student',
+                    password: '',
+                  }));
+                }}
               >
                 Register
               </button>
             </div>
 
-            <div className="sample-strip">
-              <p className="small-label">Try a sample sign-in</p>
-              <div className="sample-buttons">
-                {sampleAccounts.map((sample) => (
-                  <button
-                    key={sample.id}
-                    type="button"
-                    className="sample-button"
-                    onClick={() => useSampleAccount(sample)}
-                  >
-                    {sample.short}
-                  </button>
-                ))}
-              </div>
+            <div className="live-access-note">
+              <p className="small-label">Live access</p>
+              <strong>Admin login</strong>
+              <p>Username: {DEFAULT_ADMIN_USERNAME} · Password: {DEFAULT_ADMIN_PASSWORD}</p>
             </div>
 
             <form className="auth-form" onSubmit={handleAuthSubmit}>
-              <div className="role-pills">
-                <button
-                  type="button"
-                  className={`role-pill${profile.role === 'student' ? ' role-pill-active' : ''}`}
-                  onClick={() => updateProfile('role', 'student')}
-                >
-                  Learner
-                </button>
-                <button
-                  type="button"
-                  className={`role-pill${profile.role === 'admin' ? ' role-pill-active' : ''}`}
-                  onClick={() => updateProfile('role', 'admin')}
-                >
-                  Admin
-                </button>
-              </div>
-
               {authMode === 'signup' && (
                 <label>
                   Full name
@@ -1235,12 +1291,16 @@ function App() {
               )}
 
               <label>
-                Email
+                {authMode === 'signin' ? 'Email or username' : 'Email'}
                 <input
-                  type="email"
-                  value={profile.email}
-                  onChange={(event) => updateProfile('email', event.target.value)}
-                  placeholder="name@example.com"
+                  type={authMode === 'signin' ? 'text' : 'email'}
+                  value={authMode === 'signin' ? signinIdentifier : profile.email}
+                  onChange={(event) =>
+                    authMode === 'signin'
+                      ? setSigninIdentifier(event.target.value)
+                      : updateProfile('email', event.target.value)
+                  }
+                  placeholder={authMode === 'signin' ? 'Email or Admin' : 'name@example.com'}
                   required
                 />
               </label>
@@ -1272,21 +1332,51 @@ function App() {
                     </select>
                   </label>
 
-                  {profile.role === 'student' && (
-                    <label>
-                      Learner group
-                      <select
-                        value={profile.stage}
-                        onChange={(event) => updateProfile('stage', event.target.value as Stage)}
-                      >
-                        <option value="kindergarten">Little learners</option>
-                        <option value="primary">Growing learners</option>
-                        <option value="teen">Teen learners</option>
-                      </select>
-                    </label>
-                  )}
+                  <label>
+                    Learner group
+                    <select
+                      value={profile.stage}
+                      onChange={(event) => updateProfile('stage', event.target.value as Stage)}
+                    >
+                      <option value="kindergarten">Little learners</option>
+                      <option value="primary">Growing learners</option>
+                      <option value="teen">Teen learners</option>
+                    </select>
+                  </label>
                 </div>
               )}
+
+              {authMode === 'signup' && (
+                <div className="field-grid">
+                  <label>
+                    Level
+                    <select
+                      value={profile.level}
+                      onChange={(event) => updateProfile('level', event.target.value)}
+                    >
+                      {getLevelOptions(profile.stage).map((option) => (
+                        <option key={option} value={option}>
+                          {option}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <label>
+                    Plan
+                    <select
+                      value={profile.plan}
+                      onChange={(event) => updateProfile('plan', event.target.value as Plan)}
+                    >
+                      <option value="free">Free</option>
+                      <option value="trial">Trial</option>
+                      <option value="elite">Elite</option>
+                    </select>
+                  </label>
+                </div>
+              )}
+
+              {authNotice && <p className="auth-notice">{authNotice}</p>}
 
               <button className="primary-button" type="submit">
                 {authMode === 'signin' ? 'Continue' : 'Create account'}
@@ -1472,6 +1562,20 @@ function App() {
                     <span className="page-chip">Quick quiz</span>
                     <span className="page-chip">Full exam</span>
                     {profile.plan === 'elite' && <span className="page-chip">Review quiz</span>}
+                  </div>
+                  <div className="note-grid">
+                    <article className="info-card">
+                      <strong>{country.name}</strong>
+                      <p>{country.curriculum} · {country.curriculumFocus}</p>
+                    </article>
+                    <article className="info-card">
+                      <strong>{profile.level}</strong>
+                      <p>{getStageLabel(profile.stage)} learning notes shaped for this level.</p>
+                    </article>
+                    <article className="info-card">
+                      <strong>{activeStudentSubject}</strong>
+                      <p>Use notes first, then move into a fresh quiz or a longer exam.</p>
+                    </article>
                   </div>
                   <div className="history-list">
                     {learningMaterial.points.map((point) => (
@@ -1761,7 +1865,7 @@ function App() {
                   <div>
                     <p className="eyebrow">School overview</p>
                     <h2>Today&apos;s learning picture</h2>
-                    <p>{metrics.country.name} · {metrics.country.curriculum} · shorter admin view</p>
+                    <p>{metrics.country.name} · {metrics.country.curriculum} · live learner and staff view</p>
                   </div>
                   <div className="banner-actions">
                     <button type="button" className="ghost-button" onClick={logout}>
@@ -1772,20 +1876,20 @@ function App() {
 
                 <section className="stats-grid">
                   <article className="info-card">
-                    <strong>Learners today</strong>
-                    <p>{metrics.activeLearners}</p>
+                    <strong>Registered learners</strong>
+                    <p>{learnerRegistrations.length}</p>
+                  </article>
+                  <article className="info-card">
+                    <strong>Countries with sign-ups</strong>
+                    <p>{registrationsByCountry.length}</p>
                   </article>
                   <article className="info-card">
                     <strong>Learning right now</strong>
                     <p>{metrics.liveSessions}</p>
                   </article>
                   <article className="info-card">
-                    <strong>Average score</strong>
-                    <p>{metrics.averageScore}%</p>
-                  </article>
-                  <article className="info-card">
-                    <strong>Trials running</strong>
-                    <p>{metrics.trialUsers}</p>
+                    <strong>Staff online</strong>
+                    <p>{staffMembers.length}</p>
                   </article>
                 </section>
 
@@ -1812,6 +1916,11 @@ function App() {
                       <span className="subject-icon">👥</span>
                       <strong>Staff</strong>
                       <span>Open the staff page with extra details and management actions.</span>
+                    </button>
+                    <button type="button" className="subject-card" onClick={() => setAdminView('learners')}>
+                      <span className="subject-icon">🧾</span>
+                      <strong>Registered learners</strong>
+                      <span>See who signed up, their country, selected plan, and latest login.</span>
                     </button>
                     <button type="button" className="subject-card" onClick={() => setAdminView('followups')}>
                       <span className="subject-icon">📌</span>
@@ -1862,10 +1971,11 @@ function App() {
                   <div className="page-chip-row">
                     <span className="page-chip">Overview</span>
                     <span className="page-chip page-chip-active">Countries</span>
+                    <span className="page-chip">Registered learners</span>
                     <span className="page-chip">Follow-ups</span>
                   </div>
                   <div className="country-list">
-                    {metrics.registeredCountries.map((entry) => {
+                    {registrationsByCountry.length > 0 ? registrationsByCountry.map((entry) => {
                       const entryCountry = getCountryByCode(entry.code);
 
                       return (
@@ -1880,7 +1990,9 @@ function App() {
                           <span>Lead: {entry.staffLead}</span>
                         </button>
                       );
-                    })}
+                    }) : (
+                      <p className="empty-state">New sign-ups will add live country totals here on this browser.</p>
+                    )}
                   </div>
                 </section>
               </section>
@@ -1912,7 +2024,7 @@ function App() {
                   <div>
                     <p className="eyebrow">Admin page</p>
                     <h2>Staff</h2>
-                    <p>View staff roles, support focus, and add or remove sample staff records.</p>
+                    <p>View staff roles, support focus, and add or remove live staff records.</p>
                   </div>
                   <div className="banner-actions">
                     <button type="button" className="ghost-button" onClick={() => setAdminView('overview')}>
@@ -1930,14 +2042,38 @@ function App() {
                   <div className="page-chip-row">
                     <span className="page-chip">Overview</span>
                     <span className="page-chip page-chip-active">Staff</span>
+                    <span className="page-chip">Registered learners</span>
                     <span className="page-chip">Reports</span>
                   </div>
+                  <div className="field-grid">
+                    <label>
+                      Staff name
+                      <input
+                        value={staffDraft.name}
+                        onChange={(event) => setStaffDraft((current) => ({ ...current, name: event.target.value }))}
+                        placeholder="e.g. Ms. Amina"
+                      />
+                    </label>
+                    <label>
+                      Role
+                      <input
+                        value={staffDraft.role}
+                        onChange={(event) => setStaffDraft((current) => ({ ...current, role: event.target.value }))}
+                        placeholder="e.g. Family success lead"
+                      />
+                    </label>
+                    <label className="field-span-2">
+                      Support focus
+                      <input
+                        value={staffDraft.focus}
+                        onChange={(event) => setStaffDraft((current) => ({ ...current, focus: event.target.value }))}
+                        placeholder="e.g. Parent support and learner follow-up"
+                      />
+                    </label>
+                  </div>
                   <div className="banner-actions">
-                    <button type="button" className="ghost-button ghost-button-small" onClick={addSampleStaffMember}>
-                      Add staff
-                    </button>
-                    <button type="button" className="ghost-button ghost-button-small" onClick={removeSampleStaffMember}>
-                      Remove staff
+                    <button type="button" className="ghost-button ghost-button-small" onClick={addStaffMember}>
+                      Save staff member
                     </button>
                   </div>
                   <div className="history-list">
@@ -1947,7 +2083,16 @@ function App() {
                           <strong>{member.name}</strong>
                           <span>{member.role} · {member.focus}</span>
                         </div>
-                        <strong>{member.status}</strong>
+                        <div className="row-actions">
+                          <strong>{member.status}</strong>
+                          <button
+                            type="button"
+                            className="ghost-button ghost-button-small"
+                            onClick={() => removeStaffMember(member.name)}
+                          >
+                            Remove
+                          </button>
+                        </div>
                       </article>
                     ))}
                   </div>
@@ -1974,6 +2119,85 @@ function App() {
                 </section>
               </aside>
             </>
+          ) : adminView === 'learners' ? (
+            <>
+              <section className="dashboard-main">
+                <section className="welcome-banner">
+                  <div>
+                    <p className="eyebrow">Admin page</p>
+                    <h2>Registered learners</h2>
+                    <p>Every learner account created on this browser appears here for admin review.</p>
+                  </div>
+                  <div className="banner-actions">
+                    <button type="button" className="ghost-button" onClick={() => setAdminView('overview')}>
+                      Back to overview
+                    </button>
+                  </div>
+                </section>
+
+                <section className="setup-panel">
+                  <div className="panel-heading">
+                    <p className="eyebrow">Learner records</p>
+                    <h2>New accounts and plan choices</h2>
+                    <p>Use this page to check who joined, what country they selected, and which plan they chose.</p>
+                  </div>
+                  <div className="page-chip-row">
+                    <span className="page-chip">Overview</span>
+                    <span className="page-chip">Countries</span>
+                    <span className="page-chip page-chip-active">Registered learners</span>
+                    <span className="page-chip">Staff</span>
+                  </div>
+                  <div className="history-list">
+                    {recentRegistrations.length > 0 ? recentRegistrations.map((entry) => (
+                      <article key={entry.id} className="history-row">
+                        <div>
+                          <strong>{entry.fullName}</strong>
+                          <span>
+                            {getCountryByCode(entry.countryCode).name} · {getStageLabel(entry.stage)} · {getPlanLabel(entry.plan)}
+                          </span>
+                          <span>
+                            {entry.email} · Joined {new Date(entry.createdAt).toLocaleDateString()}
+                          </span>
+                        </div>
+                        <div className="row-actions">
+                          <strong>{entry.lastLoginAt ? `Last login ${new Date(entry.lastLoginAt).toLocaleDateString()}` : 'New account'}</strong>
+                          <button
+                            type="button"
+                            className="ghost-button ghost-button-small"
+                            onClick={() => removeRegisteredLearner(entry.id)}
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      </article>
+                    )) : (
+                      <p className="empty-state">Learner sign-ups will appear here after registration.</p>
+                    )}
+                  </div>
+                </section>
+              </section>
+
+              <aside className="dashboard-side">
+                <section className="side-card">
+                  <div className="panel-heading">
+                    <p className="eyebrow">Registration summary</p>
+                    <h2>{learnerRegistrations.length} learner accounts</h2>
+                    <p>Countries and plan choices update as new learners register.</p>
+                  </div>
+                  <div className="history-list">
+                    {(registrationsByCountry.length > 0 ? registrationsByCountry : metrics.registeredCountries.slice(0, 3)).map((entry) => (
+                      <article key={entry.code} className="history-row">
+                        <div>
+                          <strong>{getCountryByCode(entry.code).name}</strong>
+                          <span>{entry.learners} learner{entry.learners === 1 ? '' : 's'} · {entry.families} families</span>
+                        </div>
+                        <strong>{entry.staffLead}</strong>
+                      </article>
+                    ))}
+                  </div>
+                </section>
+              </aside>
+            </>
           ) : adminView === 'followups' ? (
             <>
               <section className="dashboard-main">
@@ -1981,7 +2205,7 @@ function App() {
                   <div>
                     <p className="eyebrow">Admin page</p>
                     <h2>Follow-up queue</h2>
-                    <p>Country-aware follow-up items for learners, families, and trials.</p>
+                    <p>Country-aware follow-up items for learners, families, and plan support.</p>
                   </div>
                   <div className="banner-actions">
                     <button type="button" className="ghost-button" onClick={() => setAdminView('overview')}>

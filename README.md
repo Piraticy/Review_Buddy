@@ -1,16 +1,16 @@
 # Review Buddy
 
 Review Buddy is a responsive after-school learning app for kids and teens.
-It supports country-aware onboarding, age-level learning paths, student and admin roles, and quiz access based on Free, Elite Trial, or Elite plans.
+It supports country-aware onboarding, age-level learning paths, learner and admin roles, and a live frontend register/sign-in flow.
 
-Current version: `1.4.1`
+Current version: `1.5.0`
 
 Production URL: `https://review-buddy-gray.vercel.app`
 
 ## What the app includes
 
-- Student login and quick sample accounts
-- Admin login UI with a view-first control dashboard
+- Live learner registration and sign-in
+- Default admin login with username `Admin` and password `admin`
 - Country-aware subject mapping, continent/capital context, and theme styling
 - Kindergarten, primary, and teen learning flows
 - Dynamic quiz generation so each session feels different
@@ -18,21 +18,21 @@ Production URL: `https://review-buddy-gray.vercel.app`
 - Kindergarten colouring, alphabet, numbers, picture puzzle, and spoken prompt support
 - Installable app support with manifest, offline shell, and automatic install prompt handling
 - Solo and group quiz modes
-- Free, 5-day Elite Trial, and Elite access rules
+- Free, Trial, and Elite plan choices with no charging step during live testing
 - 15-question Free quizzes for primary and teen learners, with longer Elite practice sets
-- Subject pages with learning notes, quick quiz, and full exam choices
+- Subject pages with country-aware learning notes, quick quiz, and full exam choices
 - Elite-only review pages that show learner answers against the correct answers
 - Score tracking and subject leaderboards
 - Elite certificate generation with logo, pass level, grade, and owner signature
 - Softer learner-facing wording and a shorter, cleaner admin dashboard
-- Admin subpages for countries, staff, follow-up queues, and reports
+- Admin subpages for countries, staff, registered learners, follow-up queues, and reports
 - Responsive design for mobile, tablet, and desktop
 
 ## Roles
 
 ### Student
 
-- Choose country, learning stage, level, mode, and subject
+- Register with name, email, password, country, level, and plan
 - Take quizzes or exams with changing multiple-choice questions
 - Enter a subject page first, then choose learning notes, a quiz, or a full exam
 - View scores and leaderboard placement
@@ -42,16 +42,19 @@ Production URL: `https://review-buddy-gray.vercel.app`
 
 ### Admin
 
+- Sign in with the default admin account
 - View live learner activity and support status
-- Track trials, family follow-ups, and weekly growth
-- Review registered countries, leaderboards, popular subjects, plan usage, and staff assignments
+- Track countries, registered learners, follow-ups, and weekly activity
+- Manage staff entries directly in the admin dashboard
 - Open deeper admin pages without keeping the overview screen too long
 
 ## Access plans
 
-- Free: limited questions, fewer subjects, scores, and leaderboard view
-- Elite Trial: full access for 5 days
-- Elite: full subject library, deeper feedback, and richer review flow
+- Free: shorter daily practice
+- Trial: longer practice flow
+- Elite: full review page and certificate tools
+
+All plans are open during live testing, so learners can choose any plan without a payment step.
 
 ## Tech stack
 
@@ -59,7 +62,7 @@ Production URL: `https://review-buddy-gray.vercel.app`
 - TypeScript
 - Vite
 - Plain CSS
-- GitHub Pages for free deployment
+- Vercel for live deployment
 
 ## Run locally
 
@@ -74,18 +77,16 @@ npm run dev
 npm run build
 ```
 
-## Free deployment
+## Deployment
 
-Review Buddy is configured for GitHub Pages deployment through GitHub Actions.
-GitHub Pages is free for public repositories, although GitHub account restrictions can still block Actions from running.
-
-The project is also prepared for Vercel deployment with `vercel.json`, which is a good free fallback when GitHub Pages is blocked.
-
-- Current live Vercel URL: `https://review-buddy-gray.vercel.app`
-- Workflow file: `.github/workflows/deploy.yml`
-- Expected deployment URL: `https://piraticy.github.io/Review_Buddy/`
+- Live production URL: `https://review-buddy-gray.vercel.app`
 - Vercel command after login: `npx vercel --prod`
 - Vercel login command: `npx vercel login`
+
+## Current live-data note
+
+Learner registration and admin records are currently stored in the browser for this frontend build.
+That means new learner accounts appear in the admin pages on the same browser/device unless a backend is added later.
 
 ## Product message
 

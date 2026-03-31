@@ -380,19 +380,9 @@ export function inferCountryCode() {
   return COUNTRIES[0].code;
 }
 
-export function getAvailableSubjects(countryCode: string, stage: Stage, plan: Plan) {
+export function getAvailableSubjects(countryCode: string, stage: Stage, _plan: Plan) {
   const country = getCountryByCode(countryCode);
-  const allSubjects = country.subjects[stage];
-
-  if (plan === 'free') {
-    return stage === 'kindergarten' ? allSubjects.slice(0, 2) : allSubjects.slice(0, 4);
-  }
-
-  if (plan === 'trial') {
-    return stage === 'kindergarten' ? allSubjects.slice(0, 3) : allSubjects.slice(0, 6);
-  }
-
-  return allSubjects;
+  return country.subjects[stage];
 }
 
 export function getQuestionCount(plan: Plan, stage: Stage, kind: 'quiz' | 'exam' = 'quiz') {
@@ -842,21 +832,21 @@ export function getPlanLabel(plan: Plan) {
 export function getPlanDetails(plan: Plan) {
   if (plan === 'free') {
     return {
-      badge: 'Starter plan',
-      description: 'Up to 15 questions for growing and teen learners, with starter access for daily practice.',
+      badge: 'Free access',
+      description: 'Open to everyone during live testing, with shorter practice sets for daily learning.',
     };
   }
 
   if (plan === 'trial') {
     return {
-      badge: '5-day Elite trial',
-      description: 'A 5-day preview with longer quizzes, more subjects, and richer learning support.',
+      badge: 'Trial access',
+      description: 'Also open during live testing, with longer quiz sets and a richer review flow.',
     };
   }
 
   return {
     badge: 'Elite access',
-    description: 'Full subject access, longer quiz sets, and certificate rewards for strong results.',
+    description: 'Also open during live testing, with the full review page and certificate tools.',
   };
 }
 

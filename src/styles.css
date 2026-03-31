@@ -412,6 +412,26 @@ button:disabled {
   border: 1px solid color-mix(in srgb, var(--theme-primary) 16%, white);
 }
 
+.live-access-note {
+  padding: 16px 18px;
+  border-radius: 20px;
+  background: color-mix(in srgb, var(--theme-surface) 94%, white 6%);
+  border: 1px solid color-mix(in srgb, var(--theme-primary) 14%, white);
+}
+
+.live-access-note strong,
+.auth-notice {
+  display: block;
+}
+
+.auth-notice {
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--theme-secondary) 12%, var(--theme-surface));
+  color: var(--theme-ink);
+  font-weight: 700;
+}
+
 .live-link,
 .footer-link {
   color: var(--theme-primary);
@@ -425,7 +445,6 @@ button:disabled {
 }
 
 .sample-buttons,
-.role-pills,
 .banner-actions,
 .result-actions,
 .palette-row,
@@ -452,8 +471,6 @@ button:disabled {
   color: var(--theme-ink);
 }
 
-.sample-button,
-.role-pill,
 .ghost-button,
 .choice-button,
 .speak-button,
@@ -462,8 +479,6 @@ button:disabled {
   color: var(--theme-ink);
 }
 
-.app-shell[data-theme='night'] .sample-button,
-.app-shell[data-theme='night'] .role-pill,
 .app-shell[data-theme='night'] .ghost-button,
 .app-shell[data-theme='night'] .choice-button,
 .app-shell[data-theme='night'] .speak-button,
@@ -474,7 +489,6 @@ button:disabled {
   color: #f8fafc;
 }
 
-.role-pill-active,
 .subject-card-active,
 .choice-button-selected,
 .palette-button-active {
@@ -497,6 +511,7 @@ button:disabled {
 
 .auth-form input,
 .auth-form select,
+.setup-panel input,
 .setup-panel select {
   width: 100%;
   border: 1px solid color-mix(in srgb, var(--theme-primary) 18%, white);
@@ -508,6 +523,7 @@ button:disabled {
 
 .app-shell[data-theme='night'] .auth-form input,
 .app-shell[data-theme='night'] .auth-form select,
+.app-shell[data-theme='night'] .setup-panel input,
 .app-shell[data-theme='night'] .setup-panel select {
   background: rgba(15, 23, 42, 0.76);
   color: #f8fafc;
@@ -516,6 +532,7 @@ button:disabled {
 
 .auth-form input:focus,
 .auth-form select:focus,
+.setup-panel input:focus,
 .setup-panel select:focus {
   outline: none;
   border-color: var(--theme-primary);
@@ -578,6 +595,12 @@ button:disabled {
 
 .option-grid {
   grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.note-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
 }
 
 .subject-card {
@@ -859,6 +882,18 @@ button:disabled {
   gap: 12px;
 }
 
+.row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 10px;
+}
+
+.field-span-2 {
+  grid-column: span 2;
+}
+
 .country-button {
   display: grid;
   gap: 4px;
@@ -954,11 +989,36 @@ button:disabled {
   .option-grid {
     grid-template-columns: 1fr;
   }
+
+  .note-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 820px) {
   .app-shell {
     padding-inline: 16px;
+  }
+
+  .topbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .theme-toolbar {
+    justify-content: flex-end;
+  }
+
+  .brand-title {
+    max-width: none;
+  }
+
+  .auth-layout > .auth-card {
+    order: 1;
+  }
+
+  .auth-layout > .hero-card {
+    order: 2;
   }
 
   .topbar,
@@ -1005,7 +1065,6 @@ button:disabled {
 @media (max-width: 520px) {
   .mode-toggle,
   .sample-buttons,
-  .role-pills,
   .banner-actions,
   .result-actions,
   .palette-row {
@@ -1013,8 +1072,6 @@ button:disabled {
     grid-template-columns: 1fr;
   }
 
-  .sample-button,
-  .role-pill,
   .primary-button,
   .ghost-button,
   .choice-button,
@@ -1028,5 +1085,9 @@ button:disabled {
 
   .certificate-grid {
     grid-template-columns: 1fr;
+  }
+
+  .field-span-2 {
+    grid-column: span 1;
   }
 }

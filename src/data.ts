@@ -395,16 +395,16 @@ export function getAvailableSubjects(countryCode: string, stage: Stage, plan: Pl
   return allSubjects;
 }
 
-export function getQuestionCount(plan: Plan, stage: Stage) {
+export function getQuestionCount(plan: Plan, stage: Stage, kind: 'quiz' | 'exam' = 'quiz') {
   if (stage === 'kindergarten') {
     if (plan === 'free') return 4;
     if (plan === 'trial') return 5;
-    return 6;
+    return kind === 'exam' ? 8 : 6;
   }
 
-  if (plan === 'free') return 15;
-  if (plan === 'trial') return 18;
-  return 22;
+  if (plan === 'free') return kind === 'exam' ? 20 : 15;
+  if (plan === 'trial') return kind === 'exam' ? 24 : 18;
+  return kind === 'exam' ? 30 : 22;
 }
 
 export function getSubjectMeta(subject: string) {
@@ -783,9 +783,15 @@ function buildTeenSession(subject: string, country: CountryProfile, total: numbe
   return prompts[subject] ?? prompts.Mathematics;
 }
 
-export function generateQuestions(profile: LearnerProfile) {
+export function generateQuestions(
+  profile: LearnerProfile,
+  options?: {
+    kind?: 'quiz' | 'exam';
+  },
+) {
   const country = getCountryByCode(profile.countryCode);
-  const total = getQuestionCount(profile.plan, profile.stage);
+  const kind = options?.kind ?? 'quiz';
+  const total = getQuestionCount(profile.plan, profile.stage, kind);
   const nonce = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
 
   if (profile.stage === 'kindergarten') {

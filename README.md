@@ -3,7 +3,7 @@
 Review Buddy is a responsive after-school learning app for kids and teens.
 It supports country-aware onboarding, age-level learning paths, student and admin roles, and quiz access based on Free, Elite Trial, or Elite plans.
 
-Current version: `1.3.0`
+Current version: `1.4.0`
 
 ## What the app includes
 
@@ -18,10 +18,12 @@ Current version: `1.3.0`
 - Solo and group quiz modes
 - Free, 5-day Elite Trial, and Elite access rules
 - 15-question Free quizzes for primary and teen learners, with longer Elite practice sets
+- Subject pages with learning notes, quick quiz, and full exam choices
+- Elite-only review pages that show learner answers against the correct answers
 - Score tracking and subject leaderboards
 - Elite certificate generation with logo, pass level, grade, and owner signature
-- Softer learner-facing wording and a more family-friendly admin dashboard
-- Admin country registration view, sample follow-up queues, staff management cards, and export tools
+- Softer learner-facing wording and a shorter, cleaner admin dashboard
+- Admin subpages for countries, staff, follow-up queues, and reports
 - Responsive design for mobile, tablet, and desktop
 
 ## Roles
@@ -30,8 +32,9 @@ Current version: `1.3.0`
 
 - Choose country, learning stage, level, mode, and subject
 - Take quizzes or exams with changing multiple-choice questions
-- Enter a full-screen quiz flow after choosing a subject
+- Enter a subject page first, then choose learning notes, a quiz, or a full exam
 - View scores and leaderboard placement
+- Elite learners can review their answers on a dedicated review page
 - Unlock achievement certificates on Elite after a passing score
 - Use group mode for team discussion practice
 
@@ -40,7 +43,7 @@ Current version: `1.3.0`
 - View live learner activity and support status
 - Track trials, family follow-ups, and weekly growth
 - Review registered countries, leaderboards, popular subjects, plan usage, and staff assignments
-- Keep a simple oversight screen without editing learner answers
+- Open deeper admin pages without keeping the overview screen too long
 
 ## Access plans
 
@@ -79,6 +82,7 @@ The project is also prepared for Vercel deployment with `vercel.json`, which is 
 - Workflow file: `.github/workflows/deploy.yml`
 - Expected deployment URL: `https://piraticy.github.io/Review_Buddy/`
 - Vercel command after login: `npx vercel --prod`
+- Vercel login command: `npx vercel login`
 
 ## Product message
 

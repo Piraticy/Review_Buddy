@@ -32,6 +32,9 @@ type AttemptRecord = {
 type AuthMode = 'signin' | 'signup';
 type ThemeMode = 'country' | 'sunny' | 'ocean' | 'night';
 type Screen = 'auth' | 'student' | 'admin' | 'quiz';
+type StudentView = 'home' | 'subject' | 'review';
+type AdminView = 'overview' | 'countries' | 'staff' | 'followups' | 'reports';
+type AssessmentKind = 'quiz' | 'exam';
 type ThemeVars = {
   '--theme-primary': string;
   '--theme-secondary': string;
@@ -42,10 +45,20 @@ type ThemeVars = {
 
 type QuizState = {
   activeSubject: string;
+  kind: AssessmentKind;
   questions: Question[];
   answers: Record<string, string>;
   currentIndex: number;
   result: QuizResult | null;
+};
+
+type ReviewSnapshot = {
+  subject: string;
+  kind: AssessmentKind;
+  questions: Question[];
+  answers: Record<string, string>;
+  result: QuizResult;
+  date: string;
 };
 
 type StoredState = {
@@ -55,6 +68,10 @@ type StoredState = {
   themeMode?: ThemeMode;
   screen?: Screen;
   quizState?: QuizState | null;
+  studentView?: StudentView;
+  adminView?: AdminView;
+  selectedSubject?: string | null;
+  reviewSnapshot?: ReviewSnapshot | null;
 };
 
 type SampleAccount = {
@@ -71,7 +88,7 @@ type BeforeInstallPromptEvent = Event & {
 
 const STORAGE_KEY = 'review-buddy-state';
 const INSTALL_DISMISS_KEY = 'review-buddy-install-dismissed';
-const APP_VERSION = '1.3.0';
+const APP_VERSION = '1.4.0';
 
 const COLOR_MAP: Record<string, string> = {
   Red: '#ef4444',
@@ -233,6 +250,110 @@ function createInitialProfile(): LearnerProfile {
   };
 }
 
+function getLearningMaterial(countryCode: string, subject: string, stage: Stage) {
+  const country = getCountryByCode(countryCode);
+
+  if (stage === 'kindergarten') {
+    const kindergartenLibrary: Record<string, { title: string; points: string[] }> = {
+      Colouring: {
+        title: 'Colour and shape play',
+        points: [
+          `Use bright colours to help little learners notice objects they know in ${country.name}.`,
+          'Say the colour name out loud while filling the picture.',
+          'Ask the learner to point to the picture before colouring it.',
+        ],
+      },
+      Alphabet: {
+        title: 'Letter sounds and recognition',
+        points: [
+          `Start with common letter sounds used in early learning in ${country.name}.`,
+          'Trace the letter in the air, then say the sound together.',
+          'Match the letter to a simple word the child already knows.',
+        ],
+      },
+      Numbers: {
+        title: 'Counting with confidence',
+        points: [
+          'Count slowly together using fingers, toys, or classroom objects.',
+          'Say the number name after tapping Hear it once.',
+          'Link each number to a real set of objects before moving on.',
+        ],
+      },
+      'Picture Puzzle': {
+        title: 'Picture and object recognition',
+        points: [
+          'Name familiar animals, people, and places from daily life.',
+          'Point, say the word, and ask the child to repeat it.',
+          `Use local examples from ${country.name} to make picture learning feel familiar.`,
+        ],
+      },
+    };
+
+    return kindergartenLibrary[subject] ?? kindergartenLibrary['Picture Puzzle'];
+  }
+
+  const materialLibrary: Record<string, { title: string; points: string[] }> = {
+    Mathematics: {
+      title: `${country.curriculum} maths focus`,
+      points: [
+        `Practise the maths skills most often seen in ${country.curriculum} learning for ${country.name}.`,
+        'Work step by step and check each answer before moving to the next question.',
+        'Use quick mental practice first, then try a longer exam when ready.',
+      ],
+    },
+    Biology: {
+      title: `${country.name} science support`,
+      points: [
+        `Connect biology topics to ${country.curriculumFocus} so the learner sees familiar school language.`,
+        'Review body systems, habitats, nutrition, and life processes with examples from class.',
+        'Use the quiz for revision and the full exam for a stronger challenge.',
+      ],
+    },
+    Chemistry: {
+      title: 'Chemistry revision guide',
+      points: [
+        'Focus on formulas, states of matter, acids and bases, and simple reactions.',
+        `Keep examples close to the science style common in ${country.name}.`,
+        'Take a quiz first, then move to a longer exam when the basics feel clear.',
+      ],
+    },
+    Physics: {
+      title: 'Physics ideas made simpler',
+      points: [
+        'Review force, motion, electricity, energy, and light.',
+        `Use the kind of problem language learners often meet in ${country.curriculum}.`,
+        'Try learning notes first, then start a quiz with fresh questions.',
+      ],
+    },
+    History: {
+      title: 'History with local context',
+      points: [
+        `Connect timelines, sources, and national events to ${country.name} and ${country.continent}.`,
+        'Look for cause and effect, not just dates and names.',
+        'Use the review page after Elite quizzes to learn from every answer.',
+      ],
+    },
+    'General Studies': {
+      title: 'Country-aware general studies',
+      points: [
+        `This subject uses country facts like ${country.capital}, ${country.continent}, and ${country.curriculum}.`,
+        'Focus on citizenship, community care, maps, leadership, and daily life knowledge.',
+        'Use a quick quiz for practice or a full exam for a longer test run.',
+      ],
+    },
+    'Communication Skills': {
+      title: 'Reading, writing, and speaking support',
+      points: [
+        'Practise grammar, listening, summarising, and clear speaking.',
+        `Keep revision close to the communication style learners meet in ${country.name}.`,
+        'Review wrong answers after Elite practice to improve quickly.',
+      ],
+    },
+  };
+
+  return materialLibrary[subject] ?? materialLibrary['General Studies'];
+}
+
 function LogoMark() {
   return (
     <div className="logo-mark" aria-hidden="true">
@@ -367,70 +488,16 @@ function getCertificatePassLevel(percent: number) {
   return 'Practice needed';
 }
 
-function CertificatePreview({
-  profile,
-  result,
-  subject,
-  onDownload,
-}: {
-  profile: LearnerProfile;
-  result: QuizResult;
-  subject: string;
-  onDownload: () => void;
-}) {
-  return (
-    <section className="certificate-card">
-      <div className="certificate-top">
-        <LogoMark />
-        <div>
-          <p className="eyebrow">Elite certificate</p>
-          <h3>Review Buddy Achievement Certificate</h3>
-        </div>
-      </div>
-
-      <p className="certificate-copy">
-        This certificate is proudly presented to <strong>{profile.fullName}</strong> for completing
-        the <strong>{subject}</strong> level in Review Buddy.
-      </p>
-
-      <div className="certificate-grid">
-        <article className="info-card">
-          <strong>Level</strong>
-          <p>{profile.level}</p>
-        </article>
-        <article className="info-card">
-          <strong>Grade</strong>
-          <p>{getCertificateGrade(result.percent)}</p>
-        </article>
-        <article className="info-card">
-          <strong>Pass level</strong>
-          <p>{getCertificatePassLevel(result.percent)}</p>
-        </article>
-        <article className="info-card">
-          <strong>Score</strong>
-          <p>{result.percent}%</p>
-        </article>
-      </div>
-
-      <div className="certificate-footer">
-        <div>
-          <strong>Review Buddy Owner</strong>
-          <p className="certificate-signature">Review Buddy Signature</p>
-        </div>
-        <button type="button" className="primary-button" onClick={onDownload}>
-          Download certificate
-        </button>
-      </div>
-    </section>
-  );
-}
-
 function App() {
   const [profile, setProfile] = useState<LearnerProfile>(createInitialProfile);
   const [attempts, setAttempts] = useState<AttemptRecord[]>([]);
   const [authMode, setAuthMode] = useState<AuthMode>('signin');
   const [themeMode, setThemeMode] = useState<ThemeMode>('country');
   const [screen, setScreen] = useState<Screen>('auth');
+  const [studentView, setStudentView] = useState<StudentView>('home');
+  const [adminView, setAdminView] = useState<AdminView>('overview');
+  const [selectedSubject, setSelectedSubject] = useState<string | null>(null);
+  const [reviewSnapshot, setReviewSnapshot] = useState<ReviewSnapshot | null>(null);
   const [quizState, setQuizState] = useState<QuizState | null>(null);
   const [isReady, setIsReady] = useState(false);
   const [isSliding, setIsSliding] = useState(false);
@@ -459,6 +526,10 @@ function App() {
       if (saved.authMode) setAuthMode(saved.authMode);
       if (saved.themeMode) setThemeMode(saved.themeMode);
       if (saved.screen) setScreen(saved.screen);
+      if (saved.studentView) setStudentView(saved.studentView);
+      if (saved.adminView) setAdminView(saved.adminView);
+      if (saved.selectedSubject) setSelectedSubject(saved.selectedSubject);
+      if (saved.reviewSnapshot) setReviewSnapshot(saved.reviewSnapshot);
       if (saved.quizState) setQuizState(saved.quizState);
     } catch {
       window.localStorage.removeItem(STORAGE_KEY);
@@ -517,10 +588,14 @@ function App() {
         authMode,
         themeMode,
         screen,
+        studentView,
+        adminView,
+        selectedSubject,
+        reviewSnapshot,
         quizState,
       } satisfies StoredState),
     );
-  }, [attempts, authMode, isReady, profile, quizState, screen, themeMode]);
+  }, [adminView, attempts, authMode, isReady, profile, quizState, reviewSnapshot, screen, selectedSubject, studentView, themeMode]);
 
   useEffect(() => {
     const levelOptions = getLevelOptions(profile.stage);
@@ -554,13 +629,16 @@ function App() {
   const availableSubjects = getAvailableSubjects(profile.countryCode, profile.stage, profile.plan);
   const currentQuestion = quizState?.questions[quizState.currentIndex];
   const adminMetricsCode = screen === 'admin' ? adminFocusCode : profile.countryCode;
+  const activeStudentSubject = selectedSubject ?? profile.subject;
   const leaderboard = getLeaderboard(
-    quizState?.activeSubject ?? profile.subject,
+    quizState?.activeSubject ?? activeStudentSubject,
     profile,
     quizState?.result ?? undefined,
   );
   const metrics = getAdminMetrics(adminMetricsCode);
   const firstName = profile.fullName.trim().split(' ')[0] || 'Learner';
+  const learningMaterial = getLearningMaterial(profile.countryCode, activeStudentSubject, profile.stage);
+  const hasEliteReview = profile.plan === 'elite' && reviewSnapshot?.subject === activeStudentSubject;
 
   useEffect(() => {
     if ('speechSynthesis' in window) {
@@ -664,6 +742,9 @@ function App() {
   function enterWorkspace(nextProfile: LearnerProfile) {
     setProfile(nextProfile);
     setQuizState(null);
+    setSelectedSubject(nextProfile.subject);
+    setStudentView('home');
+    setAdminView('overview');
     setScreen(nextProfile.role === 'admin' ? 'admin' : 'student');
   }
 
@@ -683,6 +764,10 @@ function App() {
     }
     setSpeakingKey(null);
     setScreen('auth');
+    setStudentView('home');
+    setAdminView('overview');
+    setSelectedSubject(null);
+    setReviewSnapshot(null);
     setQuizState(null);
   }
 
@@ -736,12 +821,18 @@ function App() {
     setAdminNotice(`Sample report prepared for ${focusCountry.name}.`);
   }
 
-  function startQuiz(subject: string) {
+  function openSubject(subject: string) {
+    setSelectedSubject(subject);
+    setStudentView('subject');
+  }
+
+  function startQuiz(subject: string, kind: AssessmentKind = 'quiz') {
     const nextProfile = { ...profile, subject };
-    const questions = generateQuestions(nextProfile);
+    const questions = generateQuestions(nextProfile, { kind });
     setProfile(nextProfile);
     setQuizState({
       activeSubject: subject,
+      kind,
       questions,
       answers: {},
       currentIndex: 0,
@@ -779,6 +870,14 @@ function App() {
         ...quizState,
         result,
       });
+      setReviewSnapshot({
+        subject: quizState.activeSubject,
+        kind: quizState.kind,
+        questions: quizState.questions,
+        answers: quizState.answers,
+        result,
+        date: new Date().toLocaleDateString(),
+      });
       setAttempts((current) => [
         {
           subject: quizState.activeSubject,
@@ -811,15 +910,51 @@ function App() {
     }
     setSpeakingKey(null);
     setScreen('student');
+    setStudentView('subject');
+    setSelectedSubject((current) => current ?? profile.subject);
     setQuizState(null);
     setIsSliding(false);
   }
 
-  function downloadCertificate() {
-    if (!quizState?.result) return;
+  function openReviewPage() {
+    const snapshot =
+      reviewSnapshot ??
+      (quizState?.result
+        ? {
+            subject: quizState.activeSubject,
+            kind: quizState.kind,
+            questions: quizState.questions,
+            answers: quizState.answers,
+            result: quizState.result,
+            date: new Date().toLocaleDateString(),
+          }
+        : null);
 
-    const grade = getCertificateGrade(quizState.result.percent);
-    const passLevel = getCertificatePassLevel(quizState.result.percent);
+    if (!snapshot) return;
+    setReviewSnapshot(snapshot);
+    setScreen('student');
+    setStudentView('review');
+    setSelectedSubject(snapshot.subject);
+    setQuizState(null);
+  }
+
+  function downloadCertificate() {
+    const certificateSource = quizState?.result
+      ? {
+          subject: quizState.activeSubject,
+          result: quizState.result,
+        }
+      : reviewSnapshot
+        ? {
+            subject: reviewSnapshot.subject,
+            result: reviewSnapshot.result,
+          }
+        : null;
+
+    if (!certificateSource) return;
+
+    const grade = getCertificateGrade(certificateSource.result.percent);
+    const passLevel = getCertificatePassLevel(certificateSource.result.percent);
     const printWindow = window.open('', '_blank', 'noopener,noreferrer');
 
     if (!printWindow) return;
@@ -916,8 +1051,8 @@ function App() {
             <p>This certificate is proudly presented to</p>
             <div class="name">${profile.fullName}</div>
             <p>
-              for completing <strong>${quizState.activeSubject}</strong> at <strong>${profile.level}</strong>
-              with a score of <strong>${quizState.result.percent}%</strong>.
+              for completing <strong>${certificateSource.subject}</strong> at <strong>${profile.level}</strong>
+              with a score of <strong>${certificateSource.result.percent}%</strong>.
             </p>
             <div class="grid">
               <div class="card"><strong>Grade</strong><div>${grade}</div></div>
@@ -932,7 +1067,7 @@ function App() {
               </div>
               <div>
                 <strong>Level:</strong> ${profile.level}<br />
-                <strong>Subject:</strong> ${quizState.activeSubject}
+                <strong>Subject:</strong> ${certificateSource.subject}
               </div>
             </div>
           </section>
@@ -1153,147 +1288,322 @@ function App() {
         </main>
       ) : screen === 'student' ? (
         <main className="dashboard-layout">
-          <section className="dashboard-main">
-            <section className="welcome-banner">
-              <div>
-                <p className="eyebrow">Learning home</p>
-                <h2>{firstName}, choose what to practise next</h2>
-                <p>{country.name} · {getStageLabel(profile.stage)} · {getPlanLabel(profile.plan)}</p>
-              </div>
-              <div className="banner-actions">
-                <button type="button" className="ghost-button" onClick={logout}>
-                  Sign out
-                </button>
-              </div>
-            </section>
-
-            <section className="setup-panel">
-              <div className="panel-heading">
-                <p className="eyebrow">Today&apos;s learning</p>
-                <h2>Choose a subject to begin</h2>
-                <p>Every subject opens a full learning page and brings a fresh set of questions.</p>
-              </div>
-
-              <div className="field-grid">
-                <label>
-                  Learner group
-                  <select
-                    value={profile.stage}
-                    onChange={(event) => updateProfile('stage', event.target.value as Stage)}
-                  >
-                    <option value="kindergarten">Little learners</option>
-                    <option value="primary">Growing learners</option>
-                    <option value="teen">Teen learners</option>
-                  </select>
-                </label>
-
-                <label>
-                  Level
-                  <select
-                    value={profile.level}
-                    onChange={(event) => updateProfile('level', event.target.value)}
-                  >
-                    {getLevelOptions(profile.stage).map((option) => (
-                      <option key={option} value={option}>
-                        {option}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-
-                <label>
-                  Plan
-                  <select
-                    value={profile.plan}
-                    onChange={(event) => updateProfile('plan', event.target.value as Plan)}
-                  >
-                    <option value="free">Free</option>
-                    <option value="trial">Elite Trial</option>
-                    <option value="elite">Elite</option>
-                  </select>
-                </label>
-
-                <label>
-                  Mode
-                  <select
-                    value={profile.mode}
-                    onChange={(event) => updateProfile('mode', event.target.value as LearnerProfile['mode'])}
-                  >
-                    <option value="solo">Solo</option>
-                    <option value="group">Group</option>
-                  </select>
-                </label>
-              </div>
-
-              <div className="plan-note">
-                <strong>{getPlanDetails(profile.plan).badge}</strong>
-                <p>{getPlanDetails(profile.plan).description}</p>
-              </div>
-
-              <div className="subject-grid">
-                {availableSubjects.map((subject) => {
-                  const meta = getSubjectMeta(subject);
-
-                  return (
-                    <button
-                      key={subject}
-                      type="button"
-                      className="subject-card"
-                      onClick={() => startQuiz(subject)}
-                    >
-                      <span className="subject-icon">{meta.icon}</span>
-                      <strong>{meta.title}</strong>
-                      <span>{meta.detail}</span>
+          {studentView === 'home' ? (
+            <>
+              <section className="dashboard-main">
+                <section className="welcome-banner">
+                  <div>
+                    <p className="eyebrow">Learning home</p>
+                    <h2>{firstName}, choose what to practise next</h2>
+                    <p>{country.name} · {getStageLabel(profile.stage)} · {getPlanLabel(profile.plan)}</p>
+                  </div>
+                  <div className="banner-actions">
+                    <button type="button" className="ghost-button" onClick={logout}>
+                      Sign out
                     </button>
-                  );
-                })}
-              </div>
-            </section>
-          </section>
+                  </div>
+                </section>
 
-          <aside className="dashboard-side">
-            <section className="side-card">
-              <div className="panel-heading">
-                <p className="eyebrow">Top learners</p>
-                <h2>{profile.subject}</h2>
-                <p>Strong scores from learners practising this subject.</p>
-              </div>
-              <div className="leaderboard-list">
-                {leaderboard.map((entry, index) => (
-                  <article key={`${entry.name}-${index}`} className="leaderboard-row">
-                    <div>
-                      <strong>#{index + 1} {entry.name}</strong>
-                      <span>{getCountryByCode(entry.countryCode).name} · {getPlanLabel(entry.plan)}</span>
-                    </div>
-                    <strong>{entry.score}%</strong>
-                  </article>
-                ))}
-              </div>
-            </section>
+                <section className="setup-panel">
+                  <div className="panel-heading">
+                    <p className="eyebrow">Today&apos;s learning</p>
+                    <h2>Pick a subject</h2>
+                    <p>Each subject opens its own learning page with notes, a fresh quiz, and a full exam.</p>
+                  </div>
 
-            <section className="side-card">
-              <div className="panel-heading">
-                <p className="eyebrow">My progress</p>
-                <h2>Recent results</h2>
-                <p>Your latest quiz scores stay here for a quick check-in.</p>
-              </div>
-              <div className="history-list">
-                {attempts.length > 0 ? (
-                  attempts.map((attempt) => (
-                    <article key={`${attempt.subject}-${attempt.date}-${attempt.percent}`} className="history-row">
-                      <div>
-                        <strong>{attempt.subject}</strong>
-                        <span>{attempt.mode === 'group' ? 'Group' : 'Solo'} · {attempt.date}</span>
-                      </div>
-                      <strong>{attempt.percent}%</strong>
-                    </article>
-                  ))
-                ) : (
-                  <p className="empty-state">Your recent scores will show here after the first quiz.</p>
-                )}
-              </div>
-            </section>
-          </aside>
+                  <div className="field-grid">
+                    <label>
+                      Learner group
+                      <select
+                        value={profile.stage}
+                        onChange={(event) => updateProfile('stage', event.target.value as Stage)}
+                      >
+                        <option value="kindergarten">Little learners</option>
+                        <option value="primary">Growing learners</option>
+                        <option value="teen">Teen learners</option>
+                      </select>
+                    </label>
+
+                    <label>
+                      Level
+                      <select
+                        value={profile.level}
+                        onChange={(event) => updateProfile('level', event.target.value)}
+                      >
+                        {getLevelOptions(profile.stage).map((option) => (
+                          <option key={option} value={option}>
+                            {option}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+
+                    <label>
+                      Plan
+                      <select
+                        value={profile.plan}
+                        onChange={(event) => updateProfile('plan', event.target.value as Plan)}
+                      >
+                        <option value="free">Free</option>
+                        <option value="trial">Elite Trial</option>
+                        <option value="elite">Elite</option>
+                      </select>
+                    </label>
+
+                    <label>
+                      Mode
+                      <select
+                        value={profile.mode}
+                        onChange={(event) => updateProfile('mode', event.target.value as LearnerProfile['mode'])}
+                      >
+                        <option value="solo">Solo</option>
+                        <option value="group">Group</option>
+                      </select>
+                    </label>
+                  </div>
+
+                  <div className="plan-note">
+                    <strong>{getPlanDetails(profile.plan).badge}</strong>
+                    <p>{getPlanDetails(profile.plan).description}</p>
+                  </div>
+
+                  <div className="subject-grid">
+                    {availableSubjects.map((subject) => {
+                      const meta = getSubjectMeta(subject);
+
+                      return (
+                        <button
+                          key={subject}
+                          type="button"
+                          className="subject-card"
+                          onClick={() => openSubject(subject)}
+                        >
+                          <span className="subject-icon">{meta.icon}</span>
+                          <strong>{meta.title}</strong>
+                          <span>{meta.detail}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </section>
+              </section>
+
+              <aside className="dashboard-side">
+                <section className="side-card">
+                  <div className="panel-heading">
+                    <p className="eyebrow">Top learners</p>
+                    <h2>{activeStudentSubject}</h2>
+                    <p>Strong scores from learners practising this subject.</p>
+                  </div>
+                  <div className="leaderboard-list">
+                    {leaderboard.map((entry, index) => (
+                      <article key={`${entry.name}-${index}`} className="leaderboard-row">
+                        <div>
+                          <strong>#{index + 1} {entry.name}</strong>
+                          <span>{getCountryByCode(entry.countryCode).name} · {getPlanLabel(entry.plan)}</span>
+                        </div>
+                        <strong>{entry.score}%</strong>
+                      </article>
+                    ))}
+                  </div>
+                </section>
+
+                <section className="side-card">
+                  <div className="panel-heading">
+                    <p className="eyebrow">My progress</p>
+                    <h2>Recent results</h2>
+                    <p>Your latest quiz scores stay here for a quick check-in.</p>
+                  </div>
+                  <div className="history-list">
+                    {attempts.length > 0 ? (
+                      attempts.map((attempt) => (
+                        <article key={`${attempt.subject}-${attempt.date}-${attempt.percent}`} className="history-row">
+                          <div>
+                            <strong>{attempt.subject}</strong>
+                            <span>{attempt.mode === 'group' ? 'Group' : 'Solo'} · {attempt.date}</span>
+                          </div>
+                          <strong>{attempt.percent}%</strong>
+                        </article>
+                      ))
+                    ) : (
+                      <p className="empty-state">Your recent scores will show here after the first quiz.</p>
+                    )}
+                  </div>
+                </section>
+              </aside>
+            </>
+          ) : studentView === 'subject' ? (
+            <>
+              <section className="dashboard-main">
+                <section className="welcome-banner">
+                  <div>
+                    <p className="eyebrow">Subject page</p>
+                    <h2>{activeStudentSubject}</h2>
+                    <p>{country.name} · {profile.level} · {getPlanLabel(profile.plan)}</p>
+                  </div>
+                  <div className="banner-actions">
+                    <button type="button" className="ghost-button" onClick={() => setStudentView('home')}>
+                      Back to subjects
+                    </button>
+                  </div>
+                </section>
+
+                <section className="setup-panel">
+                  <div className="panel-heading">
+                    <p className="eyebrow">Learning material</p>
+                    <h2>{learningMaterial.title}</h2>
+                    <p>This page follows the learner&apos;s selected country and curriculum direction.</p>
+                  </div>
+                  <div className="history-list">
+                    {learningMaterial.points.map((point) => (
+                      <article key={point} className="history-row">
+                        <div>
+                          <strong>{activeStudentSubject}</strong>
+                          <span>{point}</span>
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                </section>
+
+                <section className="setup-panel">
+                  <div className="panel-heading">
+                    <p className="eyebrow">Choose an activity</p>
+                    <h2>Learn, quiz, or sit a full exam</h2>
+                    <p>Every click starts a new set so learners do not get the same easy flow every time.</p>
+                  </div>
+                  <div className="option-grid">
+                    <button type="button" className="subject-card" onClick={() => openSubject(activeStudentSubject)}>
+                      <span className="subject-icon">📘</span>
+                      <strong>Learning notes</strong>
+                      <span>Read the key points for this subject and country focus.</span>
+                    </button>
+                    <button type="button" className="subject-card" onClick={() => startQuiz(activeStudentSubject, 'quiz')}>
+                      <span className="subject-icon">📝</span>
+                      <strong>Quick quiz</strong>
+                      <span>Fresh practice questions with the regular quiz length.</span>
+                    </button>
+                    <button type="button" className="subject-card" onClick={() => startQuiz(activeStudentSubject, 'exam')}>
+                      <span className="subject-icon">🎓</span>
+                      <strong>Full exam</strong>
+                      <span>Longer question sets for a stronger test run.</span>
+                    </button>
+                  </div>
+                </section>
+              </section>
+
+              <aside className="dashboard-side">
+                <section className="side-card">
+                  <div className="panel-heading">
+                    <p className="eyebrow">Elite tools</p>
+                    <h2>Review and certificate options</h2>
+                    <p>These features open after Elite learners finish a quiz or exam.</p>
+                  </div>
+                  <div className="sample-buttons">
+                    <button
+                      type="button"
+                      className="ghost-button"
+                      onClick={openReviewPage}
+                      disabled={!hasEliteReview}
+                    >
+                      Review quiz
+                    </button>
+                    <button
+                      type="button"
+                      className="ghost-button"
+                      onClick={downloadCertificate}
+                      disabled={!hasEliteReview || !reviewSnapshot?.result.passed}
+                    >
+                      Generate certificate
+                    </button>
+                  </div>
+                </section>
+
+                <section className="side-card">
+                  <div className="panel-heading">
+                    <p className="eyebrow">Top learners</p>
+                    <h2>{activeStudentSubject}</h2>
+                    <p>Leaderboard preview for this subject.</p>
+                  </div>
+                  <div className="leaderboard-list">
+                    {leaderboard.map((entry, index) => (
+                      <article key={`${entry.name}-${index}`} className="leaderboard-row">
+                        <div>
+                          <strong>#{index + 1} {entry.name}</strong>
+                          <span>{getCountryByCode(entry.countryCode).name}</span>
+                        </div>
+                        <strong>{entry.score}%</strong>
+                      </article>
+                    ))}
+                  </div>
+                </section>
+              </aside>
+            </>
+          ) : (
+            <>
+              <section className="dashboard-main">
+                <section className="welcome-banner">
+                  <div>
+                    <p className="eyebrow">Review page</p>
+                    <h2>{reviewSnapshot?.subject ?? activeStudentSubject}</h2>
+                    <p>Elite learners can revisit each answer and compare it with the correct one.</p>
+                  </div>
+                  <div className="banner-actions">
+                    <button type="button" className="ghost-button" onClick={() => setStudentView('subject')}>
+                      Back to subject
+                    </button>
+                  </div>
+                </section>
+
+                <section className="setup-panel">
+                  <div className="panel-heading">
+                    <p className="eyebrow">Answer review</p>
+                    <h2>Correct answers and learner choices</h2>
+                    <p>{reviewSnapshot?.kind === 'exam' ? 'Full exam review' : 'Quiz review'} for {reviewSnapshot?.date}.</p>
+                  </div>
+                  <div className="review-list">
+                    {reviewSnapshot?.questions.map((question, index) => {
+                      const learnerAnswer = reviewSnapshot.answers[question.id] ?? 'No answer';
+                      const correct = learnerAnswer === question.answer;
+
+                      return (
+                        <article key={question.id} className={`answer-card${correct ? ' answer-card-good' : ' answer-card-bad'}`}>
+                          <p className="small-label">Question {index + 1}</p>
+                          <strong>{question.prompt}</strong>
+                          <span>Your answer: {learnerAnswer}</span>
+                          <span>Correct answer: {question.answer}</span>
+                          <span>{question.explanation}</span>
+                        </article>
+                      );
+                    })}
+                  </div>
+                </section>
+              </section>
+
+              <aside className="dashboard-side">
+                <section className="side-card">
+                  <div className="panel-heading">
+                    <p className="eyebrow">Result summary</p>
+                    <h2>{reviewSnapshot?.result.percent ?? 0}%</h2>
+                    <p>{reviewSnapshot?.result.score ?? 0} correct out of {reviewSnapshot?.result.total ?? 0}.</p>
+                  </div>
+                  <div className="sample-buttons">
+                    <button type="button" className="primary-button" onClick={() => startQuiz(activeStudentSubject, reviewSnapshot?.kind ?? 'quiz')}>
+                      New {reviewSnapshot?.kind === 'exam' ? 'exam' : 'quiz'}
+                    </button>
+                    <button
+                      type="button"
+                      className="ghost-button"
+                      onClick={downloadCertificate}
+                      disabled={profile.plan !== 'elite' || !reviewSnapshot?.result.passed}
+                    >
+                      Generate certificate
+                    </button>
+                  </div>
+                </section>
+              </aside>
+            </>
+          )}
         </main>
       ) : screen === 'quiz' && quizState && currentQuestion ? (
         <main className="quiz-page">
@@ -1397,21 +1707,23 @@ function App() {
                       : 'Good effort. Try another fresh set when you are ready.'}
                   </p>
                   <div className="result-actions">
-                    <button type="button" className="primary-button" onClick={() => startQuiz(quizState.activeSubject)}>
+                    <button type="button" className="primary-button" onClick={() => startQuiz(quizState.activeSubject, quizState.kind)}>
                       Retry quiz
                     </button>
                     <button type="button" className="ghost-button" onClick={quitQuiz}>
                       Back to subjects
                     </button>
+                    {profile.plan === 'elite' && (
+                      <button type="button" className="ghost-button" onClick={openReviewPage}>
+                        Review quiz
+                      </button>
+                    )}
+                    {profile.plan === 'elite' && quizState.result.passed && (
+                      <button type="button" className="ghost-button" onClick={downloadCertificate}>
+                        Generate certificate
+                      </button>
+                    )}
                   </div>
-                  {profile.plan === 'elite' && quizState.result.passed && (
-                    <CertificatePreview
-                      profile={profile}
-                      result={quizState.result}
-                      subject={quizState.activeSubject}
-                      onDownload={downloadCertificate}
-                    />
-                  )}
                 </div>
               )}
             </article>
@@ -1419,222 +1731,369 @@ function App() {
         </main>
       ) : (
         <main className="dashboard-layout">
-          <section className="dashboard-main">
-            <section className="welcome-banner">
-              <div>
-                <p className="eyebrow">School overview</p>
-                <h2>Today&apos;s learning picture</h2>
-                <p>{metrics.country.name} · {metrics.country.curriculum} · family and learner view</p>
-              </div>
-              <div className="banner-actions">
-                <button type="button" className="ghost-button" onClick={logout}>
-                  Sign out
-                </button>
-              </div>
-            </section>
-
-            <section className="stats-grid">
-              <article className="info-card">
-                <strong>Learners today</strong>
-                <p>{metrics.activeLearners}</p>
-              </article>
-              <article className="info-card">
-                <strong>Learning right now</strong>
-                <p>{metrics.liveSessions}</p>
-              </article>
-              <article className="info-card">
-                <strong>Average score</strong>
-                <p>{metrics.averageScore}%</p>
-              </article>
-              <article className="info-card">
-                <strong>Trials running</strong>
-                <p>{metrics.trialUsers}</p>
-              </article>
-              <article className="info-card">
-                <strong>Families waiting</strong>
-                <p>{metrics.familiesWaiting}</p>
-              </article>
-              <article className="info-card">
-                <strong>Weekly growth</strong>
-                <p>+{metrics.weeklyGrowth}%</p>
-              </article>
-            </section>
-
-            <section className="admin-grid">
-              <article className="side-card">
-                <div className="panel-heading">
-                  <p className="eyebrow">Live learning</p>
-                  <h2>Current learner activity</h2>
-                  <p>See who is active, what they are learning, and who may need support.</p>
-                </div>
-                <div className="table-list">
-                  {metrics.liveActivity.map((session) => (
-                    <div key={`${session.learner}-${session.subject}`} className="table-row">
-                      <strong>{session.learner}</strong>
-                      <span>{session.subject}</span>
-                      <span>{session.plan}</span>
-                      <span>{session.status}</span>
-                      <span>{session.support}</span>
-                      <span>{session.staff}</span>
-                    </div>
-                  ))}
-                </div>
-              </article>
-
-              <article className="side-card">
-                <div className="panel-heading">
-                  <p className="eyebrow">Support tools</p>
-                  <h2>What admins can see and manage</h2>
-                </div>
-                <ul className="simple-list">
-                  {adminPrivileges.map((item) => (
-                    <li key={item}>{item}</li>
-                  ))}
-                </ul>
-              </article>
-
-              <article className="side-card">
-                <div className="panel-heading">
-                  <p className="eyebrow">Follow-up queue</p>
-                  <h2>Families and learners needing attention</h2>
-                  <p>Sample follow-up items update when you choose another country.</p>
-                </div>
-                <div className="history-list">
-                  {metrics.supportQueue.map((item) => (
-                    <article key={item.title} className="history-row">
-                      <div>
-                        <strong>{item.title}</strong>
-                        <span>{item.detail}</span>
-                      </div>
-                    </article>
-                  ))}
-                </div>
-              </article>
-
-              <article className="side-card">
-                <div className="panel-heading">
-                  <p className="eyebrow">Admin tools</p>
-                  <h2>Manage staff and reports</h2>
-                  <p>{adminNotice}</p>
-                </div>
-                <div className="banner-actions">
-                  <button type="button" className="ghost-button ghost-button-small" onClick={addSampleStaffMember}>
-                    Add staff
-                  </button>
-                  <button type="button" className="ghost-button ghost-button-small" onClick={removeSampleStaffMember}>
-                    Remove staff
-                  </button>
-                  <button type="button" className="ghost-button ghost-button-small" onClick={addCountryFollowUp}>
-                    Add follow-up
-                  </button>
-                  <button type="button" className="ghost-button ghost-button-small" onClick={exportCountryReport}>
-                    Export report
-                  </button>
-                </div>
-              </article>
-            </section>
-          </section>
-
-          <aside className="dashboard-side">
-            <section className="side-card">
-              <div className="panel-heading">
-                <p className="eyebrow">Registered countries</p>
-                <h2>Where learners are joining from</h2>
-                <p>Select a country to refresh the support queue and admin view.</p>
-              </div>
-              <div className="country-list">
-                {metrics.registeredCountries.map((entry) => {
-                  const entryCountry = getCountryByCode(entry.code);
-
-                  return (
-                    <button
-                      key={entry.code}
-                      type="button"
-                      className={`country-button${adminFocusCode === entry.code ? ' country-button-active' : ''}`}
-                      onClick={() => setAdminFocusCode(entry.code)}
-                    >
-                      <strong>{entryCountry.name}</strong>
-                      <span>{entry.learners} learners · {entry.families} families</span>
-                      <span>Lead: {entry.staffLead}</span>
+          {adminView === 'overview' ? (
+            <>
+              <section className="dashboard-main">
+                <section className="welcome-banner">
+                  <div>
+                    <p className="eyebrow">School overview</p>
+                    <h2>Today&apos;s learning picture</h2>
+                    <p>{metrics.country.name} · {metrics.country.curriculum} · shorter admin view</p>
+                  </div>
+                  <div className="banner-actions">
+                    <button type="button" className="ghost-button" onClick={logout}>
+                      Sign out
                     </button>
-                  );
-                })}
-              </div>
-            </section>
+                  </div>
+                </section>
 
-            <section className="side-card">
-              <div className="panel-heading">
-                <p className="eyebrow">Top performers</p>
-                <h2>Leaderboard preview</h2>
-                <p>A quick look at the strongest recent subject scores.</p>
-              </div>
-              <div className="leaderboard-list">
-                {leaderboard.map((entry, index) => (
-                  <article key={`${entry.name}-${index}`} className="leaderboard-row">
-                    <div>
-                      <strong>#{index + 1} {entry.name}</strong>
-                      <span>{getCountryByCode(entry.countryCode).name}</span>
-                    </div>
-                    <strong>{entry.score}%</strong>
+                <section className="stats-grid">
+                  <article className="info-card">
+                    <strong>Learners today</strong>
+                    <p>{metrics.activeLearners}</p>
                   </article>
-                ))}
-              </div>
-            </section>
+                  <article className="info-card">
+                    <strong>Learning right now</strong>
+                    <p>{metrics.liveSessions}</p>
+                  </article>
+                  <article className="info-card">
+                    <strong>Average score</strong>
+                    <p>{metrics.averageScore}%</p>
+                  </article>
+                  <article className="info-card">
+                    <strong>Trials running</strong>
+                    <p>{metrics.trialUsers}</p>
+                  </article>
+                </section>
 
-            <section className="side-card">
-              <div className="panel-heading">
-                <p className="eyebrow">Popular subjects</p>
-                <h2>Where learners are spending time</h2>
-              </div>
-              <div className="history-list">
-                {metrics.subjectInsights.map((item) => (
-                  <article key={item.subject} className="history-row">
-                    <div>
-                      <strong>{item.subject}</strong>
-                      <span>{item.learners} learners · average {item.averageScore}%</span>
-                    </div>
-                    <strong>{item.trend}</strong>
-                  </article>
-                ))}
-              </div>
-            </section>
+                <section className="setup-panel">
+                  <div className="panel-heading">
+                    <p className="eyebrow">Admin pages</p>
+                    <h2>Open a section</h2>
+                    <p>Keep the overview short, then open deeper pages inside admin when needed.</p>
+                  </div>
+                  <div className="option-grid">
+                    <button type="button" className="subject-card" onClick={() => setAdminView('countries')}>
+                      <span className="subject-icon">🌍</span>
+                      <strong>Registered countries</strong>
+                      <span>See all countries, learner totals, families, and country leads.</span>
+                    </button>
+                    <button type="button" className="subject-card" onClick={() => setAdminView('staff')}>
+                      <span className="subject-icon">👥</span>
+                      <strong>Staff</strong>
+                      <span>Open the staff page with extra details and management actions.</span>
+                    </button>
+                    <button type="button" className="subject-card" onClick={() => setAdminView('followups')}>
+                      <span className="subject-icon">📌</span>
+                      <strong>Follow-up queue</strong>
+                      <span>Open learner and family follow-up items with country filtering.</span>
+                    </button>
+                    <button type="button" className="subject-card" onClick={() => setAdminView('reports')}>
+                      <span className="subject-icon">📊</span>
+                      <strong>Reports</strong>
+                      <span>View leaderboards, popular subjects, plan use, and live activity.</span>
+                    </button>
+                  </div>
+                </section>
+              </section>
 
-            <section className="side-card">
-              <div className="panel-heading">
-                <p className="eyebrow">Staff team</p>
-                <h2>Who is managing the app</h2>
-              </div>
-              <div className="history-list">
-                {staffMembers.map((member) => (
-                  <article key={`${member.name}-${member.role}`} className="history-row">
-                    <div>
-                      <strong>{member.name}</strong>
-                      <span>{member.role} · {member.focus}</span>
-                    </div>
-                    <strong>{member.status}</strong>
-                  </article>
-                ))}
-              </div>
-            </section>
+              <aside className="dashboard-side">
+                <section className="side-card">
+                  <div className="panel-heading">
+                    <p className="eyebrow">Quick view</p>
+                    <h2>Admin tools at a glance</h2>
+                    <p>Open a page to view more without keeping this dashboard too long.</p>
+                  </div>
+                  <ul className="simple-list">
+                    {adminPrivileges.map((item) => (
+                      <li key={item}>{item}</li>
+                    ))}
+                  </ul>
+                </section>
+              </aside>
+            </>
+          ) : adminView === 'countries' ? (
+            <>
+              <section className="dashboard-main">
+                <section className="welcome-banner">
+                  <div>
+                    <p className="eyebrow">Admin page</p>
+                    <h2>Registered countries</h2>
+                    <p>Select a country to refresh the support queue and reports.</p>
+                  </div>
+                  <div className="banner-actions">
+                    <button type="button" className="ghost-button" onClick={() => setAdminView('overview')}>
+                      Back to overview
+                    </button>
+                  </div>
+                </section>
 
-            <section className="side-card">
-              <div className="panel-heading">
-                <p className="eyebrow">Plan mix</p>
-                <h2>How families are using access plans</h2>
-              </div>
-              <div className="history-list">
-                {metrics.planMix.map((item) => (
-                  <article key={item.label} className="history-row">
-                    <div>
-                      <strong>{item.label}</strong>
-                      <span>{item.detail}</span>
-                    </div>
-                    <strong>{item.count}</strong>
-                  </article>
-                ))}
-              </div>
-            </section>
-          </aside>
+                <section className="setup-panel">
+                  <div className="country-list">
+                    {metrics.registeredCountries.map((entry) => {
+                      const entryCountry = getCountryByCode(entry.code);
+
+                      return (
+                        <button
+                          key={entry.code}
+                          type="button"
+                          className={`country-button${adminFocusCode === entry.code ? ' country-button-active' : ''}`}
+                          onClick={() => setAdminFocusCode(entry.code)}
+                        >
+                          <strong>{entryCountry.name}</strong>
+                          <span>{entry.learners} learners · {entry.families} families</span>
+                          <span>Lead: {entry.staffLead}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </section>
+              </section>
+
+              <aside className="dashboard-side">
+                <section className="side-card">
+                  <div className="panel-heading">
+                    <p className="eyebrow">Country focus</p>
+                    <h2>{metrics.country.name}</h2>
+                    <p>{metrics.country.curriculum} · {metrics.country.curriculumFocus}</p>
+                  </div>
+                  <div className="history-list">
+                    {metrics.supportQueue.map((item) => (
+                      <article key={item.title} className="history-row">
+                        <div>
+                          <strong>{item.title}</strong>
+                          <span>{item.detail}</span>
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                </section>
+              </aside>
+            </>
+          ) : adminView === 'staff' ? (
+            <>
+              <section className="dashboard-main">
+                <section className="welcome-banner">
+                  <div>
+                    <p className="eyebrow">Admin page</p>
+                    <h2>Staff</h2>
+                    <p>View staff roles, support focus, and add or remove sample staff records.</p>
+                  </div>
+                  <div className="banner-actions">
+                    <button type="button" className="ghost-button" onClick={() => setAdminView('overview')}>
+                      Back to overview
+                    </button>
+                  </div>
+                </section>
+
+                <section className="setup-panel">
+                  <div className="panel-heading">
+                    <p className="eyebrow">Manage staff</p>
+                    <h2>Staff details and actions</h2>
+                    <p>{adminNotice}</p>
+                  </div>
+                  <div className="banner-actions">
+                    <button type="button" className="ghost-button ghost-button-small" onClick={addSampleStaffMember}>
+                      Add staff
+                    </button>
+                    <button type="button" className="ghost-button ghost-button-small" onClick={removeSampleStaffMember}>
+                      Remove staff
+                    </button>
+                  </div>
+                  <div className="history-list">
+                    {staffMembers.map((member) => (
+                      <article key={`${member.name}-${member.role}`} className="history-row">
+                        <div>
+                          <strong>{member.name}</strong>
+                          <span>{member.role} · {member.focus}</span>
+                        </div>
+                        <strong>{member.status}</strong>
+                      </article>
+                    ))}
+                  </div>
+                </section>
+              </section>
+
+              <aside className="dashboard-side">
+                <section className="side-card">
+                  <div className="panel-heading">
+                    <p className="eyebrow">Live staff links</p>
+                    <h2>Who is managing the app</h2>
+                  </div>
+                  <div className="history-list">
+                    {metrics.liveActivity.map((session) => (
+                      <article key={`${session.learner}-${session.staff}`} className="history-row">
+                        <div>
+                          <strong>{session.staff}</strong>
+                          <span>{session.learner} · {session.subject}</span>
+                        </div>
+                        <strong>{session.status}</strong>
+                      </article>
+                    ))}
+                  </div>
+                </section>
+              </aside>
+            </>
+          ) : adminView === 'followups' ? (
+            <>
+              <section className="dashboard-main">
+                <section className="welcome-banner">
+                  <div>
+                    <p className="eyebrow">Admin page</p>
+                    <h2>Follow-up queue</h2>
+                    <p>Country-aware follow-up items for learners, families, and trials.</p>
+                  </div>
+                  <div className="banner-actions">
+                    <button type="button" className="ghost-button" onClick={() => setAdminView('overview')}>
+                      Back to overview
+                    </button>
+                  </div>
+                </section>
+
+                <section className="setup-panel">
+                  <div className="panel-heading">
+                    <p className="eyebrow">Queue actions</p>
+                    <h2>Follow-up items</h2>
+                    <p>{adminNotice}</p>
+                  </div>
+                  <div className="banner-actions">
+                    <button type="button" className="ghost-button ghost-button-small" onClick={addCountryFollowUp}>
+                      Add follow-up
+                    </button>
+                    <button type="button" className="ghost-button ghost-button-small" onClick={exportCountryReport}>
+                      Export report
+                    </button>
+                  </div>
+                  <div className="history-list">
+                    {metrics.supportQueue.map((item) => (
+                      <article key={item.title} className="history-row">
+                        <div>
+                          <strong>{item.title}</strong>
+                          <span>{item.detail}</span>
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                </section>
+              </section>
+
+              <aside className="dashboard-side">
+                <section className="side-card">
+                  <div className="panel-heading">
+                    <p className="eyebrow">Country focus</p>
+                    <h2>{metrics.country.name}</h2>
+                    <p>Lead country queue and family notes.</p>
+                  </div>
+                  <div className="country-list">
+                    {metrics.registeredCountries.map((entry) => (
+                      <button
+                        key={entry.code}
+                        type="button"
+                        className={`country-button${adminFocusCode === entry.code ? ' country-button-active' : ''}`}
+                        onClick={() => setAdminFocusCode(entry.code)}
+                      >
+                        <strong>{getCountryByCode(entry.code).name}</strong>
+                        <span>{entry.learners} learners · {entry.families} families</span>
+                        <span>Lead: {entry.staffLead}</span>
+                      </button>
+                    ))}
+                  </div>
+                </section>
+              </aside>
+            </>
+          ) : (
+            <>
+              <section className="dashboard-main">
+                <section className="welcome-banner">
+                  <div>
+                    <p className="eyebrow">Admin page</p>
+                    <h2>Reports</h2>
+                    <p>Leaderboards, subject activity, plan mix, and live learner snapshots.</p>
+                  </div>
+                  <div className="banner-actions">
+                    <button type="button" className="ghost-button" onClick={() => setAdminView('overview')}>
+                      Back to overview
+                    </button>
+                  </div>
+                </section>
+
+                <section className="setup-panel">
+                  <div className="panel-heading">
+                    <p className="eyebrow">Live learning</p>
+                    <h2>Current learner activity</h2>
+                  </div>
+                  <div className="table-list">
+                    {metrics.liveActivity.map((session) => (
+                      <div key={`${session.learner}-${session.subject}`} className="table-row">
+                        <strong>{session.learner}</strong>
+                        <span>{session.subject}</span>
+                        <span>{session.plan}</span>
+                        <span>{session.status}</span>
+                        <span>{session.support}</span>
+                        <span>{session.staff}</span>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              </section>
+
+              <aside className="dashboard-side">
+                <section className="side-card">
+                  <div className="panel-heading">
+                    <p className="eyebrow">Top performers</p>
+                    <h2>Leaderboard preview</h2>
+                  </div>
+                  <div className="leaderboard-list">
+                    {leaderboard.map((entry, index) => (
+                      <article key={`${entry.name}-${index}`} className="leaderboard-row">
+                        <div>
+                          <strong>#{index + 1} {entry.name}</strong>
+                          <span>{getCountryByCode(entry.countryCode).name}</span>
+                        </div>
+                        <strong>{entry.score}%</strong>
+                      </article>
+                    ))}
+                  </div>
+                </section>
+
+                <section className="side-card">
+                  <div className="panel-heading">
+                    <p className="eyebrow">Popular subjects</p>
+                    <h2>Where learners are spending time</h2>
+                  </div>
+                  <div className="history-list">
+                    {metrics.subjectInsights.map((item) => (
+                      <article key={item.subject} className="history-row">
+                        <div>
+                          <strong>{item.subject}</strong>
+                          <span>{item.learners} learners · average {item.averageScore}%</span>
+                        </div>
+                        <strong>{item.trend}</strong>
+                      </article>
+                    ))}
+                  </div>
+                </section>
+
+                <section className="side-card">
+                  <div className="panel-heading">
+                    <p className="eyebrow">Plan mix</p>
+                    <h2>How families are using access plans</h2>
+                  </div>
+                  <div className="history-list">
+                    {metrics.planMix.map((item) => (
+                      <article key={item.label} className="history-row">
+                        <div>
+                          <strong>{item.label}</strong>
+                          <span>{item.detail}</span>
+                        </div>
+                        <strong>{item.count}</strong>
+                      </article>
+                    ))}
+                  </div>
+                </section>
+              </aside>
+            </>
+          )}
         </main>
       )}
 

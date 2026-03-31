@@ -1,4 +1,4 @@
-import { CSSProperties, FormEvent, useEffect, useState } from 'react';
+import { CSSProperties, FormEvent, SVGProps, useEffect, useState } from 'react';
 import {
   COUNTRIES,
   MOTTO,
@@ -10,11 +10,14 @@ import {
   getLevelOptions,
   getPlanDetails,
   getPlanLabel,
+  getStageLabel,
+  getSubjectMeta,
   inferCountryCode,
   scoreQuiz,
   type LearnerProfile,
   type Plan,
   type Question,
+  type QuestionArt,
   type QuizResult,
   type Stage,
 } from './data';
@@ -26,56 +29,187 @@ type AttemptRecord = {
   mode: LearnerProfile['mode'];
 };
 
+type AuthMode = 'signin' | 'signup';
+type ThemeMode = 'country' | 'sunny' | 'ocean' | 'night';
+type Screen = 'auth' | 'student' | 'admin' | 'quiz';
+type ThemeVars = {
+  '--theme-primary': string;
+  '--theme-secondary': string;
+  '--theme-accent': string;
+  '--theme-surface': string;
+  '--theme-ink': string;
+};
+
+type QuizState = {
+  activeSubject: string;
+  questions: Question[];
+  answers: Record<string, string>;
+  currentIndex: number;
+  result: QuizResult | null;
+};
+
+type StoredState = {
+  profile?: LearnerProfile;
+  attempts?: AttemptRecord[];
+  authMode?: AuthMode;
+  themeMode?: ThemeMode;
+  screen?: Screen;
+  quizState?: QuizState | null;
+};
+
+type SampleAccount = {
+  id: string;
+  label: string;
+  short: string;
+  profile: LearnerProfile;
+};
+
 const STORAGE_KEY = 'review-buddy-state';
 
-const stageCopy: Record<Stage, { label: string; note: string }> = {
-  kindergarten: {
-    label: 'Kindergarten',
-    note: 'Easy learning with letters, colours, numbers, shapes, and stories.',
+const COLOR_MAP: Record<string, string> = {
+  Red: '#ef4444',
+  Blue: '#3b82f6',
+  Green: '#22c55e',
+  Yellow: '#facc15',
+};
+
+const sampleAccounts: SampleAccount[] = [
+  {
+    id: 'free',
+    label: 'Free sample',
+    short: 'Free',
+    profile: {
+      fullName: 'Daniel Free',
+      email: 'free@reviewbuddy.app',
+      password: 'demo123',
+      role: 'student',
+      countryCode: 'US',
+      plan: 'free',
+      stage: 'teen',
+      level: 'Year 8',
+      mode: 'solo',
+      subject: 'Mathematics',
+    },
   },
-  primary: {
-    label: 'Primary',
-    note: 'Structured revision in core school subjects with guided support.',
+  {
+    id: 'trial',
+    label: 'Trial sample',
+    short: 'Trial',
+    profile: {
+      fullName: 'Amina Trial',
+      email: 'trial@reviewbuddy.app',
+      password: 'demo123',
+      role: 'student',
+      countryCode: 'KE',
+      plan: 'trial',
+      stage: 'primary',
+      level: 'Grade 4',
+      mode: 'solo',
+      subject: 'Mathematics',
+    },
   },
-  teen: {
-    label: 'Teens',
-    note: 'Subject-based quizzes and exam practice with changing questions.',
+  {
+    id: 'elite',
+    label: 'Elite sample',
+    short: 'Elite',
+    profile: {
+      fullName: 'Noor Elite',
+      email: 'elite@reviewbuddy.app',
+      password: 'demo123',
+      role: 'student',
+      countryCode: 'AE',
+      plan: 'elite',
+      stage: 'teen',
+      level: 'Year 10',
+      mode: 'solo',
+      subject: 'Biology',
+    },
+  },
+  {
+    id: 'kindergarten',
+    label: 'Kindergarten sample',
+    short: 'Kinder',
+    profile: {
+      fullName: 'Little Star',
+      email: 'kinder@reviewbuddy.app',
+      password: 'demo123',
+      role: 'student',
+      countryCode: 'TZ',
+      plan: 'trial',
+      stage: 'kindergarten',
+      level: 'Middle Class',
+      mode: 'solo',
+      subject: 'Colouring',
+    },
+  },
+  {
+    id: 'admin',
+    label: 'Admin sample',
+    short: 'Admin',
+    profile: {
+      fullName: 'Grace Admin',
+      email: 'admin@reviewbuddy.app',
+      password: 'demo123',
+      role: 'admin',
+      countryCode: 'GB',
+      plan: 'elite',
+      stage: 'teen',
+      level: 'Year 9',
+      mode: 'solo',
+      subject: 'Mathematics',
+    },
+  },
+];
+
+const themePresets: Record<Exclude<ThemeMode, 'country'>, ThemeVars> = {
+  sunny: {
+    '--theme-primary': '#d97706',
+    '--theme-secondary': '#facc15',
+    '--theme-accent': '#ef4444',
+    '--theme-surface': '#fff7ed',
+    '--theme-ink': '#431407',
+  },
+  ocean: {
+    '--theme-primary': '#0369a1',
+    '--theme-secondary': '#38bdf8',
+    '--theme-accent': '#0f766e',
+    '--theme-surface': '#ecfeff',
+    '--theme-ink': '#082f49',
+  },
+  night: {
+    '--theme-primary': '#0f172a',
+    '--theme-secondary': '#6366f1',
+    '--theme-accent': '#38bdf8',
+    '--theme-surface': '#111827',
+    '--theme-ink': '#f8fafc',
   },
 };
 
-const featureCards = [
+const benefitCards = [
   {
-    title: 'Country-aware onboarding',
-    text: 'Learners pick their country so subjects and curriculum language can match their system.',
+    title: 'Quick to start',
+    detail: 'Short setup for parents, learners, and schools.',
   },
   {
-    title: 'Age-level adaptation',
-    text: 'Review Buddy shifts from playful early learning to serious teen revision without changing devices.',
+    title: 'Fresh every time',
+    detail: 'Question sets change often so practice feels new.',
   },
   {
-    title: 'Role-based access',
-    text: 'Students practise and track progress while admins monitor activity, plans, and scoreboards.',
+    title: 'Clear progress',
+    detail: 'Scores, attempts, and top performers stay easy to follow.',
   },
 ];
 
 const adminPrivileges = [
-  'View live test, quiz, and exam activity',
-  'Watch score trends by country and subject',
-  'Monitor plan usage and trial conversion',
-  'See leaderboards without editing learner answers',
-];
-
-const planOptions: Plan[] = ['free', 'trial', 'elite'];
-
-const demoSessions = [
-  { learner: 'Asha M.', subject: 'Mathematics', status: 'In progress', country: 'KE', plan: 'Elite' },
-  { learner: 'Noah R.', subject: 'English', status: 'Submitted', country: 'GB', plan: 'Free' },
-  { learner: 'Sara K.', subject: 'Biology', status: 'In review', country: 'AE', plan: 'Trial' },
+  'Watch live learner activity',
+  'Check score trends and plan usage',
+  'See subject leaderboards',
+  'Manage from one simple overview',
 ];
 
 function createInitialProfile(): LearnerProfile {
   const countryCode = inferCountryCode();
-  const stage: Stage = 'teen';
+  const stage: Stage = 'primary';
   const subject = getAvailableSubjects(countryCode, stage, 'trial')[0];
 
   return {
@@ -101,15 +235,126 @@ function LogoMark() {
   );
 }
 
+function GlobeIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" {...props}>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M3 12h18" />
+      <path d="M12 3a14 14 0 0 1 0 18" />
+      <path d="M12 3a14 14 0 0 0 0 18" />
+    </svg>
+  );
+}
+
+function SunIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" {...props}>
+      <circle cx="12" cy="12" r="4" />
+      <path d="M12 2v3" />
+      <path d="M12 19v3" />
+      <path d="M2 12h3" />
+      <path d="M19 12h3" />
+      <path d="m4.9 4.9 2.2 2.2" />
+      <path d="m16.9 16.9 2.2 2.2" />
+    </svg>
+  );
+}
+
+function WaveIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" {...props}>
+      <path d="M2 14c2.5 0 2.5-4 5-4s2.5 4 5 4 2.5-4 5-4 2.5 4 5 4" />
+      <path d="M2 18c2.5 0 2.5-4 5-4s2.5 4 5 4 2.5-4 5-4 2.5 4 5 4" />
+    </svg>
+  );
+}
+
+function MoonIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" {...props}>
+      <path d="M20 15.5A8.5 8.5 0 1 1 8.5 4a7 7 0 0 0 11.5 11.5Z" />
+    </svg>
+  );
+}
+
+function ColoringBoard({ art, fillColor }: { art?: QuestionArt; fillColor?: string }) {
+  const fill = fillColor ?? '#ffffff';
+  const stroke = '#1f2937';
+
+  if (art === 'balloon') {
+    return (
+      <svg viewBox="0 0 140 140" className="art-svg" aria-hidden="true">
+        <ellipse cx="70" cy="52" rx="34" ry="42" fill={fill} stroke={stroke} strokeWidth="4" />
+        <path d="M70 94 62 106h16Z" fill={fill} stroke={stroke} strokeWidth="4" />
+        <path d="M70 106v22" stroke={stroke} strokeWidth="4" strokeLinecap="round" />
+        <path d="M70 128c-6 0-6 8-12 8" stroke={stroke} strokeWidth="4" strokeLinecap="round" />
+      </svg>
+    );
+  }
+
+  if (art === 'leaf') {
+    return (
+      <svg viewBox="0 0 140 140" className="art-svg" aria-hidden="true">
+        <path
+          d="M72 16c34 8 42 38 30 70-12 30-38 34-60 24C20 98 16 72 26 50 38 24 56 14 72 16Z"
+          fill={fill}
+          stroke={stroke}
+          strokeWidth="4"
+        />
+        <path d="M40 94c18-10 34-28 46-54" stroke={stroke} strokeWidth="4" strokeLinecap="round" />
+      </svg>
+    );
+  }
+
+  if (art === 'fish') {
+    return (
+      <svg viewBox="0 0 140 140" className="art-svg" aria-hidden="true">
+        <path
+          d="M26 70c14-26 54-40 82-18 8 6 10 8 16 18-6 10-8 12-16 18-28 22-68 8-82-18Z"
+          fill={fill}
+          stroke={stroke}
+          strokeWidth="4"
+        />
+        <circle cx="88" cy="62" r="4" fill={stroke} />
+        <path d="M18 50 36 70 18 90" fill={fill} stroke={stroke} strokeWidth="4" strokeLinejoin="round" />
+      </svg>
+    );
+  }
+
+  if (art === 'star') {
+    return (
+      <svg viewBox="0 0 140 140" className="art-svg" aria-hidden="true">
+        <path
+          d="m70 18 16 32 36 6-26 24 6 36-32-18-32 18 6-36-26-24 36-6Z"
+          fill={fill}
+          stroke={stroke}
+          strokeWidth="4"
+          strokeLinejoin="round"
+        />
+      </svg>
+    );
+  }
+
+  return (
+    <svg viewBox="0 0 140 140" className="art-svg" aria-hidden="true">
+      <circle cx="70" cy="76" r="34" fill={fill} stroke={stroke} strokeWidth="4" />
+      <path d="M70 42c0-12 8-22 20-26" stroke={stroke} strokeWidth="4" strokeLinecap="round" />
+      <path d="M90 18c4 4 6 8 8 14" stroke={stroke} strokeWidth="4" strokeLinecap="round" />
+      <path d="M58 78c6 8 18 8 24 0" stroke={stroke} strokeWidth="4" strokeLinecap="round" />
+      <path d="M58 66c2-4 6-6 10-6M82 66c-2-4-6-6-10-6" stroke={stroke} strokeWidth="4" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 function App() {
   const [profile, setProfile] = useState<LearnerProfile>(createInitialProfile);
   const [attempts, setAttempts] = useState<AttemptRecord[]>([]);
+  const [authMode, setAuthMode] = useState<AuthMode>('signin');
+  const [themeMode, setThemeMode] = useState<ThemeMode>('country');
+  const [screen, setScreen] = useState<Screen>('auth');
+  const [quizState, setQuizState] = useState<QuizState | null>(null);
   const [isReady, setIsReady] = useState(false);
-  const [isEntered, setIsEntered] = useState(false);
-  const [questions, setQuestions] = useState<Question[]>([]);
-  const [answers, setAnswers] = useState<Record<string, string>>({});
-  const [currentQuestion, setCurrentQuestion] = useState(0);
-  const [result, setResult] = useState<QuizResult | null>(null);
+  const [isSliding, setIsSliding] = useState(false);
 
   useEffect(() => {
     const raw = window.localStorage.getItem(STORAGE_KEY);
@@ -120,16 +365,14 @@ function App() {
     }
 
     try {
-      const saved = JSON.parse(raw) as { profile?: LearnerProfile; attempts?: AttemptRecord[] };
+      const saved = JSON.parse(raw) as StoredState;
 
-      if (saved.profile) {
-        setProfile(saved.profile);
-        setIsEntered(Boolean(saved.profile.fullName));
-      }
-
-      if (saved.attempts) {
-        setAttempts(saved.attempts);
-      }
+      if (saved.profile) setProfile(saved.profile);
+      if (saved.attempts) setAttempts(saved.attempts);
+      if (saved.authMode) setAuthMode(saved.authMode);
+      if (saved.themeMode) setThemeMode(saved.themeMode);
+      if (saved.screen) setScreen(saved.screen);
+      if (saved.quizState) setQuizState(saved.quizState);
     } catch {
       window.localStorage.removeItem(STORAGE_KEY);
     } finally {
@@ -138,18 +381,20 @@ function App() {
   }, []);
 
   useEffect(() => {
-    if (!isReady) {
-      return;
-    }
+    if (!isReady) return;
 
     window.localStorage.setItem(
       STORAGE_KEY,
       JSON.stringify({
         profile,
         attempts,
-      }),
+        authMode,
+        themeMode,
+        screen,
+        quizState,
+      } satisfies StoredState),
     );
-  }, [attempts, isReady, profile]);
+  }, [attempts, authMode, isReady, profile, quizState, screen, themeMode]);
 
   useEffect(() => {
     const levelOptions = getLevelOptions(profile.stage);
@@ -175,18 +420,73 @@ function App() {
 
   const country = getCountryByCode(profile.countryCode);
   const availableSubjects = getAvailableSubjects(profile.countryCode, profile.stage, profile.plan);
-  const levelOptions = getLevelOptions(profile.stage);
-  const planDetails = getPlanDetails(profile.plan);
-  const leaderboard = getLeaderboard(profile.subject, profile, result ?? undefined);
+  const currentQuestion = quizState?.questions[quizState.currentIndex];
+  const leaderboard = getLeaderboard(
+    quizState?.activeSubject ?? profile.subject,
+    profile,
+    quizState?.result ?? undefined,
+  );
   const metrics = getAdminMetrics(profile.countryCode);
 
-  const themeStyle = {
-    ['--theme-primary' as const]: country.palette.primary,
-    ['--theme-secondary' as const]: country.palette.secondary,
-    ['--theme-accent' as const]: country.palette.accent,
-    ['--theme-surface' as const]: country.palette.surface,
-    ['--theme-ink' as const]: country.palette.ink,
-  } as CSSProperties;
+  const countryTheme: ThemeVars = {
+    '--theme-primary': country.palette.primary,
+    '--theme-secondary': country.palette.secondary,
+    '--theme-accent': country.palette.accent,
+    '--theme-surface': country.palette.surface,
+    '--theme-ink': country.palette.ink,
+  };
+
+  const themeStyle =
+    themeMode === 'country'
+      ? (countryTheme as CSSProperties)
+      : (themePresets[themeMode] as CSSProperties);
+
+  function playTone(kind: 'tap' | 'good' | 'next') {
+    const AudioCtor = window.AudioContext || (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    if (!AudioCtor) return;
+
+    const context = new AudioCtor();
+    const oscillator = context.createOscillator();
+    const gain = context.createGain();
+
+    oscillator.type = kind === 'tap' ? 'triangle' : 'sine';
+    oscillator.frequency.value = kind === 'tap' ? 360 : kind === 'good' ? 620 : 480;
+    gain.gain.value = 0.0001;
+    oscillator.connect(gain);
+    gain.connect(context.destination);
+    oscillator.start();
+
+    gain.gain.exponentialRampToValueAtTime(0.08, context.currentTime + 0.01);
+    gain.gain.exponentialRampToValueAtTime(0.0001, context.currentTime + (kind === 'tap' ? 0.09 : 0.18));
+    oscillator.stop(context.currentTime + (kind === 'tap' ? 0.1 : 0.2));
+  }
+
+  function speakPrompt(text: string) {
+    if (!('speechSynthesis' in window)) return;
+
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.rate = 0.9;
+    window.speechSynthesis.cancel();
+    window.speechSynthesis.speak(utterance);
+  }
+
+  useEffect(() => {
+    if (screen !== 'quiz' || !currentQuestion || profile.stage !== 'kindergarten') return;
+
+    const spoken = currentQuestion.visual?.soundText ?? currentQuestion.prompt;
+    const timer = window.setTimeout(() => {
+      speakPrompt(spoken);
+    }, 250);
+
+    return () => window.clearTimeout(timer);
+  }, [currentQuestion?.id, profile.stage, screen]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const themeButtons = [
+    { id: 'country' as const, label: 'Country', Icon: GlobeIcon },
+    { id: 'sunny' as const, label: 'Sunny', Icon: SunIcon },
+    { id: 'ocean' as const, label: 'Ocean', Icon: WaveIcon },
+    { id: 'night' as const, label: 'Dark', Icon: MoonIcon },
+  ];
 
   function updateProfile<Key extends keyof LearnerProfile>(key: Key, value: LearnerProfile[Key]) {
     setProfile((current) => ({
@@ -195,469 +495,421 @@ function App() {
     }));
   }
 
-  function enterWorkspace(event: FormEvent) {
+  function withDisplayName(next: LearnerProfile) {
+    if (next.fullName.trim()) return next;
+
+    const base =
+      next.email.split('@')[0]
+        .replace(/[._-]/g, ' ')
+        .split(' ')
+        .filter(Boolean)
+        .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+        .join(' ') || 'Learner';
+
+    return {
+      ...next,
+      fullName: base,
+    };
+  }
+
+  function enterWorkspace(nextProfile: LearnerProfile) {
+    setProfile(nextProfile);
+    setQuizState(null);
+    setScreen(nextProfile.role === 'admin' ? 'admin' : 'student');
+  }
+
+  function handleAuthSubmit(event: FormEvent) {
     event.preventDefault();
-    setIsEntered(true);
-
-    if (profile.role === 'student') {
-      startFreshQuiz();
-    } else {
-      setQuestions([]);
-      setAnswers({});
-      setResult(null);
-    }
+    enterWorkspace(withDisplayName(profile));
   }
 
-  function startFreshQuiz() {
-    const nextQuestions = generateQuestions(profile);
-    setQuestions(nextQuestions);
-    setAnswers({});
-    setCurrentQuestion(0);
-    setResult(null);
+  function useSampleAccount(sample: SampleAccount) {
+    setAuthMode('signin');
+    enterWorkspace(sample.profile);
   }
 
-  function submitQuiz() {
-    const nextResult = scoreQuiz(questions, answers);
-    setResult(nextResult);
-    setAttempts((current) => [
-      {
-        subject: profile.subject,
-        percent: nextResult.percent,
-        date: new Date().toLocaleDateString(),
-        mode: profile.mode,
+  function logout() {
+    setScreen('auth');
+    setQuizState(null);
+  }
+
+  function startQuiz(subject: string) {
+    const nextProfile = { ...profile, subject };
+    const questions = generateQuestions(nextProfile);
+    setProfile(nextProfile);
+    setQuizState({
+      activeSubject: subject,
+      questions,
+      answers: {},
+      currentIndex: 0,
+      result: null,
+    });
+    setScreen('quiz');
+  }
+
+  function chooseAnswer(choice: string) {
+    if (!currentQuestion || !quizState) return;
+    playTone('tap');
+
+    setQuizState({
+      ...quizState,
+      answers: {
+        ...quizState.answers,
+        [currentQuestion.id]: choice,
       },
-      ...current,
-    ].slice(0, 6));
+    });
   }
 
-  const current = questions[currentQuestion];
-  const hasAnsweredCurrent = current ? Boolean(answers[current.id]) : false;
-  const canSubmit = questions.length > 0 && Object.keys(answers).length === questions.length;
-  const showCorrections = result && (profile.plan !== 'free' || result.passed);
+  function submitCurrentQuestion() {
+    if (!quizState || !currentQuestion) return;
+
+    const selected = quizState.answers[currentQuestion.id];
+    if (!selected) return;
+
+    const isCorrect = selected === currentQuestion.answer;
+    playTone(isCorrect ? 'good' : 'next');
+    const isLast = quizState.currentIndex === quizState.questions.length - 1;
+
+    if (isLast) {
+      const result = scoreQuiz(quizState.questions, quizState.answers);
+      setQuizState({
+        ...quizState,
+        result,
+      });
+      setAttempts((current) => [
+        {
+          subject: quizState.activeSubject,
+          percent: result.percent,
+          date: new Date().toLocaleDateString(),
+          mode: profile.mode,
+        },
+        ...current,
+      ].slice(0, 6));
+      return;
+    }
+
+    setIsSliding(true);
+    window.setTimeout(() => {
+      setQuizState((currentState) =>
+        currentState
+          ? {
+              ...currentState,
+              currentIndex: currentState.currentIndex + 1,
+            }
+          : currentState,
+      );
+      setIsSliding(false);
+    }, 220);
+  }
+
+  function quitQuiz() {
+    setScreen('student');
+    setQuizState(null);
+    setIsSliding(false);
+  }
+
+  const selectedAnswer = currentQuestion && quizState ? quizState.answers[currentQuestion.id] : '';
+  const colorFill = selectedAnswer ? COLOR_MAP[selectedAnswer] : undefined;
 
   return (
     <div className="app-shell" style={themeStyle}>
       <div className="page-glow page-glow-left" />
       <div className="page-glow page-glow-right" />
-      <header className="hero">
-        <div className="hero-topline">
-          <div className="brand-lockup">
-            <LogoMark />
-            <div>
-              <p className="eyebrow">Review Buddy</p>
-              <h1>After-school study support for kids and teens on any device.</h1>
-            </div>
-          </div>
-          <div className="hero-badges">
-            <span>{country.name}</span>
-            <span>{country.curriculum}</span>
-            <span>{getPlanLabel(profile.plan)}</span>
+
+      <header className="topbar">
+        <div className="brand-lockup">
+          <LogoMark />
+          <div>
+            <p className="eyebrow">Review Buddy</p>
+            <h1 className="brand-title">
+              {screen === 'auth'
+                ? 'Easy learning made simple.'
+                : screen === 'quiz'
+                  ? quizState?.activeSubject ?? profile.subject
+                  : `Welcome, ${profile.fullName}`}
+            </h1>
           </div>
         </div>
 
-        <div className="hero-content">
-          <div className="hero-copy">
-            <p className="hero-lead">
-              {MOTTO} Students get age-aware quizzes, admins get live visibility, and the
-              interface adapts by country, plan, and learner level.
-            </p>
-
-            <div className="hero-stat-grid">
-              <article className="stat-card">
-                <strong>5 days</strong>
-                <span>Elite trial for every new learner</span>
-              </article>
-              <article className="stat-card">
-                <strong>{profile.role === 'student' ? 'Student' : 'Admin'}</strong>
-                <span>Current workspace role</span>
-              </article>
-              <article className="stat-card">
-                <strong>{stageCopy[profile.stage].label}</strong>
-                <span>{stageCopy[profile.stage].note}</span>
-              </article>
-            </div>
-          </div>
-
-          <aside className="preview-card">
-            <p className="eyebrow">Why this works</p>
-            <h2>Friendly for early learners, focused for teens, clear for admins.</h2>
-            <div className="feature-stack">
-              {featureCards.map((card) => (
-                <article key={card.title} className="feature-card">
-                  <h3>{card.title}</h3>
-                  <p>{card.text}</p>
-                </article>
-              ))}
-            </div>
-          </aside>
+        <div className="theme-toolbar">
+          {themeButtons.map(({ id, label, Icon }) => (
+            <button
+              key={id}
+              type="button"
+              className={`theme-button${themeMode === id ? ' theme-button-active' : ''}`}
+              onClick={() => setThemeMode(id)}
+              aria-label={label}
+              title={label}
+            >
+              <Icon className="theme-icon" />
+            </button>
+          ))}
         </div>
       </header>
 
-      <main className="main-grid">
-        <section className="panel panel-form">
-          <div className="panel-heading">
-            <p className="eyebrow">Login UI</p>
-            <h2>Enter Review Buddy</h2>
-            <p>
-              Pick a role, country, level, and access plan so the system can generate the
-              right learning path.
+      {screen === 'auth' ? (
+        <main className="auth-layout">
+          <section className="hero-card">
+            <p className="eyebrow">After-school support</p>
+            <h2>Learning that feels welcoming for kids, teens, and families.</h2>
+            <p className="hero-copy">
+              Sign in or create an account, then move into a clean learning page with subject
+              cards, full-screen question cards, scores, and simple progress tracking.
             </p>
-          </div>
 
-          <form className="auth-form" onSubmit={enterWorkspace}>
-            <label>
-              Full name
-              <input
-                value={profile.fullName}
-                onChange={(event) => updateProfile('fullName', event.target.value)}
-                placeholder="e.g. Amina Hassan"
-                required
-              />
-            </label>
-
-            <label>
-              Email
-              <input
-                type="email"
-                value={profile.email}
-                onChange={(event) => updateProfile('email', event.target.value)}
-                placeholder="learner@example.com"
-                required
-              />
-            </label>
-
-            <label>
-              Password
-              <input
-                type="password"
-                value={profile.password}
-                onChange={(event) => updateProfile('password', event.target.value)}
-                placeholder="Create a secure password"
-                required
-              />
-            </label>
-
-            <div className="field-grid">
-              <label>
-                Role
-                <select
-                  value={profile.role}
-                  onChange={(event) => updateProfile('role', event.target.value as LearnerProfile['role'])}
-                >
-                  <option value="student">Student</option>
-                  <option value="admin">Admin</option>
-                </select>
-              </label>
-
-              <label>
-                Country
-                <select
-                  value={profile.countryCode}
-                  onChange={(event) => updateProfile('countryCode', event.target.value)}
-                >
-                  {COUNTRIES.map((entry) => (
-                    <option key={entry.code} value={entry.code}>
-                      {entry.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
+            <div className="benefit-grid">
+              {benefitCards.map((card) => (
+                <article key={card.title} className="info-card">
+                  <strong>{card.title}</strong>
+                  <p>{card.detail}</p>
+                </article>
+              ))}
             </div>
-
-            <div className="field-grid">
-              <label>
-                Stage
-                <select
-                  value={profile.stage}
-                  onChange={(event) => updateProfile('stage', event.target.value as Stage)}
-                >
-                  <option value="kindergarten">Kindergarten</option>
-                  <option value="primary">Primary</option>
-                  <option value="teen">Teens</option>
-                </select>
-              </label>
-
-              <label>
-                Level / Year
-                <select
-                  value={profile.level}
-                  onChange={(event) => updateProfile('level', event.target.value)}
-                >
-                  {levelOptions.map((option) => (
-                    <option key={option} value={option}>
-                      {option}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
-
-            <div className="field-grid">
-              <label>
-                Plan
-                <select
-                  value={profile.plan}
-                  onChange={(event) => updateProfile('plan', event.target.value as Plan)}
-                >
-                  {planOptions.map((plan) => (
-                    <option key={plan} value={plan}>
-                      {getPlanLabel(plan)}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <label>
-                Mode
-                <select
-                  value={profile.mode}
-                  onChange={(event) => updateProfile('mode', event.target.value as LearnerProfile['mode'])}
-                >
-                  <option value="solo">Solo</option>
-                  <option value="group">Group</option>
-                </select>
-              </label>
-            </div>
-
-            {profile.role === 'student' && (
-              <label>
-                Subject
-                <select
-                  value={profile.subject}
-                  onChange={(event) => updateProfile('subject', event.target.value)}
-                >
-                  {availableSubjects.map((subject) => (
-                    <option key={subject} value={subject}>
-                      {subject}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            )}
-
-            <div className="plan-note">
-              <strong>{planDetails.badge}</strong>
-              <p>{planDetails.description}</p>
-            </div>
-
-            <button className="primary-button" type="submit">
-              {profile.role === 'student' ? 'Open Student Space' : 'Open Admin Control'}
-            </button>
-          </form>
-        </section>
-
-        <section className="panel panel-insight">
-          <div className="panel-heading">
-            <p className="eyebrow">Access overview</p>
-            <h2>Capabilities by role and plan</h2>
-            <p>Clear product rules make the experience simple for families and schools.</p>
-          </div>
-
-          <div className="tier-grid">
-            <article className="tier-card">
-              <span className="tier-chip">Free</span>
-              <h3>Quick practice</h3>
-              <p>Limited question count, fewer subject choices, scores, and leaderboard access.</p>
-            </article>
-            <article className="tier-card">
-              <span className="tier-chip">Elite Trial</span>
-              <h3>5-day unlock</h3>
-              <p>Every new user can test premium feedback, deeper reports, and more subject access.</p>
-            </article>
-            <article className="tier-card">
-              <span className="tier-chip">Elite</span>
-              <h3>Full learning suite</h3>
-              <p>More questions, more subjects, detailed feedback, and a richer learning history.</p>
-            </article>
-          </div>
-
-          <div className="role-grid">
-            <article className="role-card">
-              <p className="eyebrow">Student</p>
-              <h3>Practice, improve, compete</h3>
-              <p>
-                Country-aware onboarding, age-level recommendations, solo or group quizzes, and
-                subject leaderboards.
-              </p>
-            </article>
-            <article className="role-card">
-              <p className="eyebrow">Admin</p>
-              <h3>Monitor and manage</h3>
-              <ul className="simple-list">
-                {adminPrivileges.map((item) => (
-                  <li key={item}>{item}</li>
-                ))}
-              </ul>
-            </article>
-          </div>
-        </section>
-      </main>
-
-      {isEntered && profile.role === 'student' && (
-        <section className="workspace-grid">
-          <section className="panel panel-workspace">
-            <div className="panel-heading">
-              <p className="eyebrow">Student dashboard</p>
-              <h2>{profile.subject} practice space</h2>
-              <p>
-                {country.name} learner route for {profile.level}. Questions refresh every time a
-                new quiz starts.
-              </p>
-            </div>
-
-            <div className="summary-strip">
-              <article className="summary-card">
-                <span>Curriculum</span>
-                <strong>{country.curriculum}</strong>
-              </article>
-              <article className="summary-card">
-                <span>Quiz mode</span>
-                <strong>{profile.mode === 'group' ? 'Group discussion' : 'Solo challenge'}</strong>
-              </article>
-              <article className="summary-card">
-                <span>Questions</span>
-                <strong>{questions.length}</strong>
-              </article>
-            </div>
-
-            {profile.mode === 'group' && (
-              <article className="group-callout">
-                <h3>Group discussion mode</h3>
-                <p>
-                  Learners can debate answers together, then submit as a team. Prompts should be
-                  read aloud before choosing a final answer.
-                </p>
-              </article>
-            )}
-
-            {current && (
-              <article className="quiz-card">
-                <div className="quiz-topline">
-                  <span>
-                    Question {currentQuestion + 1} of {questions.length}
-                  </span>
-                  <span>{current.skill}</span>
-                </div>
-                <h3>{current.prompt}</h3>
-
-                <div className="choice-grid">
-                  {current.choices.map((choice) => {
-                    const isSelected = answers[current.id] === choice;
-
-                    return (
-                      <button
-                        key={choice}
-                        type="button"
-                        className={`choice-button${isSelected ? ' choice-button-selected' : ''}`}
-                        onClick={() =>
-                          setAnswers((currentAnswers) => ({
-                            ...currentAnswers,
-                            [current.id]: choice,
-                          }))
-                        }
-                      >
-                        {choice}
-                      </button>
-                    );
-                  })}
-                </div>
-
-                <div className="quiz-actions">
-                  <button
-                    type="button"
-                    className="secondary-button"
-                    onClick={() => setCurrentQuestion((index) => Math.max(0, index - 1))}
-                    disabled={currentQuestion === 0}
-                  >
-                    Previous
-                  </button>
-                  {currentQuestion < questions.length - 1 ? (
-                    <button
-                      type="button"
-                      className="primary-button"
-                      onClick={() => setCurrentQuestion((index) => Math.min(questions.length - 1, index + 1))}
-                      disabled={!hasAnsweredCurrent}
-                    >
-                      Next
-                    </button>
-                  ) : (
-                    <button
-                      type="button"
-                      className="primary-button"
-                      onClick={submitQuiz}
-                      disabled={!canSubmit}
-                    >
-                      Submit quiz
-                    </button>
-                  )}
-                </div>
-              </article>
-            )}
-
-            {result && (
-              <article className="result-card">
-                <div>
-                  <p className="eyebrow">Result</p>
-                  <h3>
-                    {result.percent}% score ({result.score}/{result.total})
-                  </h3>
-                  <p>
-                    {result.passed
-                      ? 'Strong work. The learner passed this session.'
-                      : 'The learner can retry with a fresh question set right away.'}
-                  </p>
-                </div>
-
-                <div className="result-actions">
-                  <button type="button" className="primary-button" onClick={startFreshQuiz}>
-                    Generate new quiz
-                  </button>
-                  <button type="button" className="secondary-button" onClick={() => setCurrentQuestion(0)}>
-                    Review session
-                  </button>
-                </div>
-
-                <div className="review-stack">
-                  {showCorrections ? (
-                    questions.map((question) => (
-                      <article key={question.id} className="review-item">
-                        <strong>{question.prompt}</strong>
-                        <span>Your answer: {answers[question.id]}</span>
-                        <span>Correct answer: {question.answer}</span>
-                        <p>{question.explanation}</p>
-                      </article>
-                    ))
-                  ) : (
-                    <article className="review-item review-item-muted">
-                      <strong>Free plan review rule</strong>
-                      <p>
-                        Scores stay visible, but correct answers stay hidden after a failed attempt
-                        on the Free plan.
-                      </p>
-                    </article>
-                  )}
-                </div>
-              </article>
-            )}
           </section>
 
-          <aside className="workspace-side">
-            <section className="panel">
-              <div className="panel-heading">
-                <p className="eyebrow">Leaderboard</p>
-                <h2>{profile.subject} top scores</h2>
+          <section className="auth-card">
+            <div className="panel-heading">
+              <p className="eyebrow">Get started</p>
+              <h2>{authMode === 'signin' ? 'Sign in to continue' : 'Create a new account'}</h2>
+              <p>New student accounts begin with a 5-day Elite trial.</p>
+            </div>
+
+            <div className="mode-toggle" role="tablist" aria-label="Account mode">
+              <button
+                type="button"
+                className={`mode-toggle-button${authMode === 'signin' ? ' mode-toggle-button-active' : ''}`}
+                onClick={() => setAuthMode('signin')}
+              >
+                Sign in
+              </button>
+              <button
+                type="button"
+                className={`mode-toggle-button${authMode === 'signup' ? ' mode-toggle-button-active' : ''}`}
+                onClick={() => setAuthMode('signup')}
+              >
+                Register
+              </button>
+            </div>
+
+            <div className="sample-strip">
+              <p className="small-label">Try a sample account</p>
+              <div className="sample-buttons">
+                {sampleAccounts.map((sample) => (
+                  <button
+                    key={sample.id}
+                    type="button"
+                    className="sample-button"
+                    onClick={() => useSampleAccount(sample)}
+                  >
+                    {sample.short}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <form className="auth-form" onSubmit={handleAuthSubmit}>
+              <div className="role-pills">
+                <button
+                  type="button"
+                  className={`role-pill${profile.role === 'student' ? ' role-pill-active' : ''}`}
+                  onClick={() => updateProfile('role', 'student')}
+                >
+                  Student
+                </button>
+                <button
+                  type="button"
+                  className={`role-pill${profile.role === 'admin' ? ' role-pill-active' : ''}`}
+                  onClick={() => updateProfile('role', 'admin')}
+                >
+                  Admin
+                </button>
               </div>
 
+              {authMode === 'signup' && (
+                <label>
+                  Full name
+                  <input
+                    value={profile.fullName}
+                    onChange={(event) => updateProfile('fullName', event.target.value)}
+                    placeholder="e.g. Amina Hassan"
+                    required
+                  />
+                </label>
+              )}
+
+              <label>
+                Email
+                <input
+                  type="email"
+                  value={profile.email}
+                  onChange={(event) => updateProfile('email', event.target.value)}
+                  placeholder="name@example.com"
+                  required
+                />
+              </label>
+
+              <label>
+                Password
+                <input
+                  type="password"
+                  value={profile.password}
+                  onChange={(event) => updateProfile('password', event.target.value)}
+                  placeholder={authMode === 'signin' ? 'Enter password' : 'Create password'}
+                  required
+                />
+              </label>
+
+              {authMode === 'signup' && (
+                <div className="field-grid">
+                  <label>
+                    Country
+                    <select
+                      value={profile.countryCode}
+                      onChange={(event) => updateProfile('countryCode', event.target.value)}
+                    >
+                      {COUNTRIES.map((entry) => (
+                        <option key={entry.code} value={entry.code}>
+                          {entry.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  {profile.role === 'student' && (
+                    <label>
+                      Learner group
+                      <select
+                        value={profile.stage}
+                        onChange={(event) => updateProfile('stage', event.target.value as Stage)}
+                      >
+                        <option value="kindergarten">Little learners</option>
+                        <option value="primary">Growing learners</option>
+                        <option value="teen">Teen learners</option>
+                      </select>
+                    </label>
+                  )}
+                </div>
+              )}
+
+              <button className="primary-button" type="submit">
+                {authMode === 'signin' ? 'Continue' : 'Create account'}
+              </button>
+            </form>
+          </section>
+        </main>
+      ) : screen === 'student' ? (
+        <main className="dashboard-layout">
+          <section className="dashboard-main">
+            <section className="welcome-banner">
+              <div>
+                <p className="eyebrow">Student page</p>
+                <h2>{getStageLabel(profile.stage)}</h2>
+                <p>{country.name} · {getPlanLabel(profile.plan)}</p>
+              </div>
+              <div className="banner-actions">
+                <button type="button" className="ghost-button" onClick={logout}>
+                  Sign out
+                </button>
+              </div>
+            </section>
+
+            <section className="setup-panel">
+              <div className="panel-heading">
+                <p className="eyebrow">Learning setup</p>
+                <h2>Pick a subject card to begin</h2>
+                <p>Each subject opens a full-screen question page and creates a fresh quiz set.</p>
+              </div>
+
+              <div className="field-grid">
+                <label>
+                  Learner group
+                  <select
+                    value={profile.stage}
+                    onChange={(event) => updateProfile('stage', event.target.value as Stage)}
+                  >
+                    <option value="kindergarten">Little learners</option>
+                    <option value="primary">Growing learners</option>
+                    <option value="teen">Teen learners</option>
+                  </select>
+                </label>
+
+                <label>
+                  Level
+                  <select
+                    value={profile.level}
+                    onChange={(event) => updateProfile('level', event.target.value)}
+                  >
+                    {getLevelOptions(profile.stage).map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label>
+                  Plan
+                  <select
+                    value={profile.plan}
+                    onChange={(event) => updateProfile('plan', event.target.value as Plan)}
+                  >
+                    <option value="free">Free</option>
+                    <option value="trial">Elite Trial</option>
+                    <option value="elite">Elite</option>
+                  </select>
+                </label>
+
+                <label>
+                  Mode
+                  <select
+                    value={profile.mode}
+                    onChange={(event) => updateProfile('mode', event.target.value as LearnerProfile['mode'])}
+                  >
+                    <option value="solo">Solo</option>
+                    <option value="group">Group</option>
+                  </select>
+                </label>
+              </div>
+
+              <div className="plan-note">
+                <strong>{getPlanDetails(profile.plan).badge}</strong>
+                <p>{getPlanDetails(profile.plan).description}</p>
+              </div>
+
+              <div className="subject-grid">
+                {availableSubjects.map((subject) => {
+                  const meta = getSubjectMeta(subject);
+
+                  return (
+                    <button
+                      key={subject}
+                      type="button"
+                      className="subject-card"
+                      onClick={() => startQuiz(subject)}
+                    >
+                      <span className="subject-icon">{meta.icon}</span>
+                      <strong>{meta.title}</strong>
+                      <span>{meta.detail}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </section>
+          </section>
+
+          <aside className="dashboard-side">
+            <section className="side-card">
+              <div className="panel-heading">
+                <p className="eyebrow">Leaderboard</p>
+                <h2>{profile.subject}</h2>
+                <p>Top scores for this subject.</p>
+              </div>
               <div className="leaderboard-list">
                 {leaderboard.map((entry, index) => (
                   <article key={`${entry.name}-${index}`} className="leaderboard-row">
                     <div>
-                      <strong>
-                        #{index + 1} {entry.name}
-                      </strong>
-                      <span>
-                        {getCountryByCode(entry.countryCode).name} · {getPlanLabel(entry.plan)}
-                      </span>
+                      <strong>#{index + 1} {entry.name}</strong>
+                      <span>{getCountryByCode(entry.countryCode).name} · {getPlanLabel(entry.plan)}</span>
                     </div>
                     <strong>{entry.score}%</strong>
                   </article>
@@ -665,74 +917,193 @@ function App() {
               </div>
             </section>
 
-            <section className="panel">
+            <section className="side-card">
               <div className="panel-heading">
-                <p className="eyebrow">Recent history</p>
-                <h2>Latest attempts</h2>
+                <p className="eyebrow">Recent scores</p>
+                <h2>Latest results</h2>
+                <p>Your quiz history appears here.</p>
               </div>
-
               <div className="history-list">
                 {attempts.length > 0 ? (
                   attempts.map((attempt) => (
                     <article key={`${attempt.subject}-${attempt.date}-${attempt.percent}`} className="history-row">
                       <div>
                         <strong>{attempt.subject}</strong>
-                        <span>
-                          {attempt.mode === 'group' ? 'Group' : 'Solo'} · {attempt.date}
-                        </span>
+                        <span>{attempt.mode === 'group' ? 'Group' : 'Solo'} · {attempt.date}</span>
                       </div>
                       <strong>{attempt.percent}%</strong>
                     </article>
                   ))
                 ) : (
-                  <p className="empty-state">Your recent quiz scores will appear here.</p>
+                  <p className="empty-state">Your recent scores will show here after the first quiz.</p>
                 )}
               </div>
             </section>
           </aside>
-        </section>
-      )}
-
-      {isEntered && profile.role === 'admin' && (
-        <section className="workspace-grid">
-          <section className="panel panel-workspace">
-            <div className="panel-heading">
-              <p className="eyebrow">Admin control</p>
-              <h2>Live learning overview</h2>
-              <p>
-                Admin tools are view-first. Monitor sessions, plans, and leaderboards without
-                editing learner submissions.
-              </p>
+        </main>
+      ) : screen === 'quiz' && quizState && currentQuestion ? (
+        <main className="quiz-page">
+          <div className="quiz-shell">
+            <div className="quiz-top">
+              <div>
+                <p className="eyebrow">Question {quizState.currentIndex + 1} of {quizState.questions.length}</p>
+                <h2>{quizState.activeSubject}</h2>
+              </div>
+              <button type="button" className="ghost-button ghost-button-small" onClick={quitQuiz}>
+                Quit
+              </button>
             </div>
 
-            <div className="admin-metric-grid">
-              <article className="summary-card">
-                <span>Active learners</span>
-                <strong>{metrics.activeLearners}</strong>
-              </article>
-              <article className="summary-card">
-                <span>Live sessions</span>
-                <strong>{metrics.liveSessions}</strong>
-              </article>
-              <article className="summary-card">
-                <span>Average score</span>
-                <strong>{metrics.averageScore}%</strong>
-              </article>
-              <article className="summary-card">
-                <span>Trial users</span>
-                <strong>{metrics.trialUsers}</strong>
-              </article>
-            </div>
+            <article className={`quiz-full-card${isSliding ? ' quiz-full-card-out' : ''}`} key={currentQuestion.id}>
+              <div className="question-meta">
+                <span>{profile.level}</span>
+                <span>{currentQuestion.skill}</span>
+              </div>
 
-            <div className="admin-panels">
-              <article className="sub-panel">
-                <h3>Live sessions</h3>
+              {currentQuestion.visual && (
+                <div
+                  className="visual-card visual-card-large"
+                  style={{ ['--visual-accent' as const]: currentQuestion.visual.accent } as CSSProperties}
+                >
+                  {currentQuestion.interaction === 'coloring' ? (
+                    <ColoringBoard art={currentQuestion.visual.art} fillColor={colorFill} />
+                  ) : (
+                    <div className="visual-emoji visual-emoji-large">{currentQuestion.visual.emoji}</div>
+                  )}
+
+                  <div className="visual-copy">
+                    <strong>{currentQuestion.visual.label}</strong>
+                    {currentQuestion.visual.soundText && (
+                      <button
+                        type="button"
+                        className="speak-button"
+                        onClick={() => speakPrompt(currentQuestion.visual?.soundText ?? currentQuestion.prompt)}
+                      >
+                        Hear it
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              <h3>{currentQuestion.prompt}</h3>
+              {currentQuestion.helperText && <p className="question-helper">{currentQuestion.helperText}</p>}
+
+              {currentQuestion.interaction === 'coloring' ? (
+                <div className="palette-row">
+                  {currentQuestion.choices.map((choice) => (
+                    <button
+                      key={choice}
+                      type="button"
+                      className={`palette-button${selectedAnswer === choice ? ' palette-button-active' : ''}`}
+                      style={{ ['--swatch' as const]: COLOR_MAP[choice] ?? '#cbd5e1' } as CSSProperties}
+                      onClick={() => chooseAnswer(choice)}
+                    >
+                      <span className="palette-swatch" />
+                      <span>{choice}</span>
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <div className="choice-grid">
+                  {currentQuestion.choices.map((choice) => (
+                    <button
+                      key={choice}
+                      type="button"
+                      className={`choice-button${selectedAnswer === choice ? ' choice-button-selected' : ''}`}
+                      onClick={() => chooseAnswer(choice)}
+                    >
+                      {choice}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              <div className="submit-block">
+                <button
+                  type="button"
+                  className="primary-button"
+                  onClick={submitCurrentQuestion}
+                  disabled={!selectedAnswer}
+                >
+                  {quizState.currentIndex === quizState.questions.length - 1 ? 'Finish quiz' : 'Submit answer'}
+                </button>
+                <p>Verify the answer before submission.</p>
+              </div>
+
+              {quizState.result && (
+                <div className="result-inline">
+                  <h3>
+                    {quizState.result.percent}% score ({quizState.result.score}/{quizState.result.total})
+                  </h3>
+                  <p>
+                    {quizState.result.passed
+                      ? 'Well done. You completed this quiz successfully.'
+                      : 'Good effort. Try another fresh quiz to improve your score.'}
+                  </p>
+                  <div className="result-actions">
+                    <button type="button" className="primary-button" onClick={() => startQuiz(quizState.activeSubject)}>
+                      Play again
+                    </button>
+                    <button type="button" className="ghost-button" onClick={quitQuiz}>
+                      Back to subjects
+                    </button>
+                  </div>
+                </div>
+              )}
+            </article>
+          </div>
+        </main>
+      ) : (
+        <main className="dashboard-layout">
+          <section className="dashboard-main">
+            <section className="welcome-banner">
+              <div>
+                <p className="eyebrow">Admin page</p>
+                <h2>Learning overview</h2>
+                <p>{metrics.country.name} · {metrics.country.curriculum}</p>
+              </div>
+              <div className="banner-actions">
+                <button type="button" className="ghost-button" onClick={logout}>
+                  Sign out
+                </button>
+              </div>
+            </section>
+
+            <section className="stats-grid">
+              <article className="info-card">
+                <strong>Active learners</strong>
+                <p>{metrics.activeLearners}</p>
+              </article>
+              <article className="info-card">
+                <strong>Live sessions</strong>
+                <p>{metrics.liveSessions}</p>
+              </article>
+              <article className="info-card">
+                <strong>Average score</strong>
+                <p>{metrics.averageScore}%</p>
+              </article>
+              <article className="info-card">
+                <strong>Trial users</strong>
+                <p>{metrics.trialUsers}</p>
+              </article>
+            </section>
+
+            <section className="admin-grid">
+              <article className="side-card">
+                <div className="panel-heading">
+                  <p className="eyebrow">Live sessions</p>
+                  <h2>Current learner activity</h2>
+                </div>
                 <div className="table-list">
-                  {demoSessions.map((session) => (
-                    <div key={session.learner} className="table-row">
-                      <span>{session.learner}</span>
+                  {[
+                    { learner: 'Asha M.', subject: 'Mathematics', status: 'In progress', plan: 'Elite' },
+                    { learner: 'Noah R.', subject: 'History', status: 'Submitted', plan: 'Free' },
+                    { learner: 'Little Star', subject: 'Colouring', status: 'Playing', plan: 'Trial' },
+                  ].map((session) => (
+                    <div key={`${session.learner}-${session.subject}`} className="table-row">
+                      <strong>{session.learner}</strong>
                       <span>{session.subject}</span>
-                      <span>{session.country}</span>
                       <span>{session.plan}</span>
                       <span>{session.status}</span>
                     </div>
@@ -740,43 +1111,31 @@ function App() {
                 </div>
               </article>
 
-              <article className="sub-panel">
-                <h3>Admin privileges</h3>
+              <article className="side-card">
+                <div className="panel-heading">
+                  <p className="eyebrow">Admin access</p>
+                  <h2>What admins can do</h2>
+                </div>
                 <ul className="simple-list">
                   {adminPrivileges.map((item) => (
                     <li key={item}>{item}</li>
                   ))}
                 </ul>
               </article>
-            </div>
+            </section>
           </section>
 
-          <aside className="workspace-side">
-            <section className="panel">
+          <aside className="dashboard-side">
+            <section className="side-card">
               <div className="panel-heading">
-                <p className="eyebrow">Country theme</p>
-                <h2>{country.name} presentation</h2>
-              </div>
-              <p className="country-copy">{country.description}</p>
-              <div className="theme-palette">
-                {Object.values(country.palette).map((colour) => (
-                  <span key={colour} style={{ background: colour }} />
-                ))}
-              </div>
-            </section>
-
-            <section className="panel">
-              <div className="panel-heading">
-                <p className="eyebrow">Leaderboard preview</p>
-                <h2>Top performers</h2>
+                <p className="eyebrow">Top performers</p>
+                <h2>Leaderboard preview</h2>
               </div>
               <div className="leaderboard-list">
                 {leaderboard.map((entry, index) => (
                   <article key={`${entry.name}-${index}`} className="leaderboard-row">
                     <div>
-                      <strong>
-                        #{index + 1} {entry.name}
-                      </strong>
+                      <strong>#{index + 1} {entry.name}</strong>
                       <span>{getCountryByCode(entry.countryCode).name}</span>
                     </div>
                     <strong>{entry.score}%</strong>
@@ -785,7 +1144,7 @@ function App() {
               </div>
             </section>
           </aside>
-        </section>
+        </main>
       )}
 
       <footer className="site-footer">

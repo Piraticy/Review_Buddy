@@ -2,6 +2,7 @@ export type Role = 'student' | 'admin';
 export type Plan = 'free' | 'trial' | 'elite';
 export type Stage = 'kindergarten' | 'primary' | 'teen';
 export type QuizMode = 'solo' | 'group';
+export type QuestionArt = 'apple' | 'balloon' | 'leaf' | 'fish' | 'star';
 
 export type ThemePalette = {
   primary: string;
@@ -33,6 +34,14 @@ export type LearnerProfile = {
   subject: string;
 };
 
+export type QuestionVisual = {
+  emoji?: string;
+  label: string;
+  accent: string;
+  soundText?: string;
+  art?: QuestionArt;
+};
+
 export type Question = {
   id: string;
   prompt: string;
@@ -40,6 +49,9 @@ export type Question = {
   answer: string;
   explanation: string;
   skill: string;
+  helperText?: string;
+  visual?: QuestionVisual;
+  interaction?: 'choices' | 'coloring';
 };
 
 export type QuizResult = {
@@ -56,34 +68,92 @@ export type LeaderboardEntry = {
   plan: Plan;
 };
 
-const PRIMARY_SUBJECTS = [
-  'Mathematics',
-  'English',
-  'Science',
-  'Social Studies',
-  'Creative Arts',
-];
+export type SubjectMeta = {
+  icon: string;
+  title: string;
+  detail: string;
+};
 
+type PromptTuple = [string, string, string[], string];
+
+const KINDERGARTEN_SUBJECTS = ['Colouring', 'Alphabet', 'Numbers', 'Picture Puzzle'];
+const PRIMARY_SUBJECTS = ['Mathematics', 'General Studies', 'Communication Skills', 'History'];
 const TEEN_SUBJECTS = [
-  'Mathematics',
-  'English',
   'Biology',
   'Chemistry',
   'Physics',
+  'Mathematics',
   'History',
-  'Geography',
-  'ICT',
-  'Business',
+  'General Studies',
+  'Communication Skills',
 ];
 
-export const MOTTO = 'After-school learning, tests, quizzes, and exams for every age.';
+export const MOTTO = 'Learn, practise, and grow after school.';
+
+export const SUBJECT_META: Record<string, SubjectMeta> = {
+  Colouring: {
+    icon: '🎨',
+    title: 'Colouring',
+    detail: 'Paint a picture with the right colour.',
+  },
+  Alphabet: {
+    icon: '🔤',
+    title: 'Alphabet',
+    detail: 'Letters with spoken prompts and easy recognition.',
+  },
+  Numbers: {
+    icon: '🔢',
+    title: 'Numbers',
+    detail: 'Friendly number play with sound and counting.',
+  },
+  'Picture Puzzle': {
+    icon: '🧩',
+    title: 'Picture Puzzle',
+    detail: 'Identify animals, people, and everyday objects.',
+  },
+  Biology: {
+    icon: '🧬',
+    title: 'Biology',
+    detail: 'Living things, the body, and nature.',
+  },
+  Chemistry: {
+    icon: '🧪',
+    title: 'Chemistry',
+    detail: 'Matter, reactions, and simple formulas.',
+  },
+  Physics: {
+    icon: '⚡',
+    title: 'Physics',
+    detail: 'Forces, energy, and motion.',
+  },
+  Mathematics: {
+    icon: '➗',
+    title: 'Mathematics',
+    detail: 'Numbers, patterns, and problem-solving.',
+  },
+  History: {
+    icon: '📜',
+    title: 'History',
+    detail: 'People, events, and timelines from the past.',
+  },
+  'General Studies': {
+    icon: '🌍',
+    title: 'General Studies',
+    detail: 'Everyday knowledge, places, and communities.',
+  },
+  'Communication Skills': {
+    icon: '💬',
+    title: 'Communication Skills',
+    detail: 'Reading, writing, listening, and speaking.',
+  },
+};
 
 export const COUNTRIES: CountryProfile[] = [
   {
     code: 'KE',
     name: 'Kenya',
     curriculum: 'CBC',
-    description: 'Competency-focused learning paths from early years to junior and senior school.',
+    description: 'Competency-based learning support for young and growing learners.',
     palette: {
       primary: '#0f766e',
       secondary: '#facc15',
@@ -92,7 +162,7 @@ export const COUNTRIES: CountryProfile[] = [
       ink: '#0f172a',
     },
     subjects: {
-      kindergarten: ['Alphabet', 'Numbers', 'Colours', 'Shapes', 'Stories'],
+      kindergarten: KINDERGARTEN_SUBJECTS,
       primary: PRIMARY_SUBJECTS,
       teen: TEEN_SUBJECTS,
     },
@@ -101,7 +171,7 @@ export const COUNTRIES: CountryProfile[] = [
     code: 'TZ',
     name: 'Tanzania',
     curriculum: 'NECTA-aligned',
-    description: 'Structured practice for foundational and secondary learning outcomes.',
+    description: 'Clear revision routes for school learning and after-school practice.',
     palette: {
       primary: '#0f766e',
       secondary: '#22c55e',
@@ -110,7 +180,7 @@ export const COUNTRIES: CountryProfile[] = [
       ink: '#082f49',
     },
     subjects: {
-      kindergarten: ['Alphabet', 'Numbers', 'Colours', 'Shapes', 'Stories'],
+      kindergarten: KINDERGARTEN_SUBJECTS,
       primary: PRIMARY_SUBJECTS,
       teen: TEEN_SUBJECTS,
     },
@@ -119,7 +189,7 @@ export const COUNTRIES: CountryProfile[] = [
     code: 'AE',
     name: 'United Arab Emirates',
     curriculum: 'MOE / International blend',
-    description: 'Bilingual-ready subject options with strong STEM and global studies coverage.',
+    description: 'Friendly learning flows with broad subject choice and simple practice paths.',
     palette: {
       primary: '#111827',
       secondary: '#ef4444',
@@ -128,7 +198,7 @@ export const COUNTRIES: CountryProfile[] = [
       ink: '#0f172a',
     },
     subjects: {
-      kindergarten: ['Alphabet', 'Numbers', 'Colours', 'Shapes', 'Stories'],
+      kindergarten: KINDERGARTEN_SUBJECTS,
       primary: PRIMARY_SUBJECTS,
       teen: TEEN_SUBJECTS,
     },
@@ -137,7 +207,7 @@ export const COUNTRIES: CountryProfile[] = [
     code: 'GB',
     name: 'United Kingdom',
     curriculum: 'National Curriculum',
-    description: 'Balanced literacy, numeracy, sciences, and humanities practice for all levels.',
+    description: 'Balanced practice for literacy, numeracy, sciences, and humanities.',
     palette: {
       primary: '#1d4ed8',
       secondary: '#ef4444',
@@ -146,7 +216,7 @@ export const COUNTRIES: CountryProfile[] = [
       ink: '#172554',
     },
     subjects: {
-      kindergarten: ['Alphabet', 'Numbers', 'Colours', 'Shapes', 'Stories'],
+      kindergarten: KINDERGARTEN_SUBJECTS,
       primary: PRIMARY_SUBJECTS,
       teen: TEEN_SUBJECTS,
     },
@@ -155,7 +225,7 @@ export const COUNTRIES: CountryProfile[] = [
     code: 'US',
     name: 'United States',
     curriculum: 'Common Core-inspired',
-    description: 'Flexible, standards-aware practice for classroom review and after-school revision.',
+    description: 'Easy-to-start review for school support, homework help, and revision.',
     palette: {
       primary: '#1d4ed8',
       secondary: '#dc2626',
@@ -164,7 +234,7 @@ export const COUNTRIES: CountryProfile[] = [
       ink: '#111827',
     },
     subjects: {
-      kindergarten: ['Alphabet', 'Numbers', 'Colours', 'Shapes', 'Stories'],
+      kindergarten: KINDERGARTEN_SUBJECTS,
       primary: PRIMARY_SUBJECTS,
       teen: TEEN_SUBJECTS,
     },
@@ -173,7 +243,7 @@ export const COUNTRIES: CountryProfile[] = [
     code: 'IN',
     name: 'India',
     curriculum: 'CBSE / State board blend',
-    description: 'High-coverage revision for core academic subjects and exam readiness.',
+    description: 'Flexible subject practice for daily learning and exam revision.',
     palette: {
       primary: '#ea580c',
       secondary: '#16a34a',
@@ -182,7 +252,7 @@ export const COUNTRIES: CountryProfile[] = [
       ink: '#431407',
     },
     subjects: {
-      kindergarten: ['Alphabet', 'Numbers', 'Colours', 'Shapes', 'Stories'],
+      kindergarten: KINDERGARTEN_SUBJECTS,
       primary: PRIMARY_SUBJECTS,
       teen: TEEN_SUBJECTS,
     },
@@ -201,15 +271,20 @@ const BASE_LEADERBOARD: Record<string, LeaderboardEntry[]> = {
     { name: 'Ryan P.', countryCode: 'US', score: 95, plan: 'trial' },
     { name: 'Noor H.', countryCode: 'AE', score: 92, plan: 'elite' },
   ],
-  English: [
+  Biology: [
     { name: 'Mia T.', countryCode: 'GB', score: 96, plan: 'elite' },
-    { name: 'Kelvin J.', countryCode: 'TZ', score: 91, plan: 'free' },
-    { name: 'Ritu S.', countryCode: 'IN', score: 90, plan: 'trial' },
+    { name: 'Ritu S.', countryCode: 'IN', score: 93, plan: 'trial' },
+    { name: 'Baraka N.', countryCode: 'TZ', score: 91, plan: 'free' },
   ],
-  Science: [
-    { name: 'Daisy W.', countryCode: 'GB', score: 94, plan: 'elite' },
-    { name: 'Baraka N.', countryCode: 'TZ', score: 89, plan: 'trial' },
-    { name: 'Jay M.', countryCode: 'US', score: 88, plan: 'free' },
+  History: [
+    { name: 'Liam P.', countryCode: 'US', score: 93, plan: 'elite' },
+    { name: 'Mercy A.', countryCode: 'KE', score: 90, plan: 'trial' },
+    { name: 'Noel J.', countryCode: 'GB', score: 88, plan: 'free' },
+  ],
+  Colouring: [
+    { name: 'Little Joy', countryCode: 'TZ', score: 100, plan: 'trial' },
+    { name: 'Tobi K.', countryCode: 'KE', score: 100, plan: 'elite' },
+    { name: 'Ari S.', countryCode: 'US', score: 100, plan: 'free' },
   ],
 };
 
@@ -219,6 +294,12 @@ export function getCountryByCode(code: string) {
 
 export function getLevelOptions(stage: Stage) {
   return LEVELS[stage];
+}
+
+export function getStageLabel(stage: Stage) {
+  if (stage === 'kindergarten') return 'Little learners';
+  if (stage === 'primary') return 'Growing learners';
+  return 'Teen learners';
 }
 
 export function inferCountryCode() {
@@ -242,26 +323,24 @@ export function getAvailableSubjects(countryCode: string, stage: Stage, plan: Pl
   const allSubjects = country.subjects[stage];
 
   if (plan === 'free') {
-    return allSubjects.slice(0, 3);
+    return stage === 'kindergarten' ? allSubjects.slice(0, 2) : allSubjects.slice(0, 4);
+  }
+
+  if (plan === 'trial') {
+    return stage === 'kindergarten' ? allSubjects.slice(0, 3) : allSubjects.slice(0, 6);
   }
 
   return allSubjects;
 }
 
 export function getQuestionCount(plan: Plan, stage: Stage) {
-  if (plan === 'free') {
-    return stage === 'kindergarten' ? 4 : 5;
-  }
-
-  if (plan === 'trial') {
-    return stage === 'kindergarten' ? 6 : 7;
-  }
-
-  return stage === 'kindergarten' ? 8 : 10;
+  if (plan === 'free') return stage === 'kindergarten' ? 4 : 5;
+  if (plan === 'trial') return stage === 'kindergarten' ? 5 : 6;
+  return stage === 'kindergarten' ? 6 : 8;
 }
 
-function pickOne<T>(items: T[]) {
-  return items[Math.floor(Math.random() * items.length)];
+export function getSubjectMeta(subject: string) {
+  return SUBJECT_META[subject] ?? { icon: '📚', title: subject, detail: 'Topic practice' };
 }
 
 function shuffle<T>(items: T[]) {
@@ -275,382 +354,344 @@ function shuffle<T>(items: T[]) {
   return copy;
 }
 
-function buildKindergartenQuestion(subject: string, level: string, index: number): Question {
-  const alphabetLetters = ['A', 'B', 'C', 'D', 'E', 'F', 'G'];
-  const colourItems = [
-    ['Banana', 'Yellow'],
-    ['Grass', 'Green'],
-    ['Sky', 'Blue'],
-    ['Tomato', 'Red'],
+function takeUnique<T>(items: T[], count: number) {
+  return shuffle(items).slice(0, count);
+}
+
+function uniqueChoices(answer: string, pool: string[], count = 4) {
+  const distractors = takeUnique(
+    pool.filter((item) => item !== answer),
+    Math.max(0, count - 1),
+  );
+
+  return shuffle([answer, ...distractors]);
+}
+
+function randomInt(min: number, max: number) {
+  return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+function buildKindergartenSession(subject: string, level: string, total: number, nonce: string) {
+  const colouringItems = [
+    { art: 'apple' as const, label: 'apple', answer: 'Red', accent: '#fee2e2' },
+    { art: 'balloon' as const, label: 'balloon', answer: 'Yellow', accent: '#fef3c7' },
+    { art: 'leaf' as const, label: 'leaf', answer: 'Green', accent: '#dcfce7' },
+    { art: 'fish' as const, label: 'fish', answer: 'Blue', accent: '#dbeafe' },
+    { art: 'star' as const, label: 'star', answer: 'Yellow', accent: '#fef9c3' },
   ];
-  const shapeFacts = [
-    ['Circle', '0'],
-    ['Triangle', '3'],
-    ['Square', '4'],
-    ['Rectangle', '4'],
+  const alphabetItems = [
+    { emoji: 'A', label: 'Letter A', answer: 'A', soundText: 'Letter A. A says ah.', accent: '#ede9fe' },
+    { emoji: 'B', label: 'Letter B', answer: 'B', soundText: 'Letter B. B says buh.', accent: '#fee2e2' },
+    { emoji: 'C', label: 'Letter C', answer: 'C', soundText: 'Letter C. C says kuh.', accent: '#dbeafe' },
+    { emoji: 'D', label: 'Letter D', answer: 'D', soundText: 'Letter D. D says duh.', accent: '#dcfce7' },
+    { emoji: 'E', label: 'Letter E', answer: 'E', soundText: 'Letter E. E says eh.', accent: '#fef3c7' },
+    { emoji: 'F', label: 'Letter F', answer: 'F', soundText: 'Letter F. F says fuh.', accent: '#fae8ff' },
   ];
-  const storyFacts = [
-    ['A puppy likes to play.', 'puppy', 'play'],
-    ['A bird can fly high.', 'bird', 'fly'],
-    ['A fish swims in water.', 'fish', 'water'],
+  const numberItems = [
+    { emoji: '1', label: 'Number 1', answer: '1', soundText: 'Number 1. One.', accent: '#fee2e2' },
+    { emoji: '2', label: 'Number 2', answer: '2', soundText: 'Number 2. Two.', accent: '#fef3c7' },
+    { emoji: '3', label: 'Number 3', answer: '3', soundText: 'Number 3. Three.', accent: '#dcfce7' },
+    { emoji: '4', label: 'Number 4', answer: '4', soundText: 'Number 4. Four.', accent: '#dbeafe' },
+    { emoji: '5', label: 'Number 5', answer: '5', soundText: 'Number 5. Five.', accent: '#ede9fe' },
+    { emoji: '6', label: 'Number 6', answer: '6', soundText: 'Number 6. Six.', accent: '#fae8ff' },
   ];
+  const pictureItems = [
+    { emoji: '🦁', label: 'lion', answer: 'Lion', accent: '#fee2e2' },
+    { emoji: '🐘', label: 'elephant', answer: 'Elephant', accent: '#dbeafe' },
+    { emoji: '👩‍🏫', label: 'teacher', answer: 'Teacher', accent: '#fef3c7' },
+    { emoji: '🚌', label: 'bus', answer: 'Bus', accent: '#dcfce7' },
+    { emoji: '🍌', label: 'banana', answer: 'Banana', accent: '#fef9c3' },
+    { emoji: '⚽', label: 'ball', answer: 'Ball', accent: '#ede9fe' },
+  ];
+
+  if (subject === 'Colouring') {
+    return takeUnique(colouringItems, total).map((item, index) => ({
+      id: `${nonce}-kg-colour-${index}`,
+      prompt: `${level}: Colour the ${item.label}.`,
+      choices: ['Red', 'Blue', 'Green', 'Yellow'],
+      answer: item.answer,
+      explanation: `${item.answer} matches the ${item.label} very well.`,
+      skill: 'Colouring play',
+      helperText: 'Pick a colour below and watch the picture fill in.',
+      interaction: 'coloring' as const,
+      visual: {
+        label: item.label,
+        accent: item.accent,
+        art: item.art,
+      },
+    }));
+  }
 
   if (subject === 'Alphabet') {
-    const letter = alphabetLetters[(index + Math.floor(Math.random() * 3)) % alphabetLetters.length];
-    const nextLetter = alphabetLetters[(alphabetLetters.indexOf(letter) + 1) % alphabetLetters.length];
-    const choices = shuffle([nextLetter, 'Z', 'M', 'Q']);
-
-    return {
-      id: `kg-alpha-${index}`,
-      prompt: `${level}: Which letter comes after ${letter}?`,
-      choices,
-      answer: nextLetter,
-      explanation: `${nextLetter} comes after ${letter} in the alphabet.`,
-      skill: 'Alphabet order',
-    };
+    return takeUnique(alphabetItems, total).map((item, index) => ({
+      id: `${nonce}-kg-alpha-${index}`,
+      prompt: `${level}: Which letter do you see?`,
+      choices: uniqueChoices(item.answer, alphabetItems.map((entry) => entry.answer)),
+      answer: item.answer,
+      explanation: `That is the letter ${item.answer}.`,
+      skill: 'Letter recognition',
+      helperText: 'Tap Hear it to listen to the letter sound.',
+      visual: {
+        emoji: item.emoji,
+        label: item.label,
+        accent: item.accent,
+        soundText: item.soundText,
+      },
+    }));
   }
 
   if (subject === 'Numbers') {
-    const left = 1 + Math.floor(Math.random() * 5);
-    const right = 1 + Math.floor(Math.random() * 4);
-    const answer = String(left + right);
-    const options = shuffle([
-      answer,
-      String(left + right + 1),
-      String(Math.max(0, left + right - 1)),
-      String(left + right + 2),
-    ]);
-
-    return {
-      id: `kg-num-${index}`,
-      prompt: `${level}: What is ${left} + ${right}?`,
-      choices: options,
-      answer,
-      explanation: `${left} plus ${right} equals ${answer}.`,
-      skill: 'Counting and addition',
-    };
+    return takeUnique(numberItems, total).map((item, index) => ({
+      id: `${nonce}-kg-number-${index}`,
+      prompt: `${level}: Which number do you see?`,
+      choices: uniqueChoices(item.answer, numberItems.map((entry) => entry.answer)),
+      answer: item.answer,
+      explanation: `That is the number ${item.answer}.`,
+      skill: 'Number recognition',
+      helperText: 'Tap Hear it to listen to the number being spoken.',
+      visual: {
+        emoji: item.emoji,
+        label: item.label,
+        accent: item.accent,
+        soundText: item.soundText,
+      },
+    }));
   }
 
-  if (subject === 'Colours') {
-    const [item, answer] = pickOne(colourItems);
-    const choices = shuffle([answer, 'Purple', 'Black', 'White']);
-
-    return {
-      id: `kg-colour-${index}`,
-      prompt: `${level}: What colour is a ${item.toLowerCase()}?`,
-      choices,
-      answer,
-      explanation: `A ${item.toLowerCase()} is usually ${answer.toLowerCase()}.`,
-      skill: 'Colour recognition',
-    };
-  }
-
-  if (subject === 'Shapes') {
-    const [shape, answer] = pickOne(shapeFacts);
-    const choices = shuffle([answer, '1', '2', '5']);
-
-    return {
-      id: `kg-shape-${index}`,
-      prompt: `${level}: How many sides does a ${shape.toLowerCase()} have?`,
-      choices,
-      answer,
-      explanation: `A ${shape.toLowerCase()} has ${answer} sides.`,
-      skill: 'Shape recognition',
-    };
-  }
-
-  const [story, answer, clue] = pickOne(storyFacts);
-  const choices = shuffle([answer, 'chair', 'cloud', 'book']);
-
-  return {
-    id: `kg-story-${index}`,
-    prompt: `${level}: Read this sentence: "${story}" Who is doing something in the sentence?`,
-    choices,
-    answer,
-    explanation: `"${answer}" is the key idea connected to "${clue}" in the sentence.`,
-    skill: 'Early reading',
-  };
+  return takeUnique(pictureItems, total).map((item, index) => ({
+    id: `${nonce}-kg-picture-${index}`,
+    prompt: `${level}: Who or what is this picture?`,
+    choices: uniqueChoices(item.answer, pictureItems.map((entry) => entry.answer)),
+    answer: item.answer,
+    explanation: `This picture shows a ${item.answer.toLowerCase()}.`,
+    skill: 'Picture recognition',
+    helperText: 'Look carefully at the picture before you answer.',
+    visual: {
+      emoji: item.emoji,
+      label: item.label,
+      accent: item.accent,
+      soundText: `This is a ${item.answer.toLowerCase()}.`,
+    },
+  }));
 }
 
-function buildPrimaryQuestion(subject: string, country: CountryProfile, index: number): Question {
-  if (subject === 'Mathematics') {
-    const left = 10 + Math.floor(Math.random() * 20);
-    const right = 2 + Math.floor(Math.random() * 9);
-    const answer = String(left * right);
-    const choices = shuffle([
-      answer,
-      String(left + right),
-      String(left * right + right),
-      String(left * right - right),
-    ]);
+function buildPrimarySession(subject: string, country: CountryProfile, total: number, nonce: string) {
+  const prompts: Record<string, Question[]> = {
+    Mathematics: Array.from({ length: total }, (_, index) => {
+      const left = randomInt(12, 48);
+      const right = randomInt(2, 9);
+      const answer = String(left + right);
 
-    return {
-      id: `primary-math-${index}`,
-      prompt: `Solve: ${left} x ${right}`,
-      choices,
-      answer,
-      explanation: `${left} groups of ${right} equals ${answer}.`,
-      skill: 'Multiplication fluency',
-    };
-  }
-
-  if (subject === 'English') {
-    const prompts = [
-      ['Choose the correct word: She ___ to school every day.', 'walks', ['walk', 'walked', 'walking']],
-      ['Pick the correctly spelled word.', 'beautiful', ['beutiful', 'beautifull', 'beautyful']],
-      ['Which word is a noun?', 'teacher', ['quickly', 'happy', 'bright']],
-    ] as const;
-    const [prompt, answer, distractors] = pickOne([...prompts]);
-
-    return {
-      id: `primary-english-${index}`,
+      return {
+        id: `${nonce}-primary-math-${index}`,
+        prompt: `What is ${left} + ${right}?`,
+        choices: uniqueChoices(answer, [
+          answer,
+          String(left + right + 2),
+          String(left + right - 1),
+          String(left + right + 4),
+          String(left + right - 3),
+        ]),
+        answer,
+        explanation: `${left} plus ${right} equals ${answer}.`,
+        skill: 'Addition fluency',
+      };
+    }),
+    'General Studies': ([
+      ['Which tool helps us find places on Earth?', 'Map', ['Bell', 'Brush', 'Desk'], 'Places'],
+      [`Which guide is common in ${country.name}?`, country.curriculum, ['Sports list', 'Cinema guide', 'Dance list'], 'School systems'],
+      ['Why do people need clean water?', 'To stay healthy', ['To break toys', 'To stop reading', 'To change colours'], 'Daily life'],
+      ['Which place helps people learn every day?', 'School', ['Garage', 'Forest only', 'Boat'], 'Community'],
+      ['Why do we plant trees?', 'To help the environment', ['To hide roads', 'To remove shade', 'To stop birds'], 'Care for nature'],
+      ['Which object tells time?', 'Clock', ['Broom', 'Plate', 'Pillow'], 'Everyday objects'],
+    ] satisfies PromptTuple[]).slice(0, total).map(([prompt, answer, distractors, skill], index) => ({
+      id: `${nonce}-primary-general-${index}`,
       prompt,
       choices: shuffle([answer, ...distractors]),
       answer,
-      explanation: `${answer} is the correct choice for this sentence.`,
-      skill: 'Grammar and vocabulary',
-    };
-  }
-
-  if (subject === 'Science') {
-    const prompts = [
-      ['Which part of a plant makes food?', 'Leaf', ['Root', 'Stem', 'Flower']],
-      ['What do humans need to breathe?', 'Oxygen', ['Sand', 'Milk', 'Clay']],
-      ['Which state of matter takes the shape of its container?', 'Liquid', ['Solid', 'Rock', 'Metal']],
-    ] as const;
-    const [prompt, answer, distractors] = pickOne([...prompts]);
-
-    return {
-      id: `primary-science-${index}`,
+      explanation: `${answer} is the best answer here.`,
+      skill,
+    })),
+    'Communication Skills': ([
+      ['Choose the correct greeting for the morning.', 'Good morning', ['Good night', 'Goodbye', 'Well done'], 'Speaking kindly'],
+      ['Which word is spelled correctly?', 'friend', ['freind', 'frend', 'friand'], 'Spelling'],
+      ['Which sentence sounds polite?', 'Please may I join?', ['Move now', 'Give me that', 'I will not listen'], 'Polite speech'],
+      ['Which word is a noun?', 'teacher', ['quickly', 'happy', 'bright'], 'Word types'],
+      ['What should you do before you speak in class?', 'Listen first', ['Shout at once', 'Hide the book', 'Run away'], 'Listening'],
+      ['Which sentence is complete?', 'The class is reading.', ['The class', 'Reading quickly', 'On the desk'], 'Sentence building'],
+    ] satisfies PromptTuple[]).slice(0, total).map(([prompt, answer, distractors, skill], index) => ({
+      id: `${nonce}-primary-comm-${index}`,
       prompt,
       choices: shuffle([answer, ...distractors]),
       answer,
-      explanation: `${answer} is the science concept being tested here.`,
-      skill: 'Core science facts',
-    };
-  }
-
-  if (subject === 'Social Studies') {
-    const prompts = [
-      [`Which curriculum is highlighted for ${country.name} on Review Buddy?`, country.curriculum, ['STEM only', 'Sports only', 'Music only']],
-      ['Why do communities have rules?', 'To keep people safe and organized', ['To stop learning', 'To make everyone identical', 'To remove teamwork']],
-      ['Which tool helps us find places on Earth?', 'Map', ['Drum', 'Brush', 'Whistle']],
-    ] as const;
-    const [prompt, answer, distractors] = pickOne([...prompts]);
-
-    return {
-      id: `primary-social-${index}`,
+      explanation: `${answer} is correct.`,
+      skill,
+    })),
+    History: ([
+      ['What does a timeline help us do?', 'Put events in order', ['Measure rain', 'Draw triangles', 'Mix colours'], 'Timeline use'],
+      ['Why do we learn about heroes from the past?', 'To understand important events', ['To stop reading', 'To avoid books', 'To skip class'], 'Learning from history'],
+      ['Which word means something that happened long ago?', 'Past', ['Future', 'Today only', 'Soon'], 'Time words'],
+      ['Old buildings can teach us about:', 'How people lived before', ['Only sports', 'Just weather', 'Only traffic'], 'Local history'],
+      ['A story from long ago is part of our:', 'History', ['Lunch', 'Homework only', 'Colouring'], 'History meaning'],
+      ['A museum helps keep:', 'Important objects and stories', ['Broken pencils only', 'Rain clouds', 'Traffic lights'], 'Museums'],
+    ] satisfies PromptTuple[]).slice(0, total).map(([prompt, answer, distractors, skill], index) => ({
+      id: `${nonce}-primary-history-${index}`,
       prompt,
       choices: shuffle([answer, ...distractors]),
       answer,
-      explanation: `${answer} is the best answer for this social studies question.`,
-      skill: 'Community and geography',
-    };
-  }
-
-  const prompts = [
-    ['Which colour mix makes green?', 'Blue and yellow', ['Red and white', 'Black and blue', 'Purple and orange']],
-    ['Which activity builds drawing skill?', 'Practising lines and shapes', ['Sleeping on the desk', 'Ignoring the page', 'Skipping observation']],
-    ['Which beat is easiest to clap and repeat?', 'A steady rhythm', ['A silent rhythm', 'A broken ruler', 'A locked pencil']],
-  ] as const;
-  const [prompt, answer, distractors] = pickOne([...prompts]);
-
-  return {
-    id: `primary-arts-${index}`,
-    prompt,
-    choices: shuffle([answer, ...distractors]),
-    answer,
-    explanation: `${answer} is the strongest creative arts answer here.`,
-    skill: 'Creative thinking',
+      explanation: `${answer} is the correct answer.`,
+      skill,
+    })),
   };
+
+  return prompts[subject] ?? prompts.Mathematics;
 }
 
-function buildTeenQuestion(subject: string, country: CountryProfile, index: number): Question {
-  if (subject === 'Mathematics') {
-    const x = 2 + Math.floor(Math.random() * 7);
-    const answer = String(3 * x + 4);
-    const prompt = `If y = 3x + 4 and x = ${x}, what is y?`;
-    const choices = shuffle([answer, String(x + 4), String(3 * x), String(2 * x + 4)]);
-
-    return {
-      id: `teen-math-${index}`,
-      prompt,
-      choices,
-      answer,
-      explanation: `Substitute x with ${x}: 3(${x}) + 4 = ${answer}.`,
-      skill: 'Algebra substitution',
-    };
-  }
-
-  if (subject === 'English') {
-    const prompts = [
-      ['Choose the sentence with correct punctuation.', 'After class, we revised our notes.', ['After class we revised our notes', 'After class we revised our notes?', 'After class; we revised our notes,']],
-      ['Which word best matches "analyse"?', 'Examine carefully', ['Forget quickly', 'Decorate brightly', 'Repeat loudly']],
-      ['What is the main purpose of a thesis statement?', 'To present the central argument', ['To list page numbers', 'To thank the reader', 'To copy the title']],
-    ] as const;
-    const [prompt, answer, distractors] = pickOne([...prompts]);
-
-    return {
-      id: `teen-english-${index}`,
+function buildTeenSession(subject: string, country: CountryProfile, total: number, nonce: string) {
+  const prompts: Record<string, Question[]> = {
+    Biology: ([
+      ['What is the basic unit of life?', 'Cell', ['Atom', 'Tissue', 'Planet'], 'Cells'],
+      ['Which organ pumps blood around the body?', 'Heart', ['Liver', 'Skin', 'Lung'], 'Body systems'],
+      ['Plants make food through:', 'Photosynthesis', ['Evaporation', 'Condensation', 'Fermentation'], 'Plant processes'],
+      ['Which part of a plant absorbs water?', 'Roots', ['Leaf', 'Petal', 'Fruit'], 'Plant structure'],
+      ['Which nutrient helps build muscles?', 'Protein', ['Water only', 'Air', 'Light'], 'Nutrition'],
+      ['Which system helps us breathe?', 'Respiratory system', ['Solar system', 'Digestive system', 'Transport system'], 'Human systems'],
+      ['A habitat is:', 'The natural home of an organism', ['A type of exam', 'A music sheet', 'A drawing tool'], 'Habitats'],
+      ['Which blood cells help fight infection?', 'White blood cells', ['Red blood cells', 'Skin cells', 'Bone cells'], 'Immunity'],
+    ] satisfies PromptTuple[]).slice(0, total).map(([prompt, answer, distractors, skill], index) => ({
+      id: `${nonce}-teen-biology-${index}`,
       prompt,
       choices: shuffle([answer, ...distractors]),
       answer,
-      explanation: `${answer} is the correct academic English response.`,
-      skill: 'Writing and comprehension',
-    };
-  }
-
-  if (subject === 'Biology') {
-    const prompts = [
-      ['Which organ pumps blood around the body?', 'Heart', ['Lung', 'Skin', 'Liver']],
-      ['What is the basic unit of life?', 'Cell', ['Atom', 'Tissue', 'Planet']],
-      ['Which process do plants use to make food?', 'Photosynthesis', ['Respiration only', 'Evaporation', 'Condensation']],
-    ] as const;
-    const [prompt, answer, distractors] = pickOne([...prompts]);
-
-    return {
-      id: `teen-bio-${index}`,
+      explanation: `${answer} is the correct answer.`,
+      skill,
+    })),
+    Chemistry: ([
+      ['What is the chemical formula for water?', 'H2O', ['CO2', 'NaCl', 'O2'], 'Formulas'],
+      ['A substance with pH 2 is:', 'Acidic', ['Neutral', 'Basic', 'Metallic'], 'Acids and bases'],
+      ['When a solid melts, its particles:', 'Move more freely', ['Disappear', 'Stop moving', 'Become louder'], 'States of matter'],
+      ['Which gas do plants use in photosynthesis?', 'Carbon dioxide', ['Helium', 'Hydrogen', 'Nitrogen only'], 'Gases'],
+      ['A pure substance made of one type of atom is an:', 'Element', ['Mixture', 'Solution', 'Device'], 'Elements'],
+      ['Which piece of equipment measures liquid volume?', 'Measuring cylinder', ['Magnet', 'Balance beam', 'Thermometer only'], 'Lab equipment'],
+      ['Boiling changes a liquid into a:', 'Gas', ['Rock', 'Solid only', 'Colour'], 'Heating'],
+      ['Salt dissolved in water makes a:', 'Solution', ['Metal', 'Flame', 'Planet'], 'Solutions'],
+    ] satisfies PromptTuple[]).slice(0, total).map(([prompt, answer, distractors, skill], index) => ({
+      id: `${nonce}-teen-chemistry-${index}`,
       prompt,
       choices: shuffle([answer, ...distractors]),
       answer,
-      explanation: `${answer} is the correct biology concept.`,
-      skill: 'Biology foundations',
-    };
-  }
-
-  if (subject === 'Chemistry') {
-    const prompts = [
-      ['What is the chemical symbol for water?', 'H2O', ['O2', 'CO2', 'NaCl']],
-      ['A pH below 7 shows a substance is:', 'Acidic', ['Neutral', 'Basic only', 'Metallic']],
-      ['What happens to particles when a solid melts?', 'They move more freely', ['They disappear', 'They stop moving', 'They become sound']],
-    ] as const;
-    const [prompt, answer, distractors] = pickOne([...prompts]);
-
-    return {
-      id: `teen-chem-${index}`,
+      explanation: `${answer} is the correct answer.`,
+      skill,
+    })),
+    Physics: ([
+      ['Which force pulls objects toward Earth?', 'Gravity', ['Magnetism', 'Friction', 'Heat'], 'Forces'],
+      ['The unit of electric current is:', 'Ampere', ['Meter', 'Kelvin', 'Newton'], 'Units'],
+      ['When speed changes over time, the object is:', 'Accelerating', ['Sleeping', 'Freezing', 'Condensing'], 'Motion'],
+      ['Sound travels fastest through:', 'Solids', ['Vacuum', 'Clouds', 'Shadows'], 'Sound'],
+      ['Energy stored in a stretched rubber band is:', 'Elastic potential energy', ['Nuclear energy', 'Wind energy', 'Thermal energy'], 'Energy'],
+      ['A mirror that curves inward is:', 'Concave', ['Convex', 'Flat only', 'Transparent'], 'Light'],
+      ['Voltage is measured in:', 'Volts', ['Watts', 'Newtons', 'Meters'], 'Electricity'],
+      ['Friction usually acts to:', 'Slow motion down', ['Speed everything up', 'Change water to fire', 'Create clouds'], 'Forces'],
+    ] satisfies PromptTuple[]).slice(0, total).map(([prompt, answer, distractors, skill], index) => ({
+      id: `${nonce}-teen-physics-${index}`,
       prompt,
       choices: shuffle([answer, ...distractors]),
       answer,
-      explanation: `${answer} is the best chemistry answer here.`,
-      skill: 'Chemistry principles',
-    };
-  }
-
-  if (subject === 'Physics') {
-    const prompts = [
-      ['Which force pulls objects toward Earth?', 'Gravity', ['Magnetism', 'Friction only', 'Sound']],
-      ['What is the unit of electric current?', 'Ampere', ['Meter', 'Newton', 'Kelvin']],
-      ['If speed increases over time, the object is:', 'Accelerating', ['Sleeping', 'Cooling', 'Condensing']],
-    ] as const;
-    const [prompt, answer, distractors] = pickOne([...prompts]);
-
-    return {
-      id: `teen-physics-${index}`,
+      explanation: `${answer} is the correct answer.`,
+      skill,
+    })),
+    Mathematics: Array.from({ length: total }, (_, index) => {
+      const x = randomInt(2, 8);
+      const answer = String(3 * x + 4);
+      return {
+        id: `${nonce}-teen-math-${index}`,
+        prompt: `If y = 3x + 4 and x = ${x}, what is y?`,
+        choices: uniqueChoices(answer, [
+          answer,
+          String(x + 4),
+          String(3 * x),
+          String(2 * x + 4),
+          String(3 * x + 2),
+        ]),
+        answer,
+        explanation: `Substitute x with ${x}: 3(${x}) + 4 = ${answer}.`,
+        skill: 'Algebra',
+      };
+    }),
+    History: ([
+      ['Why do historians compare many sources?', 'To check accuracy and bias', ['To shorten essays', 'To remove facts', 'To avoid evidence'], 'Historical thinking'],
+      ['A timeline is most useful for:', 'Placing events in order', ['Mixing chemicals', 'Measuring speed', 'Drawing circles'], 'Chronology'],
+      [`Which curriculum does Review Buddy show for ${country.name}?`, country.curriculum, ['No curriculum', 'Film script', 'Holiday list'], 'School systems'],
+      ['Primary sources are valuable because they come from:', 'The time being studied', ['A future date', 'Only fiction books', 'Advertisements'], 'Sources'],
+      ['Archaeologists study:', 'Objects from the past', ['Only weather', 'Future transport', 'Just paintings'], 'Evidence'],
+      ['An important reason to learn history is to:', 'Understand change over time', ['Stop asking questions', 'Avoid reading', 'Forget earlier events'], 'Change over time'],
+      ['A speech made during an event is an example of:', 'A primary source', ['A myth only', 'A timetable', 'A machine'], 'Source types'],
+      ['What can history teach us?', 'How people lived and made decisions', ['Only sport scores', 'Only colour names', 'Nothing useful'], 'Life lessons'],
+    ] satisfies PromptTuple[]).slice(0, total).map(([prompt, answer, distractors, skill], index) => ({
+      id: `${nonce}-teen-history-${index}`,
       prompt,
       choices: shuffle([answer, ...distractors]),
       answer,
-      explanation: `${answer} is the correct physics term or unit.`,
-      skill: 'Physics concepts',
-    };
-  }
-
-  if (subject === 'History') {
-    const prompts = [
-      ['Why do historians compare multiple sources?', 'To check accuracy and bias', ['To remove dates', 'To shorten essays', 'To avoid evidence']],
-      [`Which curriculum guide does Review Buddy highlight for ${country.name}?`, country.curriculum, ['No curriculum', 'Movie syllabus', 'Street map']],
-      ['What does a timeline help students do?', 'Place events in order', ['Measure volume', 'Mix chemicals', 'Draw only circles']],
-    ] as const;
-    const [prompt, answer, distractors] = pickOne([...prompts]);
-
-    return {
-      id: `teen-history-${index}`,
+      explanation: `${answer} is the correct answer.`,
+      skill,
+    })),
+    'General Studies': ([
+      ['Which action helps a community stay healthy?', 'Keeping water clean', ['Throwing litter anywhere', 'Ignoring waste', 'Breaking taps'], 'Community care'],
+      ['A map is used to:', 'Show places and direction', ['Measure temperature', 'Write music', 'Mix paint'], 'Maps'],
+      ['Why do countries have rules and leaders?', 'To help people live together well', ['To remove schools', 'To stop teamwork', 'To hide roads'], 'Citizenship'],
+      ['Which source gives current information quickly?', 'News report', ['Old stone only', 'Empty notebook', 'Broken ruler'], 'Information sources'],
+      ['Recycling helps because it:', 'Reduces waste', ['Stops learning', 'Creates smoke only', 'Uses more rubbish'], 'Environment'],
+      ['A budget helps you:', 'Plan money use', ['Draw only maps', 'Grow plants', 'Measure light'], 'Money skills'],
+      ['Which place helps people borrow books?', 'Library', ['Stadium', 'Garage', 'Factory'], 'Public services'],
+      ['Good digital behaviour includes:', 'Respecting privacy online', ['Sharing every password', 'Posting hurtful messages', 'Ignoring safety'], 'Digital citizenship'],
+    ] satisfies PromptTuple[]).slice(0, total).map(([prompt, answer, distractors, skill], index) => ({
+      id: `${nonce}-teen-general-${index}`,
       prompt,
       choices: shuffle([answer, ...distractors]),
       answer,
-      explanation: `${answer} is the strongest history response.`,
-      skill: 'Historical thinking',
-    };
-  }
-
-  if (subject === 'Geography') {
-    const prompts = [
-      ['Which tool shows physical and political features of places?', 'Map', ['Microscope', 'Telescope', 'Calculator']],
-      ['What do we call lines running east to west on Earth?', 'Latitude', ['Longitude', 'Altitude', 'Magnitude']],
-      ['Why do geographers study climate?', 'To understand long-term weather patterns', ['To count pencils', 'To replace maps', 'To grade music']],
-    ] as const;
-    const [prompt, answer, distractors] = pickOne([...prompts]);
-
-    return {
-      id: `teen-geo-${index}`,
+      explanation: `${answer} is the correct answer.`,
+      skill,
+    })),
+    'Communication Skills': ([
+      ['What is the main purpose of a thesis statement?', 'To present the main idea', ['To count pages', 'To repeat the title only', 'To avoid structure'], 'Writing'],
+      ['Which sentence uses correct punctuation?', 'After class, we revised our notes.', ['After class we revised our notes', 'After class; we revised our notes,', 'After class we revised our notes?'], 'Punctuation'],
+      ['Which word best matches "analyse"?', 'Examine carefully', ['Forget quickly', 'Decorate brightly', 'Repeat loudly'], 'Vocabulary'],
+      ['A good listener usually:', 'Pays attention and asks clear questions', ['Interrupts all the time', 'Looks away always', 'Ignores the speaker'], 'Listening'],
+      ['Which sentence is in the past tense?', 'We completed the task yesterday.', ['We complete the task tomorrow.', 'We are complete.', 'We will yesterday.'], 'Tense'],
+      ['A summary should:', 'Keep the main points only', ['Add random ideas', 'Be longer than the text', 'Ignore the topic'], 'Summarising'],
+      ['When presenting to others, it helps to:', 'Speak clearly and confidently', ['Hide the main point', 'Mumble quickly', 'Avoid eye contact always'], 'Presenting'],
+      ['Which word connects two ideas in a sentence?', 'Conjunction', ['Noun', 'Number', 'Map'], 'Grammar'],
+    ] satisfies PromptTuple[]).slice(0, total).map(([prompt, answer, distractors, skill], index) => ({
+      id: `${nonce}-teen-communication-${index}`,
       prompt,
       choices: shuffle([answer, ...distractors]),
       answer,
-      explanation: `${answer} is the right geography concept.`,
-      skill: 'Geography skills',
-    };
-  }
-
-  if (subject === 'ICT') {
-    const prompts = [
-      ['Which device is used to point and click on a computer screen?', 'Mouse', ['Speaker', 'Fan', 'Projector']],
-      ['What makes a password stronger?', 'Using a long unique combination', ['Using only 1234', 'Sharing it publicly', 'Keeping it very short']],
-      ['What does a browser help you do?', 'Access websites', ['Wash data', 'Charge a keyboard', 'Print electricity']],
-    ] as const;
-    const [prompt, answer, distractors] = pickOne([...prompts]);
-
-    return {
-      id: `teen-ict-${index}`,
-      prompt,
-      choices: shuffle([answer, ...distractors]),
-      answer,
-      explanation: `${answer} is correct for digital literacy.`,
-      skill: 'ICT readiness',
-    };
-  }
-
-  const prompts = [
-    ['What is profit?', 'Money left after costs are removed', ['All money received before costs', 'Only taxes paid', 'A type of timetable']],
-    ['Why do businesses keep records?', 'To track performance and decisions', ['To hide products', 'To remove customers', 'To stop planning']],
-    ['Which trait helps a team finish a project well?', 'Clear communication', ['Silence only', 'Ignoring deadlines', 'Random guessing']],
-  ] as const;
-  const [prompt, answer, distractors] = pickOne([...prompts]);
-
-  return {
-    id: `teen-business-${index}`,
-    prompt,
-    choices: shuffle([answer, ...distractors]),
-    answer,
-    explanation: `${answer} is the strongest business answer.`,
-    skill: 'Business awareness',
+      explanation: `${answer} is the correct answer.`,
+      skill,
+    })),
   };
+
+  return prompts[subject] ?? prompts.Mathematics;
 }
 
 export function generateQuestions(profile: LearnerProfile) {
   const country = getCountryByCode(profile.countryCode);
   const total = getQuestionCount(profile.plan, profile.stage);
-  const questions: Question[] = [];
+  const nonce = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
 
-  for (let index = 0; index < total; index += 1) {
-    if (profile.stage === 'kindergarten') {
-      questions.push(buildKindergartenQuestion(profile.subject, profile.level, index));
-      continue;
-    }
-
-    if (profile.stage === 'primary') {
-      questions.push(buildPrimaryQuestion(profile.subject, country, index));
-      continue;
-    }
-
-    questions.push(buildTeenQuestion(profile.subject, country, index));
+  if (profile.stage === 'kindergarten') {
+    return buildKindergartenSession(profile.subject, profile.level, total, nonce);
   }
 
-  return questions;
+  if (profile.stage === 'primary') {
+    return buildPrimarySession(profile.subject, country, total, nonce);
+  }
+
+  return buildTeenSession(profile.subject, country, total, nonce);
 }
 
 export function scoreQuiz(questions: Question[], answers: Record<string, string>): QuizResult {
-  const score = questions.reduce((total, question) => {
-    return total + Number(answers[question.id] === question.answer);
-  }, 0);
+  const score = questions.reduce((total, question) => total + Number(answers[question.id] === question.answer), 0);
   const percent = Math.round((score / questions.length) * 100);
 
   return {
@@ -678,35 +719,29 @@ export function getLeaderboard(subject: string, profile?: LearnerProfile, result
 }
 
 export function getPlanLabel(plan: Plan) {
-  if (plan === 'free') {
-    return 'Free';
-  }
-
-  if (plan === 'trial') {
-    return 'Elite Trial';
-  }
-
+  if (plan === 'free') return 'Free';
+  if (plan === 'trial') return 'Elite Trial';
   return 'Elite';
 }
 
 export function getPlanDetails(plan: Plan) {
   if (plan === 'free') {
     return {
-      badge: 'Starter access',
-      description: 'Limited questions, a few subject choices, scoring, and leaderboard visibility.',
+      badge: 'Starter plan',
+      description: 'A few subjects, fewer questions, and score tracking for daily practice.',
     };
   }
 
   if (plan === 'trial') {
     return {
-      badge: '5-day trial',
-      description: 'Full Elite experience for five days before falling back to the free plan.',
+      badge: '5-day Elite trial',
+      description: 'A full preview of the richer Elite learning experience for five days.',
     };
   }
 
   return {
-    badge: 'Unlimited practice',
-    description: 'Full subject library, richer reports, and complete review feedback.',
+    badge: 'Elite access',
+    description: 'Full subject access, more questions, and deeper review support.',
   };
 }
 

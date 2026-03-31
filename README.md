@@ -1,9 +1,9 @@
 # Review Buddy
 
 Review Buddy is a responsive after-school learning app for kids and teens.
-It supports country-aware onboarding, age-level learning paths, learner and admin roles, and a live frontend register/sign-in flow.
+It supports country-aware onboarding, age-level learning paths, learner and admin roles, and a cleaner public-facing register/sign-in flow.
 
-Current version: `1.5.0`
+Current version: `1.5.1`
 
 Production URL: `https://review-buddy-gray.vercel.app`
 
@@ -11,6 +11,8 @@ Production URL: `https://review-buddy-gray.vercel.app`
 
 - Live learner registration and sign-in
 - Default admin login with username `Admin` and password `admin`
+- Avatar choice with generated icons or an uploaded picture during sign-up
+- Boy/girl selection to personalise the learner profile
 - Country-aware subject mapping, continent/capital context, and theme styling
 - Kindergarten, primary, and teen learning flows
 - Dynamic quiz generation so each session feels different
@@ -18,7 +20,7 @@ Production URL: `https://review-buddy-gray.vercel.app`
 - Kindergarten colouring, alphabet, numbers, picture puzzle, and spoken prompt support
 - Installable app support with manifest, offline shell, and automatic install prompt handling
 - Solo and group quiz modes
-- Free, Trial, and Elite plan choices with no charging step during live testing
+- Free, Trial, and Elite plan choices with no payment step in the current build
 - 15-question Free quizzes for primary and teen learners, with longer Elite practice sets
 - Subject pages with country-aware learning notes, quick quiz, and full exam choices
 - Elite-only review pages that show learner answers against the correct answers
@@ -32,7 +34,7 @@ Production URL: `https://review-buddy-gray.vercel.app`
 
 ### Student
 
-- Register with name, email, password, country, level, and plan
+- Register with name, email, gender, avatar choice, country, level, and plan
 - Take quizzes or exams with changing multiple-choice questions
 - Enter a subject page first, then choose learning notes, a quiz, or a full exam
 - View scores and leaderboard placement
@@ -54,7 +56,7 @@ Production URL: `https://review-buddy-gray.vercel.app`
 - Trial: longer practice flow
 - Elite: full review page and certificate tools
 
-All plans are open during live testing, so learners can choose any plan without a payment step.
+All plans can currently be chosen without a payment step.
 
 ## Tech stack
 
@@ -83,10 +85,13 @@ npm run build
 - Vercel command after login: `npx vercel --prod`
 - Vercel login command: `npx vercel login`
 
-## Current live-data note
+## Current data note
 
 Learner registration and admin records are currently stored in the browser for this frontend build.
 That means new learner accounts appear in the admin pages on the same browser/device unless a backend is added later.
+
+Real email verification and automatic password delivery are not included in this static frontend build yet.
+Those need a backend, database, and email service before they can work for public users.
 
 ## Product message
 

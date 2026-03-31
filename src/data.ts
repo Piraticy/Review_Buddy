@@ -3,6 +3,7 @@ export type Plan = 'free' | 'trial' | 'elite';
 export type Stage = 'kindergarten' | 'primary' | 'teen';
 export type QuizMode = 'solo' | 'group';
 export type QuestionArt = 'apple' | 'balloon' | 'leaf' | 'fish' | 'star';
+export type LearnerGender = 'boy' | 'girl';
 
 export type ThemePalette = {
   primary: string;
@@ -29,6 +30,10 @@ export type LearnerProfile = {
   email: string;
   password: string;
   role: Role;
+  gender: LearnerGender;
+  avatarMode: 'generated' | 'upload';
+  avatarEmoji: string;
+  avatarImage?: string;
   countryCode: string;
   plan: Plan;
   stage: Stage;

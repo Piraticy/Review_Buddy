@@ -14,6 +14,7 @@ import {
   getSubjectMeta,
   inferCountryCode,
   scoreQuiz,
+  type LearnerGender,
   type LearnerProfile,
   type Plan,
   type Question,
@@ -90,10 +91,12 @@ type BeforeInstallPromptEvent = Event & {
 
 const STORAGE_KEY = 'review-buddy-state';
 const INSTALL_DISMISS_KEY = 'review-buddy-install-dismissed';
-const APP_VERSION = '1.5.0';
-const PRODUCTION_URL = 'https://review-buddy-gray.vercel.app';
 const DEFAULT_ADMIN_USERNAME = 'Admin';
 const DEFAULT_ADMIN_PASSWORD = 'admin';
+const GENERATED_AVATARS: Record<LearnerGender, string[]> = {
+  boy: ['🧒', '👦', '🧑‍🎓'],
+  girl: ['👧', '🧒🏻', '👩‍🎓'],
+};
 
 const COLOR_MAP: Record<string, string> = {
   Red: '#ef4444',
@@ -158,6 +161,9 @@ function createInitialProfile(): LearnerProfile {
     email: '',
     password: '',
     role: 'student',
+    gender: 'boy',
+    avatarMode: 'generated',
+    avatarEmoji: GENERATED_AVATARS.boy[0],
     countryCode,
     plan: 'free',
     stage,
@@ -177,6 +183,9 @@ function createDefaultAdminUser(): RegisteredUser {
     email: 'admin@reviewbuddy.app',
     password: DEFAULT_ADMIN_PASSWORD,
     role: 'admin',
+    gender: 'boy',
+    avatarMode: 'generated',
+    avatarEmoji: '🛡️',
     countryCode,
     plan: 'elite',
     stage: 'teen',
@@ -318,6 +327,22 @@ function LogoMark() {
   );
 }
 
+function ProfileMark({ profile }: { profile: LearnerProfile }) {
+  if (profile.avatarMode === 'upload' && profile.avatarImage) {
+    return (
+      <div className="logo-mark profile-mark" aria-hidden="true">
+        <img src={profile.avatarImage} alt="" className="profile-photo" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="logo-mark profile-mark" aria-hidden="true">
+      <span className="logo-bubble logo-bubble-main profile-emoji">{profile.avatarEmoji || '🙂'}</span>
+    </div>
+  );
+}
+
 function GlobeIcon(props: SVGProps<SVGSVGElement>) {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" {...props}>
@@ -450,6 +475,10 @@ function createUsername(fullName: string, email: string) {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '.')
     .replace(/^\.+|\.+$/g, '') || 'learner';
+}
+
+function getGeneratedAvatarOptions(gender: LearnerGender) {
+  return GENERATED_AVATARS[gender];
 }
 
 function App() {
@@ -711,6 +740,42 @@ function App() {
       ...current,
       [key]: value,
     }));
+  }
+
+  function updateGender(nextGender: LearnerGender) {
+    setProfile((current) => ({
+      ...current,
+      gender: nextGender,
+      avatarEmoji:
+        current.avatarMode === 'generated' && !getGeneratedAvatarOptions(nextGender).includes(current.avatarEmoji)
+          ? getGeneratedAvatarOptions(nextGender)[0]
+          : current.avatarEmoji,
+    }));
+  }
+
+  function chooseGeneratedAvatar(emoji: string) {
+    setProfile((current) => ({
+      ...current,
+      avatarMode: 'generated',
+      avatarEmoji: emoji,
+      avatarImage: undefined,
+    }));
+  }
+
+  function handleAvatarUpload(file: File | null) {
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = typeof reader.result === 'string' ? reader.result : '';
+      if (!result) return;
+      setProfile((current) => ({
+        ...current,
+        avatarMode: 'upload',
+        avatarImage: result,
+      }));
+    };
+    reader.readAsDataURL(file);
   }
 
   function withDisplayName(next: LearnerProfile) {
@@ -1176,7 +1241,7 @@ function App() {
 
       <header className="topbar">
         <div className="brand-lockup">
-          <LogoMark />
+          {screen === 'auth' ? <LogoMark /> : <ProfileMark profile={profile} />}
           <div>
             <p className="eyebrow">Review Buddy</p>
             <h1 className="brand-title">
@@ -1215,13 +1280,6 @@ function App() {
               space that feels simple on phones, tablets, and computers.
             </p>
 
-            <div className="live-link-card">
-              <p className="small-label">Live now</p>
-              <a href={PRODUCTION_URL} target="_blank" rel="noreferrer" className="live-link">
-                review-buddy-gray.vercel.app
-              </a>
-            </div>
-
             <div className="benefit-grid">
               {benefitCards.map((card) => (
                 <article key={card.title} className="info-card">
@@ -1236,10 +1294,7 @@ function App() {
             <div className="panel-heading">
               <p className="eyebrow">Welcome</p>
               <h2>{authMode === 'signin' ? 'Sign in to continue' : 'Create a new account'}</h2>
-              <p>
-                All plans are open during live testing, so learners can pick the one that fits them
-                best without any charging step.
-              </p>
+              <p>{authMode === 'signin' ? 'Pick up learning where you left off.' : 'Create a learning space that feels like your own.'}</p>
             </div>
 
             <div className="mode-toggle" role="tablist" aria-label="Account mode">
@@ -1269,12 +1324,6 @@ function App() {
               >
                 Register
               </button>
-            </div>
-
-            <div className="live-access-note">
-              <p className="small-label">Live access</p>
-              <strong>Admin login</strong>
-              <p>Username: {DEFAULT_ADMIN_USERNAME} · Password: {DEFAULT_ADMIN_PASSWORD}</p>
             </div>
 
             <form className="auth-form" onSubmit={handleAuthSubmit}>
@@ -1318,6 +1367,17 @@ function App() {
 
               {authMode === 'signup' && (
                 <div className="field-grid">
+                  <label>
+                    Boy or girl
+                    <select
+                      value={profile.gender}
+                      onChange={(event) => updateGender(event.target.value as LearnerGender)}
+                    >
+                      <option value="boy">Boy</option>
+                      <option value="girl">Girl</option>
+                    </select>
+                  </label>
+
                   <label>
                     Country
                     <select
@@ -1373,6 +1433,44 @@ function App() {
                       <option value="elite">Elite</option>
                     </select>
                   </label>
+                </div>
+              )}
+
+              {authMode === 'signup' && (
+                <div className="avatar-picker">
+                  <div className="panel-heading">
+                    <p className="eyebrow">Picture</p>
+                    <h2>Choose a look</h2>
+                    <p>Pick a ready-made icon or add a picture.</p>
+                  </div>
+                  <div className="avatar-row">
+                    {getGeneratedAvatarOptions(profile.gender).map((emoji) => (
+                      <button
+                        key={emoji}
+                        type="button"
+                        className={`avatar-choice${profile.avatarMode === 'generated' && profile.avatarEmoji === emoji ? ' avatar-choice-active' : ''}`}
+                        onClick={() => chooseGeneratedAvatar(emoji)}
+                        aria-label={`Choose ${emoji}`}
+                      >
+                        <span>{emoji}</span>
+                      </button>
+                    ))}
+                    <label className="upload-avatar">
+                      <span>Add picture</span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={(event) => handleAvatarUpload(event.target.files?.[0] ?? null)}
+                      />
+                    </label>
+                  </div>
+                  <div className="avatar-preview-card">
+                    <ProfileMark profile={profile} />
+                    <div>
+                      <strong>{profile.fullName.trim() || 'Your picture preview'}</strong>
+                      <p>{profile.avatarMode === 'upload' ? 'Your uploaded picture is ready.' : 'Your chosen icon will appear around the app.'}</p>
+                    </div>
+                  </div>
                 </div>
               )}
 
@@ -1865,7 +1963,7 @@ function App() {
                   <div>
                     <p className="eyebrow">School overview</p>
                     <h2>Today&apos;s learning picture</h2>
-                    <p>{metrics.country.name} · {metrics.country.curriculum} · live learner and staff view</p>
+                    <p>{metrics.country.name} · {metrics.country.curriculum} · learner and staff overview</p>
                   </div>
                   <div className="banner-actions">
                     <button type="button" className="ghost-button" onClick={logout}>
@@ -1930,7 +2028,7 @@ function App() {
                     <button type="button" className="subject-card" onClick={() => setAdminView('reports')}>
                       <span className="subject-icon">📊</span>
                       <strong>Reports</strong>
-                      <span>View leaderboards, popular subjects, plan use, and live activity.</span>
+                      <span>View leaderboards, popular subjects, plan use, and current activity.</span>
                     </button>
                   </div>
                 </section>
@@ -1991,7 +2089,7 @@ function App() {
                         </button>
                       );
                     }) : (
-                      <p className="empty-state">New sign-ups will add live country totals here on this browser.</p>
+                      <p className="empty-state">New sign-ups will add country totals here on this browser.</p>
                     )}
                   </div>
                 </section>
@@ -2024,7 +2122,7 @@ function App() {
                   <div>
                     <p className="eyebrow">Admin page</p>
                     <h2>Staff</h2>
-                    <p>View staff roles, support focus, and add or remove live staff records.</p>
+                    <p>View staff roles, support focus, and add or remove staff records.</p>
                   </div>
                   <div className="banner-actions">
                     <button type="button" className="ghost-button" onClick={() => setAdminView('overview')}>
@@ -2102,7 +2200,7 @@ function App() {
               <aside className="dashboard-side">
                 <section className="side-card">
                   <div className="panel-heading">
-                    <p className="eyebrow">Live staff links</p>
+                    <p className="eyebrow">Staff links</p>
                     <h2>Who is managing the app</h2>
                   </div>
                   <div className="history-list">
@@ -2277,7 +2375,7 @@ function App() {
                   <div>
                     <p className="eyebrow">Admin page</p>
                     <h2>Reports</h2>
-                    <p>Leaderboards, subject activity, plan mix, and live learner snapshots.</p>
+                    <p>Leaderboards, subject activity, plan mix, and current learner snapshots.</p>
                   </div>
                   <div className="banner-actions">
                     <button type="button" className="ghost-button" onClick={() => setAdminView('overview')}>
@@ -2288,7 +2386,7 @@ function App() {
 
                 <section className="setup-panel">
                   <div className="panel-heading">
-                    <p className="eyebrow">Live learning</p>
+                    <p className="eyebrow">Current learning</p>
                     <h2>Current learner activity</h2>
                   </div>
                   <div className="page-chip-row">
@@ -2375,15 +2473,8 @@ function App() {
         <div>
           <strong>Review Buddy</strong>
           <p>{MOTTO}</p>
-          <p>
-            Live site:{' '}
-            <a href={PRODUCTION_URL} target="_blank" rel="noreferrer" className="footer-link">
-              review-buddy-gray.vercel.app
-            </a>
-          </p>
         </div>
         <div className="footer-meta">
-          <span>Version {APP_VERSION}</span>
           <span>Creator: Review Buddy</span>
         </div>
       </footer>

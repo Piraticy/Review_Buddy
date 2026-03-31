@@ -14,14 +14,17 @@ import {
   getSubjectMeta,
   inferCountryCode,
   scoreQuiz,
+  type AdminStaffMember,
   type LearnerGender,
   type LearnerProfile,
   type Plan,
   type Question,
   type QuestionArt,
   type QuizResult,
+  type RegisteredUser,
   type Stage,
 } from './data';
+import { appRepository } from './lib/repository';
 
 type AttemptRecord = {
   subject: string;
@@ -62,13 +65,6 @@ type ReviewSnapshot = {
   date: string;
 };
 
-type RegisteredUser = LearnerProfile & {
-  id: string;
-  username: string;
-  createdAt: string;
-  lastLoginAt?: string;
-};
-
 type StoredState = {
   profile?: LearnerProfile;
   attempts?: AttemptRecord[];
@@ -91,7 +87,7 @@ type BeforeInstallPromptEvent = Event & {
 
 const STORAGE_KEY = 'review-buddy-state';
 const INSTALL_DISMISS_KEY = 'review-buddy-install-dismissed';
-const APP_VERSION = '1.5.2';
+const APP_VERSION = '1.6.0';
 const APP_CREATED_ON = 'March 31, 2026';
 const DEFAULT_ADMIN_USERNAME = 'Admin';
 const DEFAULT_ADMIN_PASSWORD = 'admin';
@@ -548,7 +544,9 @@ function App() {
   const [showInstallPrompt, setShowInstallPrompt] = useState(false);
   const [isInstalled, setIsInstalled] = useState(false);
   const [adminFocusCode, setAdminFocusCode] = useState(() => createInitialProfile().countryCode);
-  const [staffMembers, setStaffMembers] = useState(() => getAdminMetrics(createInitialProfile().countryCode).staffMembers);
+  const [staffMembers, setStaffMembers] = useState<AdminStaffMember[]>(
+    () => getAdminMetrics(createInitialProfile().countryCode).staffMembers,
+  );
   const [adminNotice, setAdminNotice] = useState('Choose a tool to manage staff, countries, or reports.');
   const [staffDraft, setStaffDraft] = useState({
     name: '',
@@ -627,6 +625,33 @@ function App() {
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
+
+    async function hydrateSharedData() {
+      const [repoUsers, repoStaff] = await Promise.all([
+        appRepository.listRegisteredUsers(),
+        appRepository.listStaffMembers(),
+      ]);
+
+      if (cancelled) return;
+
+      if (repoUsers.length > 0) {
+        setRegisteredUsers(ensureRegisteredUsers(repoUsers));
+      }
+
+      if (repoStaff.length > 0) {
+        setStaffMembers(repoStaff);
+      }
+    }
+
+    void hydrateSharedData();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
     if (!isReady) return;
 
     window.localStorage.setItem(
@@ -690,13 +715,15 @@ function App() {
   const learnerRegistrations = registeredUsers.filter((entry) => entry.role === 'student');
   const registrationsByCountry = COUNTRIES.map((entry) => {
     const matchingUsers = learnerRegistrations.filter((user) => user.countryCode === entry.code);
-    const sampleCountry = metrics.registeredCountries.find((countryEntry) => countryEntry.code === entry.code);
+    const staffLead =
+      staffMembers.find((member) => member.countryCode === entry.code || member.focus.includes(entry.name))?.name ??
+      'Waiting for staff assignment';
 
     return {
       code: entry.code,
       learners: matchingUsers.length,
       families: matchingUsers.length === 0 ? 0 : Math.max(1, Math.ceil(matchingUsers.length * 0.6)),
-      staffLead: sampleCountry?.staffLead ?? 'Waiting for staff assignment',
+      staffLead,
     };
   }).filter((entry) => entry.learners > 0);
   const recentRegistrations = [...learnerRegistrations].sort(
@@ -717,11 +744,6 @@ function App() {
     setSpeakingKey(null);
     speechKeyRef.current = null;
   }, [currentQuestion?.id]);
-
-  useEffect(() => {
-    if (screen !== 'admin') return;
-    setStaffMembers(getAdminMetrics(adminFocusCode).staffMembers);
-  }, [adminFocusCode, screen]);
 
   const countryTheme: ThemeVars = {
     '--theme-primary': country.palette.primary,
@@ -871,7 +893,7 @@ function App() {
     setScreen(normalized.role === 'admin' ? 'admin' : 'student');
   }
 
-  function handleAuthSubmit(event: FormEvent) {
+  async function handleAuthSubmit(event: FormEvent) {
     event.preventDefault();
     setAuthNotice('');
 
@@ -885,37 +907,30 @@ function App() {
       }
 
       const newUser = createRegisteredUser(profile);
-      setRegisteredUsers((current) => ensureRegisteredUsers([...current, newUser]));
-      setSigninIdentifier(newUser.email);
-      setAdminNotice(`${newUser.fullName} was added to registered learners.`);
-      enterWorkspace(newUser);
+      try {
+        const savedUser = await appRepository.registerLearner(newUser);
+        const allUsers = await appRepository.listRegisteredUsers();
+        setRegisteredUsers(ensureRegisteredUsers([...allUsers, savedUser]));
+        setSigninIdentifier(savedUser.email);
+        setAdminNotice(`${savedUser.fullName} was added to registered learners.`);
+        enterWorkspace(savedUser);
+      } catch {
+        setAuthNotice('We could not create the account just now. Please try again.');
+      }
       return;
     }
 
     const identifier = signinIdentifier.trim().toLowerCase();
-    const matchedUser = registeredUsers.find(
-      (user) =>
-        user.email.toLowerCase() === identifier ||
-        user.username.toLowerCase() === identifier ||
-        (user.role === 'admin' && identifier === DEFAULT_ADMIN_USERNAME.toLowerCase()),
-    );
+    const matchedUser = await appRepository.signIn(identifier, profile.password);
 
-    if (!matchedUser || matchedUser.password !== profile.password) {
+    if (!matchedUser) {
       setAuthNotice('We could not find that login. Check the details and try again.');
       return;
     }
 
-    const nextUser = {
-      ...matchedUser,
-      lastLoginAt: new Date().toISOString(),
-    };
-
-    setRegisteredUsers((current) =>
-      ensureRegisteredUsers(
-        current.map((user) => (user.id === matchedUser.id ? nextUser : user)),
-      ),
-    );
-    enterWorkspace(nextUser);
+    const allUsers = await appRepository.listRegisteredUsers();
+    setRegisteredUsers(ensureRegisteredUsers(allUsers));
+    enterWorkspace(matchedUser);
   }
 
   function logout() {
@@ -959,22 +974,27 @@ function App() {
     window.localStorage.setItem(INSTALL_DISMISS_KEY, 'true');
   }
 
-  function addStaffMember() {
+  async function addStaffMember() {
     const focusCountry = getCountryByCode(adminFocusCode);
     if (!staffDraft.name.trim() || !staffDraft.role.trim() || !staffDraft.focus.trim()) {
       setAdminNotice('Add a staff name, role, and support focus before saving.');
       return;
     }
 
-    setStaffMembers((current) => [
-      ...current,
-      {
+    try {
+      const savedMember = await appRepository.addStaffMember({
         name: staffDraft.name.trim(),
         role: staffDraft.role.trim(),
         focus: `${staffDraft.focus.trim()} · ${focusCountry.name}`,
         status: 'Ready to assign',
-      },
-    ]);
+        countryCode: adminFocusCode,
+      });
+      setStaffMembers((current) => [...current, savedMember]);
+    } catch {
+      setAdminNotice(`We could not save that staff profile for ${focusCountry.name} just now.`);
+      return;
+    }
+
     setStaffDraft({
       name: '',
       role: '',
@@ -983,9 +1003,11 @@ function App() {
     setAdminNotice(`A new staff profile was added for ${focusCountry.name}.`);
   }
 
-  function removeStaffMember(name: string) {
-    setStaffMembers((current) => current.filter((member) => member.name !== name));
-    setAdminNotice(`${name} was removed from the staff list.`);
+  async function removeStaffMember(memberIdOrName: string) {
+    const member = staffMembers.find((entry) => entry.id === memberIdOrName || entry.name === memberIdOrName);
+    await appRepository.removeStaffMember(memberIdOrName);
+    setStaffMembers((current) => current.filter((entry) => entry.id !== memberIdOrName && entry.name !== memberIdOrName));
+    setAdminNotice(`${member?.name ?? memberIdOrName} was removed from the staff list.`);
   }
 
   function addCountryFollowUp() {
@@ -998,10 +1020,11 @@ function App() {
     setAdminNotice(`A country report is ready for ${focusCountry.name}.`);
   }
 
-  function removeRegisteredLearner(userId: string) {
+  async function removeRegisteredLearner(userId: string) {
     const learner = registeredUsers.find((entry) => entry.id === userId);
     if (!learner || learner.role !== 'student') return;
 
+    await appRepository.removeRegisteredLearner(userId);
     setRegisteredUsers((current) => current.filter((entry) => entry.id !== userId));
     setAdminNotice(`${learner.fullName} was removed from registered learners.`);
   }
@@ -2239,7 +2262,7 @@ function App() {
                           <button
                             type="button"
                             className="ghost-button ghost-button-small"
-                            onClick={() => removeStaffMember(member.name)}
+                            onClick={() => removeStaffMember(member.id ?? member.name)}
                           >
                             Remove
                           </button>

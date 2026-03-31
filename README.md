@@ -1,9 +1,9 @@
 # Review Buddy
 
 Review Buddy is a responsive after-school learning app for kids and teens.
-It supports country-aware onboarding, age-level learning paths, learner and admin roles, and a cleaner public-facing register/sign-in flow.
+It supports country-aware onboarding, age-level learning paths, learner and admin roles, a cleaner public-facing register/sign-in flow, and a shared backend-ready data layer.
 
-Current version: `1.5.2`
+Current version: `1.6.0`
 
 Production URL: `https://review-buddy-gray.vercel.app`
 
@@ -13,6 +13,7 @@ Production URL: `https://review-buddy-gray.vercel.app`
 - Default admin login with username `Admin` and password `admin`
 - Avatar choice with generated icons or an uploaded picture during sign-up
 - Boy/girl selection to personalise the learner profile
+- More country coverage across Africa, including Kenya, Tanzania, Uganda, Rwanda, Nigeria, Ghana, South Africa, Zambia, Malawi, Ethiopia, and Botswana
 - Country-aware subject mapping, continent/capital context, and theme styling
 - Kindergarten, primary, and teen learning flows
 - Dynamic quiz generation so each session feels different
@@ -28,6 +29,7 @@ Production URL: `https://review-buddy-gray.vercel.app`
 - Elite certificate generation with logo, pass level, grade, and owner signature
 - Softer learner-facing wording and a shorter, cleaner admin dashboard
 - Admin subpages for countries, staff, registered learners, follow-up queues, and reports
+- Shared backend-ready repository layer for learner accounts and staff data
 - Responsive design for mobile, tablet, and desktop
 
 ## Roles
@@ -64,6 +66,7 @@ All plans can currently be chosen without a payment step.
 - TypeScript
 - Vite
 - Plain CSS
+- Supabase-ready shared backend and database layer
 - Vercel for live deployment
 
 ## Run locally
@@ -85,12 +88,27 @@ npm run build
 - Vercel command after login: `npx vercel --prod`
 - Vercel login command: `npx vercel login`
 
+## Backend setup
+
+This repo now includes:
+
+- [src/lib/supabase.ts](/Users/adamrobertmwakisyala/Desktop/Devs/Review_Buddy/src/lib/supabase.ts)
+- [src/lib/repository.ts](/Users/adamrobertmwakisyala/Desktop/Devs/Review_Buddy/src/lib/repository.ts)
+- [supabase/schema.sql](/Users/adamrobertmwakisyala/Desktop/Devs/Review_Buddy/supabase/schema.sql)
+- [.env.example](/Users/adamrobertmwakisyala/Desktop/Devs/Review_Buddy/.env.example)
+
+To enable the shared backend:
+
+1. Create a Supabase project.
+2. Run the SQL in [supabase/schema.sql](/Users/adamrobertmwakisyala/Desktop/Devs/Review_Buddy/supabase/schema.sql).
+3. Add `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` from Supabase to your local `.env` and Vercel project environment variables.
+4. In Supabase Auth settings, create the admin auth user for `admin@reviewbuddy.app` with password `admin`.
+5. Redeploy the app.
+
 ## Current data note
 
-Learner registration and admin records are currently stored in the browser for this frontend build.
-That means new learner accounts appear in the admin pages on the same browser/device unless a backend is added later.
-
-This version uses direct account creation without email verification so learners can register immediately.
+If Supabase environment variables are not set yet, the app automatically falls back to browser storage so it keeps working.
+Once Supabase is configured, learner registrations and staff updates can be shared across devices.
 
 ## Product message
 

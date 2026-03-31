@@ -42,6 +42,13 @@ export type LearnerProfile = {
   subject: string;
 };
 
+export type RegisteredUser = LearnerProfile & {
+  id: string;
+  username: string;
+  createdAt: string;
+  lastLoginAt?: string;
+};
+
 export type QuestionVisual = {
   emoji?: string;
   label: string;
@@ -111,10 +118,12 @@ export type AdminCountryRegistration = {
 };
 
 export type AdminStaffMember = {
+  id?: string;
   name: string;
   role: string;
   focus: string;
   status: string;
+  countryCode?: string;
 };
 
 export type SubjectMeta = {
@@ -233,6 +242,195 @@ export const COUNTRIES: CountryProfile[] = [
       accent: '#2563eb',
       surface: '#ecfeff',
       ink: '#082f49',
+    },
+    subjects: {
+      kindergarten: KINDERGARTEN_SUBJECTS,
+      primary: PRIMARY_SUBJECTS,
+      teen: TEEN_SUBJECTS,
+    },
+  },
+  {
+    code: 'UG',
+    name: 'Uganda',
+    continent: 'Africa',
+    capital: 'Kampala',
+    curriculum: 'NCDC',
+    curriculumFocus: 'literacy, numeracy, and learner-centred progression',
+    description: 'Steady after-school support for early literacy, numeracy, and revision.',
+    palette: {
+      primary: '#1f2937',
+      secondary: '#f59e0b',
+      accent: '#ef4444',
+      surface: '#fff7ed',
+      ink: '#111827',
+    },
+    subjects: {
+      kindergarten: KINDERGARTEN_SUBJECTS,
+      primary: PRIMARY_SUBJECTS,
+      teen: TEEN_SUBJECTS,
+    },
+  },
+  {
+    code: 'RW',
+    name: 'Rwanda',
+    continent: 'Africa',
+    capital: 'Kigali',
+    curriculum: 'Competence-Based Curriculum',
+    curriculumFocus: 'skills growth, clear communication, and practical application',
+    description: 'A calm practice flow for learners building confidence across school subjects.',
+    palette: {
+      primary: '#0369a1',
+      secondary: '#facc15',
+      accent: '#16a34a',
+      surface: '#eff6ff',
+      ink: '#082f49',
+    },
+    subjects: {
+      kindergarten: KINDERGARTEN_SUBJECTS,
+      primary: PRIMARY_SUBJECTS,
+      teen: TEEN_SUBJECTS,
+    },
+  },
+  {
+    code: 'NG',
+    name: 'Nigeria',
+    continent: 'Africa',
+    capital: 'Abuja',
+    curriculum: 'NERDC-aligned',
+    curriculumFocus: 'core subjects, national learning standards, and exam preparation',
+    description: 'Broad practice support for schoolwork, revision, and stronger exam readiness.',
+    palette: {
+      primary: '#166534',
+      secondary: '#22c55e',
+      accent: '#0f172a',
+      surface: '#f0fdf4',
+      ink: '#14532d',
+    },
+    subjects: {
+      kindergarten: KINDERGARTEN_SUBJECTS,
+      primary: PRIMARY_SUBJECTS,
+      teen: TEEN_SUBJECTS,
+    },
+  },
+  {
+    code: 'GH',
+    name: 'Ghana',
+    continent: 'Africa',
+    capital: 'Accra',
+    curriculum: 'Standards-Based Curriculum',
+    curriculumFocus: 'competency, communication, creativity, and national understanding',
+    description: 'Friendly support for classroom learning, literacy, and practical revision.',
+    palette: {
+      primary: '#b91c1c',
+      secondary: '#facc15',
+      accent: '#15803d',
+      surface: '#fefce8',
+      ink: '#3f1d1d',
+    },
+    subjects: {
+      kindergarten: KINDERGARTEN_SUBJECTS,
+      primary: PRIMARY_SUBJECTS,
+      teen: TEEN_SUBJECTS,
+    },
+  },
+  {
+    code: 'ZA',
+    name: 'South Africa',
+    continent: 'Africa',
+    capital: 'Pretoria',
+    curriculum: 'CAPS',
+    curriculumFocus: 'structured subject learning, assessment readiness, and real-world understanding',
+    description: 'Clear practice paths for learners balancing daily schoolwork and revision.',
+    palette: {
+      primary: '#065f46',
+      secondary: '#f59e0b',
+      accent: '#111827',
+      surface: '#ecfdf5',
+      ink: '#064e3b',
+    },
+    subjects: {
+      kindergarten: KINDERGARTEN_SUBJECTS,
+      primary: PRIMARY_SUBJECTS,
+      teen: TEEN_SUBJECTS,
+    },
+  },
+  {
+    code: 'ZM',
+    name: 'Zambia',
+    continent: 'Africa',
+    capital: 'Lusaka',
+    curriculum: 'Competency-Based Curriculum',
+    curriculumFocus: 'foundational mastery, assessment readiness, and classroom participation',
+    description: 'Simple revision support for learners growing through daily practice and exams.',
+    palette: {
+      primary: '#166534',
+      secondary: '#f59e0b',
+      accent: '#dc2626',
+      surface: '#f7fee7',
+      ink: '#14532d',
+    },
+    subjects: {
+      kindergarten: KINDERGARTEN_SUBJECTS,
+      primary: PRIMARY_SUBJECTS,
+      teen: TEEN_SUBJECTS,
+    },
+  },
+  {
+    code: 'MW',
+    name: 'Malawi',
+    continent: 'Africa',
+    capital: 'Lilongwe',
+    curriculum: 'PCAR-inspired',
+    curriculumFocus: 'reading, numeracy, and practical classroom progression',
+    description: 'After-school study support shaped for gentle step-by-step growth.',
+    palette: {
+      primary: '#7c2d12',
+      secondary: '#f97316',
+      accent: '#2563eb',
+      surface: '#fff7ed',
+      ink: '#431407',
+    },
+    subjects: {
+      kindergarten: KINDERGARTEN_SUBJECTS,
+      primary: PRIMARY_SUBJECTS,
+      teen: TEEN_SUBJECTS,
+    },
+  },
+  {
+    code: 'ET',
+    name: 'Ethiopia',
+    continent: 'Africa',
+    capital: 'Addis Ababa',
+    curriculum: 'National Learning Competency Framework',
+    curriculumFocus: 'subject understanding, progression, and national exam readiness',
+    description: 'Focused practice for learners building stronger literacy, science, and revision habits.',
+    palette: {
+      primary: '#065f46',
+      secondary: '#facc15',
+      accent: '#2563eb',
+      surface: '#fefce8',
+      ink: '#14532d',
+    },
+    subjects: {
+      kindergarten: KINDERGARTEN_SUBJECTS,
+      primary: PRIMARY_SUBJECTS,
+      teen: TEEN_SUBJECTS,
+    },
+  },
+  {
+    code: 'BW',
+    name: 'Botswana',
+    continent: 'Africa',
+    capital: 'Gaborone',
+    curriculum: 'National Curriculum Framework',
+    curriculumFocus: 'communication, numeracy, and learner progression with clear assessment goals',
+    description: 'Steady support for practice, revision, and learner confidence after school.',
+    palette: {
+      primary: '#0f172a',
+      secondary: '#38bdf8',
+      accent: '#475569',
+      surface: '#f8fafc',
+      ink: '#0f172a',
     },
     subjects: {
       kindergarten: KINDERGARTEN_SUBJECTS,

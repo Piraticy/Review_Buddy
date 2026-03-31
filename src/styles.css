@@ -404,14 +404,52 @@ button:disabled {
   gap: 10px;
 }
 
+.live-link-card {
+  margin-top: 16px;
+  padding: 14px 16px;
+  border-radius: 20px;
+  background: color-mix(in srgb, var(--theme-surface) 94%, white 6%);
+  border: 1px solid color-mix(in srgb, var(--theme-primary) 16%, white);
+}
+
+.live-link,
+.footer-link {
+  color: var(--theme-primary);
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.live-link:hover,
+.footer-link:hover {
+  text-decoration: underline;
+}
+
 .sample-buttons,
 .role-pills,
 .banner-actions,
 .result-actions,
-.palette-row {
+.palette-row,
+.page-chip-row {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
+}
+
+.page-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--theme-surface) 90%, white 10%);
+  border: 1px solid color-mix(in srgb, var(--theme-primary) 14%, white);
+  color: color-mix(in srgb, var(--theme-ink) 78%, #64748b);
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.page-chip-active {
+  background: linear-gradient(135deg, color-mix(in srgb, var(--theme-primary) 14%, white), color-mix(in srgb, var(--theme-surface) 92%, white));
+  color: var(--theme-ink);
 }
 
 .sample-button,
@@ -583,6 +621,12 @@ button:disabled {
 .app-shell[data-theme='night'] .certificate-card {
   border-color: rgba(148, 163, 184, 0.24);
   background: rgba(15, 23, 42, 0.9);
+}
+
+.app-shell[data-theme='night'] .live-link-card,
+.app-shell[data-theme='night'] .page-chip {
+  background: rgba(15, 23, 42, 0.88);
+  border-color: rgba(148, 163, 184, 0.22);
 }
 
 .subject-card strong,

@@ -88,7 +88,8 @@ type BeforeInstallPromptEvent = Event & {
 
 const STORAGE_KEY = 'review-buddy-state';
 const INSTALL_DISMISS_KEY = 'review-buddy-install-dismissed';
-const APP_VERSION = '1.4.0';
+const APP_VERSION = '1.4.1';
+const PRODUCTION_URL = 'https://review-buddy-gray.vercel.app';
 
 const COLOR_MAP: Record<string, string> = {
   Red: '#ef4444',
@@ -1146,6 +1147,13 @@ function App() {
               space that feels simple on phones, tablets, and computers.
             </p>
 
+            <div className="live-link-card">
+              <p className="small-label">Live now</p>
+              <a href={PRODUCTION_URL} target="_blank" rel="noreferrer" className="live-link">
+                review-buddy-gray.vercel.app
+              </a>
+            </div>
+
             <div className="benefit-grid">
               {benefitCards.map((card) => (
                 <article key={card.title} className="info-card">
@@ -1311,6 +1319,11 @@ function App() {
                     <p>Each subject opens its own learning page with notes, a fresh quiz, and a full exam.</p>
                   </div>
 
+                  <div className="page-chip-row">
+                    <span className="page-chip page-chip-active">Subjects</span>
+                    <span className="page-chip">Choose one to continue</span>
+                  </div>
+
                   <div className="field-grid">
                     <label>
                       Learner group
@@ -1454,6 +1467,12 @@ function App() {
                     <h2>{learningMaterial.title}</h2>
                     <p>This page follows the learner&apos;s selected country and curriculum direction.</p>
                   </div>
+                  <div className="page-chip-row">
+                    <span className="page-chip">Learning notes</span>
+                    <span className="page-chip">Quick quiz</span>
+                    <span className="page-chip">Full exam</span>
+                    {profile.plan === 'elite' && <span className="page-chip">Review quiz</span>}
+                  </div>
                   <div className="history-list">
                     {learningMaterial.points.map((point) => (
                       <article key={point} className="history-row">
@@ -1560,6 +1579,10 @@ function App() {
                     <p className="eyebrow">Answer review</p>
                     <h2>Correct answers and learner choices</h2>
                     <p>{reviewSnapshot?.kind === 'exam' ? 'Full exam review' : 'Quiz review'} for {reviewSnapshot?.date}.</p>
+                  </div>
+                  <div className="page-chip-row">
+                    <span className="page-chip page-chip-active">Review answers</span>
+                    {reviewSnapshot?.result.passed && <span className="page-chip">Certificate ready</span>}
                   </div>
                   <div className="review-list">
                     {reviewSnapshot?.questions.map((question, index) => {
@@ -1772,6 +1795,13 @@ function App() {
                     <h2>Open a section</h2>
                     <p>Keep the overview short, then open deeper pages inside admin when needed.</p>
                   </div>
+                  <div className="page-chip-row">
+                    <span className="page-chip page-chip-active">Overview</span>
+                    <span className="page-chip">Countries</span>
+                    <span className="page-chip">Staff</span>
+                    <span className="page-chip">Follow-ups</span>
+                    <span className="page-chip">Reports</span>
+                  </div>
                   <div className="option-grid">
                     <button type="button" className="subject-card" onClick={() => setAdminView('countries')}>
                       <span className="subject-icon">🌍</span>
@@ -1829,6 +1859,11 @@ function App() {
                 </section>
 
                 <section className="setup-panel">
+                  <div className="page-chip-row">
+                    <span className="page-chip">Overview</span>
+                    <span className="page-chip page-chip-active">Countries</span>
+                    <span className="page-chip">Follow-ups</span>
+                  </div>
                   <div className="country-list">
                     {metrics.registeredCountries.map((entry) => {
                       const entryCountry = getCountryByCode(entry.code);
@@ -1891,6 +1926,11 @@ function App() {
                     <p className="eyebrow">Manage staff</p>
                     <h2>Staff details and actions</h2>
                     <p>{adminNotice}</p>
+                  </div>
+                  <div className="page-chip-row">
+                    <span className="page-chip">Overview</span>
+                    <span className="page-chip page-chip-active">Staff</span>
+                    <span className="page-chip">Reports</span>
                   </div>
                   <div className="banner-actions">
                     <button type="button" className="ghost-button ghost-button-small" onClick={addSampleStaffMember}>
@@ -1955,6 +1995,11 @@ function App() {
                     <p className="eyebrow">Queue actions</p>
                     <h2>Follow-up items</h2>
                     <p>{adminNotice}</p>
+                  </div>
+                  <div className="page-chip-row">
+                    <span className="page-chip">Overview</span>
+                    <span className="page-chip">Countries</span>
+                    <span className="page-chip page-chip-active">Follow-ups</span>
                   </div>
                   <div className="banner-actions">
                     <button type="button" className="ghost-button ghost-button-small" onClick={addCountryFollowUp}>
@@ -2021,6 +2066,11 @@ function App() {
                   <div className="panel-heading">
                     <p className="eyebrow">Live learning</p>
                     <h2>Current learner activity</h2>
+                  </div>
+                  <div className="page-chip-row">
+                    <span className="page-chip">Overview</span>
+                    <span className="page-chip">Staff</span>
+                    <span className="page-chip page-chip-active">Reports</span>
                   </div>
                   <div className="table-list">
                     {metrics.liveActivity.map((session) => (
@@ -2101,6 +2151,12 @@ function App() {
         <div>
           <strong>Review Buddy</strong>
           <p>{MOTTO}</p>
+          <p>
+            Live site:{' '}
+            <a href={PRODUCTION_URL} target="_blank" rel="noreferrer" className="footer-link">
+              review-buddy-gray.vercel.app
+            </a>
+          </p>
         </div>
         <div className="footer-meta">
           <span>Version {APP_VERSION}</span>

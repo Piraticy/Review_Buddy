@@ -3,7 +3,9 @@
 Review Buddy is a responsive after-school learning app for kids and teens.
 It supports country-aware onboarding, age-level learning paths, student and admin roles, and quiz access based on Free, Elite Trial, or Elite plans.
 
-Current version: `1.4.0`
+Current version: `1.4.1`
+
+Production URL: `https://review-buddy-gray.vercel.app`
 
 ## What the app includes
 
@@ -79,6 +81,7 @@ GitHub Pages is free for public repositories, although GitHub account restrictio
 
 The project is also prepared for Vercel deployment with `vercel.json`, which is a good free fallback when GitHub Pages is blocked.
 
+- Current live Vercel URL: `https://review-buddy-gray.vercel.app`
 - Workflow file: `.github/workflows/deploy.yml`
 - Expected deployment URL: `https://piraticy.github.io/Review_Buddy/`
 - Vercel command after login: `npx vercel --prod`

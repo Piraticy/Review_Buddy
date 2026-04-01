@@ -664,21 +664,31 @@ button:disabled {
 
 .avatar-choice,
 .upload-avatar {
-  min-width: 76px;
-  min-height: 76px;
+  min-width: 88px;
+  min-height: 88px;
   border-radius: 22px;
   border: 1px solid color-mix(in srgb, var(--theme-primary) 18%, white);
   background: color-mix(in srgb, var(--theme-surface) 92%, white 8%);
   color: var(--theme-ink);
   display: inline-flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 12px 14px;
+  gap: 6px;
+  padding: 12px 10px;
   font-weight: 800;
+  text-align: center;
 }
 
 .avatar-choice span {
   font-size: 2rem;
+  line-height: 1;
+}
+
+.avatar-choice small {
+  font-size: 0.72rem;
+  line-height: 1.15;
+  color: color-mix(in srgb, var(--theme-ink) 74%, white 26%);
 }
 
 .avatar-choice-active {

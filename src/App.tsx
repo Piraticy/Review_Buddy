@@ -91,16 +91,51 @@ type BeforeInstallPromptEvent = Event & {
 
 type AdminActivityMap = Record<string, AdminSession[]>;
 type AdminFollowUpMap = Record<string, AdminAlert[]>;
+type GeneratedAvatarOption = {
+  emoji: string;
+  label: string;
+};
 
 const STORAGE_KEY = 'review-buddy-state';
 const INSTALL_DISMISS_KEY = 'review-buddy-install-dismissed';
-const APP_VERSION = '1.7.0';
+const APP_VERSION = '1.7.1';
 const APP_CREATED_ON = 'March 31, 2026';
 const DEFAULT_ADMIN_USERNAME = 'Admin';
 const DEFAULT_ADMIN_PASSWORD = 'admin';
-const GENERATED_AVATARS: Record<LearnerGender, string[]> = {
-  boy: ['🧒', '👦', '🧑‍🎓'],
-  girl: ['👧', '🧒🏻', '👩‍🎓'],
+const GENERATED_AVATARS: Record<LearnerGender, GeneratedAvatarOption[]> = {
+  boy: [
+    { emoji: '👦🏻', label: 'Bright starter' },
+    { emoji: '👦🏼', label: 'Sunny learner' },
+    { emoji: '👦🏽', label: 'Reading champ' },
+    { emoji: '👦🏾', label: 'Puzzle pro' },
+    { emoji: '👦🏿', label: 'Math explorer' },
+    { emoji: '🧒🏻', label: 'Little helper' },
+    { emoji: '🧒🏼', label: 'Story buddy' },
+    { emoji: '🧒🏽', label: 'Science star' },
+    { emoji: '🧒🏾', label: 'Creative thinker' },
+    { emoji: '🧒🏿', label: 'Quick learner' },
+    { emoji: '👨🏻‍🎓', label: 'School hero' },
+    { emoji: '👨🏾‍🎓', label: 'Top scholar' },
+    { emoji: '👨🏿‍🚀', label: 'Dream builder' },
+    { emoji: '🦸🏾‍♂️', label: 'Kindness captain' },
+  ],
+  girl: [
+    { emoji: '👧🏻', label: 'Bright starter' },
+    { emoji: '👧🏼', label: 'Sunny learner' },
+    { emoji: '👧🏽', label: 'Reading champ' },
+    { emoji: '👧🏾', label: 'Puzzle pro' },
+    { emoji: '👧🏿', label: 'Math explorer' },
+    { emoji: '🧒🏻', label: 'Little helper' },
+    { emoji: '🧒🏼', label: 'Story buddy' },
+    { emoji: '🧒🏽', label: 'Science star' },
+    { emoji: '🧒🏾', label: 'Creative thinker' },
+    { emoji: '🧒🏿', label: 'Quick learner' },
+    { emoji: '👩🏻‍🎓', label: 'School hero' },
+    { emoji: '👩🏾‍🎓', label: 'Top scholar' },
+    { emoji: '👩🏿‍🚀', label: 'Dream builder' },
+    { emoji: '🦸🏾‍♀️', label: 'Kindness captain' },
+    { emoji: '🧕🏽', label: 'Calm leader' },
+  ],
 };
 
 const COLOR_MAP: Record<string, string> = {
@@ -168,7 +203,7 @@ function createInitialProfile(): LearnerProfile {
     role: 'student',
     gender: 'boy',
     avatarMode: 'generated',
-    avatarEmoji: GENERATED_AVATARS.boy[0],
+    avatarEmoji: GENERATED_AVATARS.boy[0].emoji,
     countryCode,
     plan: 'free',
     stage,
@@ -221,7 +256,7 @@ function normalizeLearnerProfile(input?: Partial<LearnerProfile>): LearnerProfil
       input?.avatarMode === 'upload' && input.avatarImage
         ? 'upload'
         : input?.avatarMode ?? base.avatarMode,
-    avatarEmoji: input?.avatarEmoji ?? base.avatarEmoji ?? getGeneratedAvatarOptions(gender)[0],
+    avatarEmoji: input?.avatarEmoji ?? base.avatarEmoji ?? getGeneratedAvatarOptions(gender)[0].emoji,
     avatarImage: input?.avatarImage,
     level:
       input?.level && getLevelOptions(stage).includes(input.level)
@@ -560,6 +595,10 @@ function createUsername(fullName: string, email: string) {
 
 function getGeneratedAvatarOptions(gender: LearnerGender) {
   return GENERATED_AVATARS[gender];
+}
+
+function getDefaultGeneratedAvatar(gender: LearnerGender) {
+  return getGeneratedAvatarOptions(gender)[0];
 }
 
 function App() {
@@ -991,13 +1030,13 @@ function App() {
   }
 
   function updateGender(nextGender: LearnerGender) {
+    const nextAvatar = getDefaultGeneratedAvatar(nextGender);
     setProfile((current) => ({
       ...current,
       gender: nextGender,
-      avatarEmoji:
-        current.avatarMode === 'generated' && !getGeneratedAvatarOptions(nextGender).includes(current.avatarEmoji)
-          ? getGeneratedAvatarOptions(nextGender)[0]
-          : current.avatarEmoji,
+      avatarMode: 'generated',
+      avatarEmoji: nextAvatar.emoji,
+      avatarImage: undefined,
     }));
   }
 
@@ -1772,15 +1811,16 @@ function App() {
                     <p>Pick a ready-made icon or add a picture.</p>
                   </div>
                   <div className="avatar-row">
-                    {getGeneratedAvatarOptions(profile.gender).map((emoji) => (
+                    {getGeneratedAvatarOptions(profile.gender).map((option) => (
                       <button
-                        key={emoji}
+                        key={`${profile.gender}-${option.emoji}-${option.label}`}
                         type="button"
-                        className={`avatar-choice${profile.avatarMode === 'generated' && profile.avatarEmoji === emoji ? ' avatar-choice-active' : ''}`}
-                        onClick={() => chooseGeneratedAvatar(emoji)}
-                        aria-label={`Choose ${emoji}`}
+                        className={`avatar-choice${profile.avatarMode === 'generated' && profile.avatarEmoji === option.emoji ? ' avatar-choice-active' : ''}`}
+                        onClick={() => chooseGeneratedAvatar(option.emoji)}
+                        aria-label={`Choose ${option.label}`}
                       >
-                        <span>{emoji}</span>
+                        <span>{option.emoji}</span>
+                        <small>{option.label}</small>
                       </button>
                     ))}
                     <label className="upload-avatar">
@@ -1796,7 +1836,11 @@ function App() {
                     <ProfileMark profile={profile} />
                     <div>
                       <strong>{profile.fullName.trim() || 'Your picture preview'}</strong>
-                      <p>{profile.avatarMode === 'upload' ? 'Your uploaded picture is ready.' : 'Your chosen icon will appear around the app.'}</p>
+                      <p>
+                        {profile.avatarMode === 'upload'
+                          ? 'Your uploaded picture is ready.'
+                          : `Your chosen icon will appear around the app. ${getGeneratedAvatarOptions(profile.gender).find((option) => option.emoji === profile.avatarEmoji)?.label ?? 'Ready-made look'}.`}
+                      </p>
                     </div>
                   </div>
                 </div>

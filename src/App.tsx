@@ -3,7 +3,6 @@ import {
   COUNTRIES,
   MOTTO,
   generateQuestions,
-  getAdminMetrics,
   getAvailableSubjects,
   getCountryByCode,
   getLeaderboard,
@@ -80,7 +79,7 @@ type StoredState = {
   adminView?: AdminView;
   selectedSubject?: string | null;
   reviewSnapshot?: ReviewSnapshot | null;
-  staffMembers?: ReturnType<typeof getAdminMetrics>['staffMembers'];
+  staffMembers?: AdminStaffMember[];
   adminActivityByCountry?: AdminActivityMap;
   followUpsByCountry?: AdminFollowUpMap;
 };
@@ -95,7 +94,7 @@ type AdminFollowUpMap = Record<string, AdminAlert[]>;
 
 const STORAGE_KEY = 'review-buddy-state';
 const INSTALL_DISMISS_KEY = 'review-buddy-install-dismissed';
-const APP_VERSION = '1.6.2';
+const APP_VERSION = '1.7.0';
 const APP_CREATED_ON = 'March 31, 2026';
 const DEFAULT_ADMIN_USERNAME = 'Admin';
 const DEFAULT_ADMIN_PASSWORD = 'admin';
@@ -444,24 +443,6 @@ const ADMIN_TABS: { view: AdminView; label: string }[] = [
   { view: 'reports', label: 'Reports' },
 ];
 
-function createAdminActivityByCountry(): AdminActivityMap {
-  return Object.fromEntries(
-    COUNTRIES.map((countryEntry) => [
-      countryEntry.code,
-      getAdminMetrics(countryEntry.code).liveActivity.map((session) => ({ ...session })),
-    ]),
-  );
-}
-
-function createAdminFollowUpByCountry(): AdminFollowUpMap {
-  return Object.fromEntries(
-    COUNTRIES.map((countryEntry) => [
-      countryEntry.code,
-      getAdminMetrics(countryEntry.code).supportQueue.map((item) => ({ ...item })),
-    ]),
-  );
-}
-
 function AdminTabs({
   active,
   onChange,
@@ -602,11 +583,9 @@ function App() {
   const [showInstallPrompt, setShowInstallPrompt] = useState(false);
   const [isInstalled, setIsInstalled] = useState(false);
   const [adminFocusCode, setAdminFocusCode] = useState(() => createInitialProfile().countryCode);
-  const [staffMembers, setStaffMembers] = useState<AdminStaffMember[]>(
-    () => getAdminMetrics(createInitialProfile().countryCode).staffMembers,
-  );
-  const [adminActivityByCountry, setAdminActivityByCountry] = useState<AdminActivityMap>(createAdminActivityByCountry);
-  const [followUpsByCountry, setFollowUpsByCountry] = useState<AdminFollowUpMap>(createAdminFollowUpByCountry);
+  const [staffMembers, setStaffMembers] = useState<AdminStaffMember[]>([]);
+  const [adminActivityByCountry, setAdminActivityByCountry] = useState<AdminActivityMap>({});
+  const [followUpsByCountry, setFollowUpsByCountry] = useState<AdminFollowUpMap>({});
   const [adminNotice, setAdminNotice] = useState('Choose a tool to manage staff, countries, or reports.');
   const [staffDraft, setStaffDraft] = useState({
     name: '',
@@ -798,8 +777,12 @@ function App() {
     profile,
     quizState?.result ?? undefined,
   );
-  const metrics = getAdminMetrics(adminMetricsCode);
+  const adminCountry = getCountryByCode(adminMetricsCode);
   const learnerRegistrations = registeredUsers.filter((entry) => entry.role === 'student');
+  const focusedLearners = learnerRegistrations.filter((entry) => entry.countryCode === adminMetricsCode);
+  const liveWindowMs = 30 * 60 * 1000;
+  const recentWindowMs = 7 * 24 * 60 * 60 * 1000;
+  const now = Date.now();
   const registrationsByCountry = COUNTRIES.map((entry) => {
     const matchingUsers = learnerRegistrations.filter((user) => user.countryCode === entry.code);
     const staffLead =
@@ -816,21 +799,116 @@ function App() {
   const recentRegistrations = [...learnerRegistrations].sort(
     (left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime(),
   );
+  const recentLearnerActivity = [...focusedLearners]
+    .sort(
+      (left, right) =>
+        new Date(right.lastLoginAt ?? right.createdAt).getTime() -
+        new Date(left.lastLoginAt ?? left.createdAt).getTime(),
+    )
+    .slice(0, 8);
   const registrationsGroupedByCountry = COUNTRIES.map((countryEntry) => ({
     country: countryEntry,
     learners: recentRegistrations.filter((entry) => entry.countryCode === countryEntry.code),
   })).filter((entry) => entry.learners.length > 0);
-  const countryRegistrationCards = [
-    ...metrics.registeredCountries.map(
-      (entry) => registrationsByCountry.find((registration) => registration.code === entry.code) ?? entry,
-    ),
-    ...registrationsByCountry.filter(
-      (entry) => !metrics.registeredCountries.some((registration) => registration.code === entry.code),
-    ),
-  ];
-  const reportActivity = adminActivityByCountry[adminMetricsCode] ?? metrics.liveActivity;
-  const followUpItems = followUpsByCountry[adminMetricsCode] ?? metrics.supportQueue;
+  const countryRegistrationCards = registrationsByCountry;
   const focusedStaffMembers = staffMembers.filter((member) => !member.countryCode || member.countryCode === adminMetricsCode);
+  const onlineStaffMembers = focusedStaffMembers.filter(
+    (member) => !member.status.toLowerCase().includes('offline') && !member.status.toLowerCase().includes('away'),
+  );
+  const recentActiveLearners = focusedLearners.filter((entry) => {
+    if (!entry.lastLoginAt) return false;
+    return now - new Date(entry.lastLoginAt).getTime() <= liveWindowMs;
+  });
+  const realReportActivity = recentLearnerActivity.map((entry, index) => {
+    const lastSeenAt = new Date(entry.lastLoginAt ?? entry.createdAt).getTime();
+    const isLive = now - lastSeenAt <= liveWindowMs;
+    const isRecent = now - lastSeenAt <= recentWindowMs;
+    const staffLead =
+      focusedStaffMembers[index % Math.max(focusedStaffMembers.length, 1)]?.name ??
+      registrationsByCountry.find((countryEntry) => countryEntry.code === adminMetricsCode)?.staffLead ??
+      'Waiting for staff assignment';
+
+    return {
+      learner: entry.fullName,
+      subject: entry.subject,
+      status: isLive ? 'Learning right now' : isRecent ? 'Recently active' : 'Ready to return',
+      plan: getPlanLabel(entry.plan),
+      support: isLive ? 'On track' : isRecent ? 'Ready for next quiz' : 'Send a follow-up reminder',
+      staff: staffLead,
+    };
+  });
+  const hasActivityOverride = Object.prototype.hasOwnProperty.call(adminActivityByCountry, adminMetricsCode);
+  const reportActivity = hasActivityOverride
+    ? (adminActivityByCountry[adminMetricsCode] ?? [])
+    : realReportActivity;
+  const quietLearners = focusedLearners.filter((entry) => {
+    if (!entry.lastLoginAt) return true;
+    return now - new Date(entry.lastLoginAt).getTime() > recentWindowMs;
+  });
+  const trialLearners = focusedLearners.filter((entry) => entry.plan === 'trial');
+  const realFollowUps = [
+    ...(trialLearners.length > 0
+      ? [
+          {
+            title: 'Trial learners to follow up',
+            detail: `${trialLearners.length} learner${trialLearners.length === 1 ? '' : 's'} in ${adminCountry.name} are using the trial plan and may need guidance.`,
+          },
+        ]
+      : []),
+    ...(quietLearners.length > 0
+      ? [
+          {
+            title: 'Learners needing encouragement',
+            detail: `${quietLearners.length} learner${quietLearners.length === 1 ? '' : 's'} have not been active recently in ${adminCountry.name}.`,
+          },
+        ]
+      : []),
+    ...(focusedLearners.length > 0
+      ? [
+          {
+            title: 'Newest registrations',
+            detail: `${focusedLearners.length} learner${focusedLearners.length === 1 ? '' : 's'} are now registered from ${adminCountry.name}.`,
+          },
+        ]
+      : []),
+  ];
+  const hasFollowUpOverride = Object.prototype.hasOwnProperty.call(followUpsByCountry, adminMetricsCode);
+  const followUpItems = hasFollowUpOverride
+    ? (followUpsByCountry[adminMetricsCode] ?? [])
+    : realFollowUps;
+  const subjectInsights = Object.values(
+    focusedLearners.reduce<Record<string, { subject: string; learners: number; recent: number }>>((summary, entry) => {
+      const current = summary[entry.subject] ?? { subject: entry.subject, learners: 0, recent: 0 };
+      current.learners += 1;
+      if (entry.lastLoginAt && now - new Date(entry.lastLoginAt).getTime() <= recentWindowMs) {
+        current.recent += 1;
+      }
+      summary[entry.subject] = current;
+      return summary;
+    }, {}),
+  )
+    .sort((left, right) => right.learners - left.learners)
+    .slice(0, 3)
+    .map((item) => ({
+      subject: item.subject,
+      learners: item.learners,
+      averageScore: 0,
+      trend:
+        item.recent > 2 ? 'Active this week' : item.recent > 0 ? 'New recent activity' : 'Waiting for activity',
+    }));
+  const planMix = (['free', 'trial', 'elite'] as const).map((plan) => {
+    const count = focusedLearners.filter((entry) => entry.plan === plan).length;
+    return {
+      label: `${getPlanLabel(plan)} learners`,
+      count,
+      detail:
+        plan === 'free'
+          ? 'Using the starter learning path'
+          : plan === 'trial'
+            ? 'Exploring more learning tools'
+            : 'Using the full learning library',
+    };
+  });
   const firstName = profile.fullName.trim().split(' ')[0] || 'Learner';
   const learningMaterial = getLearningMaterial(profile.countryCode, activeStudentSubject, profile.stage);
   const hasEliteReview = profile.plan === 'elite' && reviewSnapshot?.subject === activeStudentSubject;
@@ -989,6 +1067,18 @@ function App() {
     setStudentView('home');
     setAdminView('overview');
     setScreen(normalized.role === 'admin' ? 'admin' : 'student');
+
+    if (normalized.role === 'student') {
+      void appRepository.syncLearnerProfile({
+        email: normalized.email,
+        countryCode: normalized.countryCode,
+        plan: normalized.plan,
+        stage: normalized.stage,
+        level: normalized.level,
+        mode: normalized.mode,
+        subject: normalized.subject,
+      });
+    }
   }
 
   function openAdminView(view: AdminView) {
@@ -1122,7 +1212,7 @@ function App() {
 
     setFollowUpsByCountry((current) => ({
       ...current,
-      [adminFocusCode]: [...(current[adminFocusCode] ?? []), nextItem],
+      [adminFocusCode]: [...followUpItems, nextItem],
     }));
     setAdminNotice(`A new follow-up item was created for families in ${focusCountry.name}.`);
   }
@@ -1162,57 +1252,10 @@ function App() {
     setAdminNotice(`${learner.fullName} was removed from registered learners.`);
   }
 
-  async function addSampleStaffMember() {
-    const focusCountry = getCountryByCode(adminFocusCode);
-    const sampleNames = ['Ms. Amina', 'Mr. Kato', 'Teacher Zoe', 'Mrs. Nia'];
-    const sampleRoles = ['Learning guide', 'Parent support lead', 'Subject coach', 'Country coordinator'];
-    const sampleFocuses = [
-      'Helping new learners settle in',
-      'Practise support and follow-up care',
-      'Daily lesson rhythm and revision',
-      'Country sign-ups and family questions',
-    ];
-    const nextIndex = staffMembers.length % sampleNames.length;
-
-    try {
-      const savedMember = await appRepository.addStaffMember({
-        name: sampleNames[nextIndex],
-        role: sampleRoles[nextIndex],
-        focus: `${sampleFocuses[nextIndex]} · ${focusCountry.name}`,
-        status: 'Ready to assign',
-        countryCode: adminFocusCode,
-      });
-      setStaffMembers((current) => [...current, savedMember]);
-      setAdminNotice(`A sample staff profile was added for ${focusCountry.name}.`);
-    } catch {
-      setAdminNotice(`We could not add a sample staff profile for ${focusCountry.name} just now.`);
-    }
-  }
-
-  function addSampleReportActivity() {
-    const focusCountry = getCountryByCode(adminFocusCode);
-    const subjectOptions = getAvailableSubjects(adminFocusCode, 'teen', 'elite');
-    const sampleSubject = subjectOptions[reportActivity.length % subjectOptions.length] ?? 'Mathematics';
-    const nextSession = {
-      learner: `${focusCountry.name} learner ${reportActivity.length + 1}`,
-      subject: sampleSubject,
-      status: 'Practising',
-      plan: reportActivity.length % 2 === 0 ? 'Free' : 'Elite',
-      support: 'Fresh sample activity',
-      staff: focusedStaffMembers[0]?.name ?? 'Ready for assignment',
-    };
-
-    setAdminActivityByCountry((current) => ({
-      ...current,
-      [adminFocusCode]: [...(current[adminFocusCode] ?? []), nextSession],
-    }));
-    setAdminNotice(`A sample learner activity row was added for ${focusCountry.name}.`);
-  }
-
   function removeCountryFollowUp(title: string) {
     setFollowUpsByCountry((current) => ({
       ...current,
-      [adminFocusCode]: (current[adminFocusCode] ?? []).filter((item) => item.title !== title),
+      [adminFocusCode]: followUpItems.filter((item) => item.title !== title),
     }));
     setAdminNotice('That follow-up item was removed.');
   }
@@ -1220,7 +1263,7 @@ function App() {
   function removeReportActivity(activityKey: string) {
     setAdminActivityByCountry((current) => ({
       ...current,
-      [adminFocusCode]: (current[adminFocusCode] ?? []).filter(
+      [adminFocusCode]: reportActivity.filter(
         (item) => `${item.learner}-${item.subject}-${item.staff}` !== activityKey,
       ),
     }));
@@ -1236,6 +1279,17 @@ function App() {
     const nextProfile = { ...profile, subject };
     const questions = generateQuestions(nextProfile, { kind });
     setProfile(nextProfile);
+    if (nextProfile.role === 'student') {
+      void appRepository.syncLearnerProfile({
+        email: nextProfile.email,
+        countryCode: nextProfile.countryCode,
+        plan: nextProfile.plan,
+        stage: nextProfile.stage,
+        level: nextProfile.level,
+        mode: nextProfile.mode,
+        subject: nextProfile.subject,
+      });
+    }
     setQuizState({
       activeSubject: subject,
       kind,
@@ -2237,7 +2291,7 @@ function App() {
                   <div>
                     <p className="eyebrow">School overview</p>
                     <h2>Today&apos;s learning picture</h2>
-                    <p>{metrics.country.name} · {metrics.country.curriculum} · learner and staff overview</p>
+                    <p>{adminCountry.name} · {adminCountry.curriculum} · learner and staff overview</p>
                   </div>
                   <div className="banner-actions">
                     <button type="button" className="ghost-button" onClick={logout}>
@@ -2257,11 +2311,11 @@ function App() {
                   </article>
                   <article className="info-card">
                     <strong>Learning right now</strong>
-                    <p>{metrics.liveSessions}</p>
+                    <p>{recentActiveLearners.length}</p>
                   </article>
                   <article className="info-card">
                     <strong>Staff online</strong>
-                    <p>{staffMembers.length}</p>
+                    <p>{onlineStaffMembers.length}</p>
                   </article>
                 </section>
 
@@ -2362,8 +2416,8 @@ function App() {
                 <section className="side-card">
                   <div className="panel-heading">
                     <p className="eyebrow">Country focus</p>
-                    <h2>{metrics.country.name}</h2>
-                    <p>{metrics.country.curriculum} · {metrics.country.curriculumFocus}</p>
+                    <h2>{adminCountry.name}</h2>
+                    <p>{adminCountry.curriculum} · {adminCountry.curriculumFocus}</p>
                   </div>
                   <div className="history-list">
                     {followUpItems.map((item) => (
@@ -2431,12 +2485,9 @@ function App() {
                     <button type="button" className="ghost-button ghost-button-small" onClick={addStaffMember}>
                       Save staff member
                     </button>
-                    <button type="button" className="ghost-button ghost-button-small" onClick={addSampleStaffMember}>
-                      Add sample staff
-                    </button>
                   </div>
                   <div className="history-list">
-                    {staffMembers.map((member) => (
+                    {staffMembers.length > 0 ? staffMembers.map((member) => (
                       <article key={`${member.name}-${member.role}`} className="history-row">
                         <div>
                           <strong>{member.name}</strong>
@@ -2453,7 +2504,9 @@ function App() {
                           </button>
                         </div>
                       </article>
-                    ))}
+                    )) : (
+                      <p className="empty-state">Add staff records here to start building your live admin team.</p>
+                    )}
                   </div>
                 </section>
               </section>
@@ -2465,7 +2518,7 @@ function App() {
                     <h2>Who is managing the app</h2>
                   </div>
                   <div className="history-list">
-                    {(focusedStaffMembers.length > 0 ? focusedStaffMembers : staffMembers).map((member) => (
+                    {(focusedStaffMembers.length > 0 ? focusedStaffMembers : staffMembers).length > 0 ? (focusedStaffMembers.length > 0 ? focusedStaffMembers : staffMembers).map((member) => (
                       <article key={`${member.name}-${member.role}`} className="history-row">
                         <div>
                           <strong>{member.name}</strong>
@@ -2474,7 +2527,9 @@ function App() {
                         </div>
                         <strong>{member.status}</strong>
                       </article>
-                    ))}
+                    )) : (
+                      <p className="empty-state">Staff records will appear here after you add team members.</p>
+                    )}
                   </div>
                 </section>
               </aside>
@@ -2551,7 +2606,7 @@ function App() {
                     <p>Countries and plan choices update as new learners register.</p>
                   </div>
                   <div className="history-list">
-                    {(registrationsByCountry.length > 0 ? registrationsByCountry : metrics.registeredCountries.slice(0, 3)).map((entry) => (
+                    {registrationsByCountry.length > 0 ? registrationsByCountry.map((entry) => (
                       <article key={entry.code} className="history-row">
                         <div>
                           <strong>{getCountryByCode(entry.code).name}</strong>
@@ -2559,7 +2614,9 @@ function App() {
                         </div>
                         <strong>{entry.staffLead}</strong>
                       </article>
-                    ))}
+                    )) : (
+                      <p className="empty-state">Country totals will appear after learners create accounts.</p>
+                    )}
                   </div>
                 </section>
               </aside>
@@ -2596,7 +2653,7 @@ function App() {
                     </button>
                   </div>
                   <div className="history-list">
-                    {followUpItems.map((item) => (
+                    {followUpItems.length > 0 ? followUpItems.map((item) => (
                       <article key={item.title} className="history-row">
                         <div>
                           <strong>{item.title}</strong>
@@ -2612,7 +2669,9 @@ function App() {
                           </button>
                         </div>
                       </article>
-                    ))}
+                    )) : (
+                      <p className="empty-state">Follow-up items will appear here when real learner activity needs support.</p>
+                    )}
                   </div>
                 </section>
               </section>
@@ -2621,11 +2680,11 @@ function App() {
                 <section className="side-card">
                   <div className="panel-heading">
                     <p className="eyebrow">Country focus</p>
-                    <h2>{metrics.country.name}</h2>
+                    <h2>{adminCountry.name}</h2>
                     <p>Lead country queue and family notes.</p>
                   </div>
                   <div className="country-list">
-                    {countryRegistrationCards.map((entry) => (
+                    {countryRegistrationCards.length > 0 ? countryRegistrationCards.map((entry) => (
                       <button
                         key={entry.code}
                         type="button"
@@ -2636,7 +2695,9 @@ function App() {
                         <span>{entry.learners} learners · {entry.families} families</span>
                         <span>Lead: {entry.staffLead}</span>
                       </button>
-                    ))}
+                    )) : (
+                      <p className="empty-state">No registered countries yet. New learner sign-ups will appear here automatically.</p>
+                    )}
                   </div>
                 </section>
               </aside>
@@ -2675,23 +2736,20 @@ function App() {
                     </article>
                     <article className="info-card">
                       <strong>Top subject</strong>
-                      <p>{metrics.subjectInsights[0]?.subject ?? 'Mathematics'}</p>
+                      <p>{subjectInsights[0]?.subject ?? 'No activity yet'}</p>
                     </article>
                     <article className="info-card">
                       <strong>Country focus</strong>
-                      <p>{metrics.country.name}</p>
+                      <p>{adminCountry.name}</p>
                     </article>
                   </div>
                   <div className="banner-actions">
-                    <button type="button" className="ghost-button ghost-button-small" onClick={addSampleReportActivity}>
-                      Add sample activity
-                    </button>
                     <button type="button" className="ghost-button ghost-button-small" onClick={exportCountryReport}>
                       Download report
                     </button>
                   </div>
                   <div className="history-list">
-                    {reportActivity.map((session) => (
+                    {reportActivity.length > 0 ? reportActivity.map((session) => (
                       <article key={`${session.learner}-${session.subject}-${session.staff}`} className="history-row">
                         <div>
                           <strong>{session.learner}</strong>
@@ -2709,7 +2767,9 @@ function App() {
                           </button>
                         </div>
                       </article>
-                    ))}
+                    )) : (
+                      <p className="empty-state">Current learner activity will appear here as learners sign in and practise.</p>
+                    )}
                   </div>
                 </section>
               </section>
@@ -2739,15 +2799,20 @@ function App() {
                     <h2>Where learners are spending time</h2>
                   </div>
                   <div className="history-list">
-                    {metrics.subjectInsights.map((item) => (
+                    {subjectInsights.length > 0 ? subjectInsights.map((item) => (
                       <article key={item.subject} className="history-row">
                         <div>
                           <strong>{item.subject}</strong>
-                          <span>{item.learners} learners · average {item.averageScore}%</span>
+                          <span>
+                            {item.learners} learner{item.learners === 1 ? '' : 's'}
+                            {item.averageScore > 0 ? ` · average ${item.averageScore}%` : ''}
+                          </span>
                         </div>
                         <strong>{item.trend}</strong>
                       </article>
-                    ))}
+                    )) : (
+                      <p className="empty-state">Subject activity will appear here after learners begin using the app.</p>
+                    )}
                   </div>
                 </section>
 
@@ -2757,7 +2822,7 @@ function App() {
                     <h2>How families are using access plans</h2>
                   </div>
                   <div className="history-list">
-                    {metrics.planMix.map((item) => (
+                    {planMix.map((item) => (
                       <article key={item.label} className="history-row">
                         <div>
                           <strong>{item.label}</strong>

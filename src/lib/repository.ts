@@ -1,4 +1,4 @@
-import type { AdminStaffMember, RegisteredUser } from '../data';
+import type { AdminStaffMember, LearnerProfile, RegisteredUser } from '../data';
 import { getCountryByCode } from '../data';
 import { supabase } from './supabase';
 
@@ -424,6 +424,70 @@ async function removeRegisteredLearner(userId: string) {
   saveLocalUsers(localUsers.filter((entry) => entry.id !== userId));
 }
 
+async function syncLearnerProfile(user: Pick<LearnerProfile, 'email' | 'countryCode' | 'plan' | 'stage' | 'level' | 'mode' | 'subject'>) {
+  const normalizedEmail = user.email.trim().toLowerCase();
+
+  if (!normalizedEmail) {
+    return;
+  }
+
+  if (!supabase) {
+    const localUsers = getLocalUsers();
+    saveLocalUsers(
+      localUsers.map((entry) =>
+        entry.email.toLowerCase() === normalizedEmail
+          ? {
+              ...entry,
+              countryCode: user.countryCode,
+              plan: user.plan,
+              stage: user.stage,
+              level: user.level,
+              mode: user.mode,
+              subject: user.subject,
+              lastLoginAt: new Date().toISOString(),
+            }
+          : entry,
+      ),
+    );
+    return;
+  }
+
+  const { error } = await supabase
+    .from('learner_profiles')
+    .update({
+      country_code: user.countryCode,
+      plan: user.plan,
+      stage: user.stage,
+      level: user.level,
+      mode: user.mode,
+      subject: user.subject,
+      last_login_at: new Date().toISOString(),
+    })
+    .eq('email', normalizedEmail);
+
+  if (!error) {
+    return;
+  }
+
+  const localUsers = getLocalUsers();
+  saveLocalUsers(
+    localUsers.map((entry) =>
+      entry.email.toLowerCase() === normalizedEmail
+        ? {
+            ...entry,
+            countryCode: user.countryCode,
+            plan: user.plan,
+            stage: user.stage,
+            level: user.level,
+            mode: user.mode,
+            subject: user.subject,
+            lastLoginAt: new Date().toISOString(),
+          }
+        : entry,
+    ),
+  );
+}
+
 function buildCountrySummary(users: RegisteredUser[]) {
   return users.reduce<Record<string, { learners: number; families: number }>>((summary, user) => {
     const existing = summary[user.countryCode] ?? { learners: 0, families: 0 };
@@ -459,6 +523,7 @@ async function listCountryRegistrations() {
 export const appRepository = {
   registerLearner,
   signIn,
+  syncLearnerProfile,
   listRegisteredUsers,
   listStaffMembers,
   addStaffMember,

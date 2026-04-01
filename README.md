@@ -3,9 +3,19 @@
 Review Buddy is a responsive after-school learning app for kids and teens.
 It supports country-aware onboarding, age-level learning paths, learner and admin roles, a cleaner public-facing register/sign-in flow, and a shared backend-ready data layer.
 
-Current version: `1.7.1`
+Current version: `1.8.0`
 
 Production URL: `https://review-buddy-gray.vercel.app`
+
+Curriculum-aware notes are now shaped around country-specific curriculum direction and official education bodies. Current reference bodies used to structure the notes engine include:
+
+- Kenya Institute of Curriculum Development (CBC): `https://kicd.ac.ke/`
+- Tanzania Institute of Education: `https://tie.go.tz/`
+- Uganda National Curriculum Development Centre: `https://www.ncdc.go.ug/`
+- Ghana National Council for Curriculum and Assessment: `https://nacca.gov.gh/`
+- South Africa CAPS curriculum pages: `https://www.education.gov.za/Curriculum/CurriculumAssessmentPolicyStatements(CAPS).aspx`
+- National Curriculum for England: `https://www.gov.uk/government/collections/national-curriculum`
+- NCERT textbooks and curriculum support: `https://ncert.nic.in/textbook.php`
 
 ## What the app includes
 

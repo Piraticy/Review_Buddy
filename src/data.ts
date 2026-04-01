@@ -132,6 +132,22 @@ export type SubjectMeta = {
   detail: string;
 };
 
+export type LearningChapter = {
+  title: string;
+  summary: string;
+  points: string[];
+};
+
+export type LearningMaterial = {
+  title: string;
+  subtitle: string;
+  sourceLine: string;
+  intro: string;
+  chapters: LearningChapter[];
+  activityHint: string;
+  bookIcon: string;
+};
+
 type PromptTuple = [string, string, string[], string];
 
 const KINDERGARTEN_SUBJECTS = ['Colouring', 'Alphabet', 'Numbers', 'Picture Puzzle'];
@@ -602,6 +618,462 @@ export function getQuestionCount(plan: Plan, stage: Stage, kind: 'quiz' | 'exam'
 
 export function getSubjectMeta(subject: string) {
   return SUBJECT_META[subject] ?? { icon: '📚', title: subject, detail: 'Topic practice' };
+}
+
+type CurriculumNoteProfile = {
+  sourceLine: string;
+  communityLens: string;
+  literacyLens: string;
+  numeracyLens: string;
+  scienceLens: string;
+  heritageLens: string;
+  citizenshipLens: string;
+};
+
+const COUNTRY_NOTE_PROFILES: Partial<Record<string, CurriculumNoteProfile>> = {
+  KE: {
+    sourceLine: 'Built around Kenya CBC learning areas and KICD curriculum designs.',
+    communityLens: 'community roles, environmental activities, and learner responsibility',
+    literacyLens: 'spoken language, reading fluency, and clear writing',
+    numeracyLens: 'problem solving, patterns, and everyday numeracy',
+    scienceLens: 'observation, living things, health, and practical investigation',
+    heritageLens: 'Kenyan heritage, timelines, and local places',
+    citizenshipLens: 'responsibility, collaboration, and care for shared spaces',
+  },
+  TZ: {
+    sourceLine: 'Built around Tanzania Institute of Education syllabuses and NECTA-style progression.',
+    communityLens: 'structured classroom routines, civic knowledge, and map use',
+    literacyLens: 'reading, vocabulary growth, and careful sentence work',
+    numeracyLens: 'step-by-step accuracy, arithmetic confidence, and practical number work',
+    scienceLens: 'careful observation, health, environment, and basic experiments',
+    heritageLens: 'Tanzanian identity, leadership, and national memory',
+    citizenshipLens: 'discipline, public care, and safe daily habits',
+  },
+  UG: {
+    sourceLine: 'Built around Uganda NCDC learner-centred curriculum guidance.',
+    communityLens: 'local community understanding, participation, and daily problem solving',
+    literacyLens: 'listening, speaking, reading, and guided composition',
+    numeracyLens: 'number sense, reasoning, and practical class participation',
+    scienceLens: 'living things, health, weather, and learner enquiry',
+    heritageLens: 'Ugandan stories, chronology, and local history',
+    citizenshipLens: 'values, cooperation, and respectful responsibility',
+  },
+  GH: {
+    sourceLine: 'Built around Ghana NaCCA standards-based curriculum priorities.',
+    communityLens: 'citizenship, creativity, environment, and national understanding',
+    literacyLens: 'language use, reading comprehension, and expressive writing',
+    numeracyLens: 'concept mastery, strategy, and communication in maths',
+    scienceLens: 'investigation, curiosity, and science in everyday life',
+    heritageLens: 'Ghanaian identity, culture, and historical understanding',
+    citizenshipLens: 'core competencies, values, and community contribution',
+  },
+  NG: {
+    sourceLine: 'Built around Nigeria NERDC basic education subject offerings.',
+    communityLens: 'social and civic understanding, daily life skills, and national awareness',
+    literacyLens: 'grammar, comprehension, and organised written work',
+    numeracyLens: 'solid foundational maths with revision readiness',
+    scienceLens: 'basic science ideas, observation, and health awareness',
+    heritageLens: 'national history, civic memory, and evidence from the past',
+    citizenshipLens: 'responsibility, social behaviour, and informed participation',
+  },
+  ZA: {
+    sourceLine: 'Built around South Africa CAPS subject statements.',
+    communityLens: 'social understanding, geography links, and real-world issues',
+    literacyLens: 'reading across subjects, discussion, and purposeful writing',
+    numeracyLens: 'structured maths practice and explanation of method',
+    scienceLens: 'practical science understanding and clear scientific language',
+    heritageLens: 'historical enquiry, timelines, and South African context',
+    citizenshipLens: 'care, fairness, and thoughtful classroom participation',
+  },
+  GB: {
+    sourceLine: 'Built around the National Curriculum for England.',
+    communityLens: 'place knowledge, citizenship, and broad world understanding',
+    literacyLens: 'reading widely, spoken language, grammar, and writing for purpose',
+    numeracyLens: 'fluency, reasoning, and problem solving',
+    scienceLens: 'working scientifically, knowledge, and explanation',
+    heritageLens: 'chronology, evidence, and interpretation',
+    citizenshipLens: 'respect, discussion, and responsible participation',
+  },
+  IN: {
+    sourceLine: 'Built around NCERT textbook progression and national curriculum guidance.',
+    communityLens: 'social life, environment, and connected everyday understanding',
+    literacyLens: 'reading, grammar, writing, and careful expression',
+    numeracyLens: 'concept mastery, strategy, and exam readiness',
+    scienceLens: 'observation, scientific ideas, and application',
+    heritageLens: 'civilisation, change, and evidence from the past',
+    citizenshipLens: 'respect, responsibility, and awareness of society',
+  },
+};
+
+function getCountryNoteProfile(country: CountryProfile): CurriculumNoteProfile {
+  return (
+    COUNTRY_NOTE_PROFILES[country.code] ?? {
+      sourceLine: `Shaped around ${country.curriculum} learning expectations in ${country.name}.`,
+      communityLens: `${country.curriculumFocus} in everyday school and community life`,
+      literacyLens: `reading, writing, and communication within ${country.curriculum}`,
+      numeracyLens: `number confidence and reasoning within ${country.curriculum}`,
+      scienceLens: `observation and enquiry through ${country.curriculumFocus}`,
+      heritageLens: `${country.name}'s history, identity, and community stories`,
+      citizenshipLens: `good habits, safety, and responsible participation in ${country.name}`,
+    }
+  );
+}
+
+function getLevelNoteLine(stage: Stage, level: string) {
+  if (stage === 'kindergarten') {
+    return `${level} focuses on recognition, listening, speaking, and playful discovery.`;
+  }
+
+  if (stage === 'primary') {
+    const isEarlyPrimary = ['Grade 1', 'Grade 2', 'Grade 3'].includes(level);
+    return isEarlyPrimary
+      ? `${level} builds strong basics before moving into bigger written tasks and formal revision.`
+      : `${level} strengthens independence, revision habits, and longer answers before upper exams.`;
+  }
+
+  const isLowerTeen = ['Year 7', 'Year 8', 'Year 9'].includes(level);
+  return isLowerTeen
+    ? `${level} grows subject confidence, explanation skills, and steady revision.`
+    : `${level} prepares learners for stronger exam-style questions, review, and deeper subject links.`;
+}
+
+function buildLearningChapters(
+  subject: string,
+  country: CountryProfile,
+  stage: Stage,
+  level: string,
+  noteProfile: CurriculumNoteProfile,
+): LearningChapter[] {
+  const stageLabel =
+    stage === 'kindergarten' ? 'Little learners' : stage === 'primary' ? 'Growing learners' : 'Teen learners';
+
+  if (stage === 'kindergarten') {
+    const kindergartenBooks: Record<string, LearningChapter[]> = {
+      Colouring: [
+        {
+          title: 'Colours around us',
+          summary: `Children notice colour through objects and scenes they already know in ${country.name}.`,
+          points: [
+            'Match bright colours to familiar objects before choosing a shade.',
+            'Name the colour aloud so the learner hears and sees it together.',
+            `Use local examples from ${country.capital} and daily life in ${country.name}.`,
+          ],
+        },
+        {
+          title: 'Shape, line, and control',
+          summary: `${level} colouring works best when children slow down and notice edges, curves, and spaces.`,
+          points: [
+            'Start with large shapes before smaller details.',
+            'Let the child point first, then colour with calm hand movement.',
+            'Celebrate neat effort more than speed.',
+          ],
+        },
+      ],
+      Alphabet: [
+        {
+          title: 'Letter seeing and hearing',
+          summary: `Early alphabet work links the look of the letter to the sound the learner hears.`,
+          points: [
+            'Show one letter clearly and say its sound only after the learner taps Hear it.',
+            'Connect each letter to a familiar spoken word.',
+            'Repeat with short, playful turns instead of long drills.',
+          ],
+        },
+        {
+          title: 'First reading habits',
+          summary: `${level} learners build confidence by noticing letter shapes, left-to-right tracking, and repetition.`,
+          points: [
+            'Trace the letter in the air, on paper, or with a finger.',
+            'Say the sound together after listening once.',
+            'Mix review letters with one new letter to avoid overload.',
+          ],
+        },
+      ],
+      Numbers: [
+        {
+          title: 'Counting and number names',
+          summary: `Number work begins with seeing the symbol, hearing its name, and matching it to real objects.`,
+          points: [
+            'Count with fingers, blocks, or classroom objects.',
+            'Tap Hear it once, then say the number together.',
+            'Keep the number linked to a real quantity.',
+          ],
+        },
+        {
+          title: 'Small number confidence',
+          summary: `${level} learners do best when they meet the same number in sound, shape, and object form.`,
+          points: [
+            'Show a number, then ask the learner to find that many objects.',
+            'Move slowly from single numbers to short comparisons.',
+            'Use praise for correct recognition and calm retry for mistakes.',
+          ],
+        },
+      ],
+      'Picture Puzzle': [
+        {
+          title: 'Words for daily life',
+          summary: `Picture learning becomes easier when the learner sees familiar animals, people, places, and tools.`,
+          points: [
+            `Use local life in ${country.name} to make pictures feel familiar.`,
+            'Point, name the picture, then invite the learner to repeat it.',
+            'Choose pictures that connect to school, home, and community life.',
+          ],
+        },
+        {
+          title: 'Observation before answer',
+          summary: `${level} learners grow when they stop, look, and describe before picking an answer.`,
+          points: [
+            'Ask what they notice first.',
+            'Keep two or three clear choices, not too many at once.',
+            'Link the picture to spoken language after the choice is made.',
+          ],
+        },
+      ],
+    };
+
+    return kindergartenBooks[subject] ?? kindergartenBooks['Picture Puzzle'];
+  }
+
+  const subjectBooks: Record<string, LearningChapter[]> = {
+    Mathematics: [
+      {
+        title: 'Core maths ideas',
+        summary: `${country.name} learners in ${level} build maths through ${noteProfile.numeracyLens}.`,
+        points: [
+          stage === 'primary'
+            ? 'Secure number operations, place value, measurement, and simple data work.'
+            : 'Revisit algebra, ratio, graph reading, geometry, and multi-step problem solving.',
+          `Keep the method language close to ${country.curriculum} classroom wording.`,
+          'Show working clearly before checking the final answer.',
+        ],
+      },
+      {
+        title: 'How this level grows',
+        summary: getLevelNoteLine(stage, level),
+        points: [
+          stage === 'primary'
+            ? 'Move from short calculations into explanations and word problems.'
+            : 'Move from solving one idea at a time into linking several ideas in one question.',
+          'Use worked examples, then try similar questions independently.',
+          `Practise using examples from shopping, distance, time, and school data in ${country.name}.`,
+        ],
+      },
+      {
+        title: 'Before a quiz or exam',
+        summary: `${stageLabel} do better when maths revision is calm, accurate, and repeated in short sets.`,
+        points: [
+          'Review a method, solve one example, then try a timed question.',
+          'Check units, signs, and copied numbers before submitting.',
+          'Use a quick quiz after notes, then move to a longer exam for stamina.',
+        ],
+      },
+    ],
+    Biology: [
+      {
+        title: 'Life science foundations',
+        summary: `${country.name} science notes follow ${noteProfile.scienceLens}.`,
+        points: [
+          'Cover living things, cells, body systems, nutrition, habitats, and health.',
+          'Use labelled diagrams and clear vocabulary before harder explanations.',
+          `Connect examples to plants, animals, and environments familiar in ${country.name}.`,
+        ],
+      },
+      {
+        title: 'Level focus',
+        summary: getLevelNoteLine(stage, level),
+        points: [
+          'Move from naming structures into explaining how systems work together.',
+          'Compare processes such as respiration, transport, and reproduction.',
+          'Keep revision close to school practical work and diagram questions.',
+        ],
+      },
+      {
+        title: 'After reading',
+        summary: 'Biology revision works best when learners switch between reading, drawing, and short checks.',
+        points: [
+          'Read one process, sketch it, then answer a short question.',
+          'Use the quiz to test terms and the exam to test explanation.',
+          'Review wrong answers by matching them back to the chapter you read.',
+        ],
+      },
+    ],
+    Chemistry: [
+      {
+        title: 'Matter and change',
+        summary: `Chemistry notes for ${country.name} stay close to ${country.curriculum} classroom language.`,
+        points: [
+          'Review particles, elements, mixtures, solutions, acids, bases, and reactions.',
+          'Keep definitions short first, then add examples and equations.',
+          'Use familiar lab words before moving into harder explanation questions.',
+        ],
+      },
+      {
+        title: 'Level focus',
+        summary: getLevelNoteLine(stage, level),
+        points: [
+          'Build from observations into balanced scientific explanation.',
+          'Notice the difference between physical change and chemical change.',
+          'Use step-by-step reasoning when choosing formula or process answers.',
+        ],
+      },
+      {
+        title: 'Revision path',
+        summary: 'Short chemistry review blocks help learners stay accurate.',
+        points: [
+          'Read one concept, practise one example, then test yourself.',
+          'Use tables for acids/bases, states of matter, and common formulas.',
+          'Take the quick quiz first, then the full exam when recall feels stronger.',
+        ],
+      },
+    ],
+    Physics: [
+      {
+        title: 'Forces, energy, and motion',
+        summary: `${country.name} learners meet physics through ${noteProfile.scienceLens}.`,
+        points: [
+          'Focus on force, motion, energy, light, electricity, and waves.',
+          'Link formulas to meaning before trying to memorise them.',
+          'Keep diagrams and units visible while revising.',
+        ],
+      },
+      {
+        title: 'Level focus',
+        summary: getLevelNoteLine(stage, level),
+        points: [
+          'Move from naming physical ideas to explaining patterns and outcomes.',
+          'Read every unit and symbol carefully before answering.',
+          'Use real-life examples such as transport, light, sound, and circuits.',
+        ],
+      },
+      {
+        title: 'Study and test bridge',
+        summary: 'Physics improves when notes and questions are paired closely.',
+        points: [
+          'Read the rule, solve one worked example, then test yourself.',
+          'Use the quiz for recall and the exam for longer thinking.',
+          'Review mistakes by checking the formula, unit, or concept that was missed.',
+        ],
+      },
+    ],
+    History: [
+      {
+        title: 'Time, evidence, and memory',
+        summary: `${country.name} history learning follows ${noteProfile.heritageLens}.`,
+        points: [
+          'Track chronology, cause and effect, sources, and significance.',
+          `Connect local stories, ${country.capital}, and national events to the wider timeline.`,
+          'Use evidence, not guessing, when comparing events from the past.',
+        ],
+      },
+      {
+        title: 'Level focus',
+        summary: getLevelNoteLine(stage, level),
+        points: [
+          'Move from recalling facts into explaining why events mattered.',
+          'Compare primary and secondary sources before writing answers.',
+          'Keep key dates, people, and turning points in one revision timeline.',
+        ],
+      },
+      {
+        title: 'Reading before response',
+        summary: 'History answers become stronger when learners read carefully before writing.',
+        points: [
+          'Underline names, dates, places, and cause/effect clues.',
+          'Write short notes from each source before answering a question.',
+          'Use quizzes for recall and exams for longer explanation practice.',
+        ],
+      },
+    ],
+    'General Studies': [
+      {
+        title: 'Community and country life',
+        summary: `${country.name} general studies follows ${noteProfile.communityLens}.`,
+        points: [
+          `Review maps, places, helpers, leadership, and everyday life in ${country.name}.`,
+          `Use local examples from ${country.capital}, the wider community, and ${country.continent}.`,
+          'Connect classroom knowledge to home, health, safety, and public responsibility.',
+        ],
+      },
+      {
+        title: 'Citizenship and safe living',
+        summary: `${country.curriculum} learners build ${noteProfile.citizenshipLens}.`,
+        points: [
+          'Read about clean water, transport, road safety, online behaviour, and public care.',
+          'Notice how rules help people live and learn together well.',
+          'Link choices in the notes to how a good citizen behaves daily.',
+        ],
+      },
+      {
+        title: 'Level focus and next step',
+        summary: getLevelNoteLine(stage, level),
+        points: [
+          stage === 'primary'
+            ? 'Focus on names, places, helpers, routines, maps, and community care.'
+            : 'Focus on leadership, citizenship, digital behaviour, public services, and informed decision-making.',
+          'Read the notes first so the quiz feels familiar, not random.',
+          'Use the full exam when you can explain ideas, not only name them.',
+        ],
+      },
+    ],
+    'Communication Skills': [
+      {
+        title: 'Language for reading and writing',
+        summary: `${country.name} communication work follows ${noteProfile.literacyLens}.`,
+        points: [
+          'Review reading fluency, vocabulary, grammar, and sentence building.',
+          'Move between listening, speaking, reading, and writing in one study session.',
+          'Keep examples close to the classroom style learners meet in school.',
+        ],
+      },
+      {
+        title: 'Level focus',
+        summary: getLevelNoteLine(stage, level),
+        points: [
+          stage === 'primary'
+            ? 'Practise capitals, punctuation, polite speaking, short reading, and simple summaries.'
+            : 'Practise summaries, presentations, paragraph writing, grammar accuracy, and audience awareness.',
+          'Read model answers aloud to notice structure and tone.',
+          'Use keywords and linking words to organise thinking clearly.',
+        ],
+      },
+      {
+        title: 'Before quiz or exam',
+        summary: 'Communication improves when learners read, speak, and write from the same notes.',
+        points: [
+          'Read a short note, say the main idea, then write one strong sentence.',
+          'Use the quiz for quick checking and the exam for longer focus.',
+          'Review mistakes by asking whether the issue was meaning, grammar, or structure.',
+        ],
+      },
+    ],
+  };
+
+  return subjectBooks[subject] ?? subjectBooks['General Studies'];
+}
+
+export function getLearningMaterial(
+  countryCode: string,
+  subject: string,
+  stage: Stage,
+  level: string,
+): LearningMaterial {
+  const country = getCountryByCode(countryCode);
+  const subjectMeta = getSubjectMeta(subject);
+  const noteProfile = getCountryNoteProfile(country);
+  const chapters = buildLearningChapters(subject, country, stage, level, noteProfile);
+
+  return {
+    title: `${subjectMeta.title} notes book`,
+    subtitle: `${country.name} · ${level} · ${country.curriculum}`,
+    sourceLine: noteProfile.sourceLine,
+    intro:
+      stage === 'kindergarten'
+        ? `This reading book uses playful early-learning steps that fit ${country.name} and ${level}.`
+        : `This reading book follows ${country.name}'s curriculum direction for ${subjectMeta.title} at ${level}.`,
+    chapters,
+    activityHint: `Read the chapters first, then open a fresh ${subjectMeta.title.toLowerCase()} quiz or full exam.`,
+    bookIcon: subjectMeta.icon,
+  };
 }
 
 function shuffle<T>(items: T[]) {

@@ -5,6 +5,7 @@ import {
   generateQuestions,
   getAvailableSubjects,
   getCountryByCode,
+  getLearningMaterial,
   getLeaderboard,
   getLevelOptions,
   getPlanDetails,
@@ -37,7 +38,7 @@ type AttemptRecord = {
 type AuthMode = 'signin' | 'signup';
 type ThemeMode = 'country' | 'sunny' | 'ocean' | 'night';
 type Screen = 'auth' | 'student' | 'admin' | 'quiz';
-type StudentView = 'home' | 'subject' | 'review';
+type StudentView = 'home' | 'subject' | 'notes' | 'review';
 type AdminView = 'overview' | 'countries' | 'staff' | 'learners' | 'followups' | 'reports';
 type AssessmentKind = 'quiz' | 'exam';
 type ThemeVars = {
@@ -98,7 +99,7 @@ type GeneratedAvatarOption = {
 
 const STORAGE_KEY = 'review-buddy-state';
 const INSTALL_DISMISS_KEY = 'review-buddy-install-dismissed';
-const APP_VERSION = '1.7.1';
+const APP_VERSION = '1.8.0';
 const APP_CREATED_ON = 'March 31, 2026';
 const DEFAULT_ADMIN_USERNAME = 'Admin';
 const DEFAULT_ADMIN_PASSWORD = 'admin';
@@ -296,110 +297,6 @@ function ensureRegisteredUsers(users?: RegisteredUser[]) {
   }
 
   return [adminUser, ...safeUsers];
-}
-
-function getLearningMaterial(countryCode: string, subject: string, stage: Stage) {
-  const country = getCountryByCode(countryCode);
-
-  if (stage === 'kindergarten') {
-    const kindergartenLibrary: Record<string, { title: string; points: string[] }> = {
-      Colouring: {
-        title: 'Colour and shape play',
-        points: [
-          `Use bright colours to help little learners notice objects they know in ${country.name}.`,
-          'Say the colour name out loud while filling the picture.',
-          'Ask the learner to point to the picture before colouring it.',
-        ],
-      },
-      Alphabet: {
-        title: 'Letter sounds and recognition',
-        points: [
-          `Start with common letter sounds used in early learning in ${country.name}.`,
-          'Trace the letter in the air, then say the sound together.',
-          'Match the letter to a simple word the child already knows.',
-        ],
-      },
-      Numbers: {
-        title: 'Counting with confidence',
-        points: [
-          'Count slowly together using fingers, toys, or classroom objects.',
-          'Say the number name after tapping Hear it once.',
-          'Link each number to a real set of objects before moving on.',
-        ],
-      },
-      'Picture Puzzle': {
-        title: 'Picture and object recognition',
-        points: [
-          'Name familiar animals, people, and places from daily life.',
-          'Point, say the word, and ask the child to repeat it.',
-          `Use local examples from ${country.name} to make picture learning feel familiar.`,
-        ],
-      },
-    };
-
-    return kindergartenLibrary[subject] ?? kindergartenLibrary['Picture Puzzle'];
-  }
-
-  const materialLibrary: Record<string, { title: string; points: string[] }> = {
-    Mathematics: {
-      title: `${country.curriculum} maths focus`,
-      points: [
-        `Practise the maths skills most often seen in ${country.curriculum} learning for ${country.name}.`,
-        'Work step by step and check each answer before moving to the next question.',
-        'Use quick mental practice first, then try a longer exam when ready.',
-      ],
-    },
-    Biology: {
-      title: `${country.name} science support`,
-      points: [
-        `Connect biology topics to ${country.curriculumFocus} so the learner sees familiar school language.`,
-        'Review body systems, habitats, nutrition, and life processes with examples from class.',
-        'Use the quiz for revision and the full exam for a stronger challenge.',
-      ],
-    },
-    Chemistry: {
-      title: 'Chemistry revision guide',
-      points: [
-        'Focus on formulas, states of matter, acids and bases, and simple reactions.',
-        `Keep examples close to the science style common in ${country.name}.`,
-        'Take a quiz first, then move to a longer exam when the basics feel clear.',
-      ],
-    },
-    Physics: {
-      title: 'Physics ideas made simpler',
-      points: [
-        'Review force, motion, electricity, energy, and light.',
-        `Use the kind of problem language learners often meet in ${country.curriculum}.`,
-        'Try learning notes first, then start a quiz with fresh questions.',
-      ],
-    },
-    History: {
-      title: 'History with local context',
-      points: [
-        `Connect timelines, sources, and national events to ${country.name} and ${country.continent}.`,
-        'Look for cause and effect, not just dates and names.',
-        'Use the review page after Elite quizzes to learn from every answer.',
-      ],
-    },
-    'General Studies': {
-      title: 'Country-aware general studies',
-      points: [
-        `This subject uses country facts like ${country.capital}, ${country.continent}, and ${country.curriculum}.`,
-        'Focus on citizenship, community care, maps, leadership, and daily life knowledge.',
-        'Use a quick quiz for practice or a full exam for a longer test run.',
-      ],
-    },
-    'Communication Skills': {
-      title: 'Reading, writing, and speaking support',
-      points: [
-        'Practise grammar, listening, summarising, and clear speaking.',
-        `Keep revision close to the communication style learners meet in ${country.name}.`,
-        'Review wrong answers after Elite practice to improve quickly.',
-      ],
-    },
-  };
-
-  return materialLibrary[subject] ?? materialLibrary['General Studies'];
 }
 
 function LogoMark() {
@@ -949,7 +846,12 @@ function App() {
     };
   });
   const firstName = profile.fullName.trim().split(' ')[0] || 'Learner';
-  const learningMaterial = getLearningMaterial(profile.countryCode, activeStudentSubject, profile.stage);
+  const learningMaterial = getLearningMaterial(
+    profile.countryCode,
+    activeStudentSubject,
+    profile.stage,
+    profile.level,
+  );
   const hasEliteReview = profile.plan === 'elite' && reviewSnapshot?.subject === activeStudentSubject;
 
   useEffect(() => {
@@ -1312,6 +1214,11 @@ function App() {
   function openSubject(subject: string) {
     setSelectedSubject(subject);
     setStudentView('subject');
+  }
+
+  function openLearningNotes(subject: string) {
+    setSelectedSubject(subject);
+    setStudentView('notes');
   }
 
   function startQuiz(subject: string, kind: AssessmentKind = 'quiz') {
@@ -2023,63 +1930,25 @@ function App() {
 
                 <section className="setup-panel">
                   <div className="panel-heading">
-                    <p className="eyebrow">Learning material</p>
-                    <h2>{learningMaterial.title}</h2>
-                    <p>This page follows the learner&apos;s selected country and curriculum direction.</p>
-                  </div>
-                  <div className="page-chip-row">
-                    <span className="page-chip">Learning notes</span>
-                    <span className="page-chip">Quick quiz</span>
-                    <span className="page-chip">Full exam</span>
-                    {profile.plan === 'elite' && <span className="page-chip">Review quiz</span>}
-                  </div>
-                  <div className="note-grid">
-                    <article className="info-card">
-                      <strong>{country.name}</strong>
-                      <p>{country.curriculum} · {country.curriculumFocus}</p>
-                    </article>
-                    <article className="info-card">
-                      <strong>{profile.level}</strong>
-                      <p>{getStageLabel(profile.stage)} learning notes shaped for this level.</p>
-                    </article>
-                    <article className="info-card">
-                      <strong>{activeStudentSubject}</strong>
-                      <p>Use notes first, then move into a fresh quiz or a longer exam.</p>
-                    </article>
-                  </div>
-                  <div className="history-list">
-                    {learningMaterial.points.map((point) => (
-                      <article key={point} className="history-row">
-                        <div>
-                          <strong>{activeStudentSubject}</strong>
-                          <span>{point}</span>
-                        </div>
-                      </article>
-                    ))}
-                  </div>
-                </section>
-
-                <section className="setup-panel">
-                  <div className="panel-heading">
                     <p className="eyebrow">Choose an activity</p>
                     <h2>Learn, quiz, or sit a full exam</h2>
-                    <p>Every click starts a new set so learners do not get the same easy flow every time.</p>
+                    <p>Open the notes book first, then move into a fresh quiz or full exam for this subject.</p>
                   </div>
                   <div className="option-grid">
-                    <button type="button" className="subject-card" onClick={() => openSubject(activeStudentSubject)}>
+                    <button type="button" className="subject-card" onClick={() => openLearningNotes(activeStudentSubject)}>
                       <span className="subject-icon">📘</span>
                       <strong>Learning notes</strong>
-                      <span>Read the key points for this subject and country focus.</span>
+                      <span>Open a book-style reading page shaped for {country.name}, {profile.level}, and {activeStudentSubject}.</span>
                     </button>
                     <button type="button" className="subject-card" onClick={() => startQuiz(activeStudentSubject, 'quiz')}>
                       <span className="subject-icon">📝</span>
                       <strong>Quick quiz</strong>
-                      <span>Fresh practice questions with the regular quiz length.</span>
+                      <span>Fresh practice questions built for this subject, learner level, and country direction.</span>
                     </button>
                     <button type="button" className="subject-card" onClick={() => startQuiz(activeStudentSubject, 'exam')}>
                       <span className="subject-icon">🎓</span>
                       <strong>Full exam</strong>
-                      <span>Longer question sets for a stronger test run.</span>
+                      <span>Longer question sets after reading and revision.</span>
                     </button>
                   </div>
                 </section>
@@ -2128,6 +1997,91 @@ function App() {
                         <strong>{entry.score}%</strong>
                       </article>
                     ))}
+                  </div>
+                </section>
+              </aside>
+            </>
+          ) : studentView === 'notes' ? (
+            <>
+              <section className="dashboard-main">
+                <section className="welcome-banner">
+                  <div>
+                    <p className="eyebrow">Learning notes</p>
+                    <h2>{activeStudentSubject} reading book</h2>
+                    <p>{country.name} · {profile.level} · {getPlanLabel(profile.plan)}</p>
+                  </div>
+                  <div className="banner-actions">
+                    <button type="button" className="ghost-button" onClick={() => setStudentView('subject')}>
+                      Back to subject page
+                    </button>
+                  </div>
+                </section>
+
+                <section className="setup-panel">
+                  <div className="book-cover">
+                    <div className="book-cover-mark">{learningMaterial.bookIcon}</div>
+                    <div className="book-cover-copy">
+                      <p className="eyebrow">Reading book</p>
+                      <h2>{learningMaterial.title}</h2>
+                      <p>{learningMaterial.subtitle}</p>
+                      <span className="book-source">{learningMaterial.sourceLine}</span>
+                    </div>
+                  </div>
+                  <div className="page-chip-row">
+                    <button type="button" className="page-chip page-chip-button page-chip-active" onClick={() => openLearningNotes(activeStudentSubject)}>
+                      Learning notes
+                    </button>
+                    <button type="button" className="page-chip page-chip-button" onClick={() => startQuiz(activeStudentSubject, 'quiz')}>
+                      Quick quiz
+                    </button>
+                    <button type="button" className="page-chip page-chip-button" onClick={() => startQuiz(activeStudentSubject, 'exam')}>
+                      Full exam
+                    </button>
+                    {profile.plan === 'elite' && reviewSnapshot?.subject === activeStudentSubject && (
+                      <button type="button" className="page-chip page-chip-button" onClick={() => setStudentView('review')}>
+                        Review quiz
+                      </button>
+                    )}
+                  </div>
+                  <article className="book-intro-card">
+                    <strong>{learningMaterial.intro}</strong>
+                    <p>{learningMaterial.activityHint}</p>
+                  </article>
+                  <div className="chapter-list">
+                    {learningMaterial.chapters.map((chapter, index) => (
+                      <article key={`${chapter.title}-${index}`} className="chapter-card">
+                        <div className="chapter-badge">Chapter {index + 1}</div>
+                        <strong>{chapter.title}</strong>
+                        <p>{chapter.summary}</p>
+                        <ul className="chapter-points">
+                          {chapter.points.map((point) => (
+                            <li key={point}>{point}</li>
+                          ))}
+                        </ul>
+                      </article>
+                    ))}
+                  </div>
+                </section>
+              </section>
+
+              <aside className="dashboard-side">
+                <section className="side-card">
+                  <div className="panel-heading">
+                    <p className="eyebrow">Study flow</p>
+                    <h2>Turn notes into practice</h2>
+                    <p>Read the short book, then move into fresh questions built for the same subject.</p>
+                  </div>
+                  <div className="option-grid option-grid-single">
+                    <button type="button" className="subject-card" onClick={() => startQuiz(activeStudentSubject, 'quiz')}>
+                      <span className="subject-icon">📝</span>
+                      <strong>Start quick quiz</strong>
+                      <span>Use shorter revision questions after reading.</span>
+                    </button>
+                    <button type="button" className="subject-card" onClick={() => startQuiz(activeStudentSubject, 'exam')}>
+                      <span className="subject-icon">🎓</span>
+                      <strong>Start full exam</strong>
+                      <span>Take a longer exam when the chapter ideas feel clear.</span>
+                    </button>
                   </div>
                 </section>
               </aside>

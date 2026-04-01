@@ -592,10 +592,104 @@ button:disabled {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
+.option-grid-single {
+  grid-template-columns: repeat(1, minmax(0, 1fr));
+}
+
 .note-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 14px;
+}
+
+.book-cover {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr);
+  gap: 18px;
+  align-items: center;
+  padding: 20px;
+  border-radius: 28px;
+  border: 1px solid color-mix(in srgb, var(--theme-primary) 18%, white);
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--theme-secondary) 14%, white), color-mix(in srgb, var(--theme-surface) 92%, white)),
+    color-mix(in srgb, var(--theme-surface) 94%, white 6%);
+}
+
+.book-cover-mark {
+  width: 96px;
+  height: 118px;
+  display: grid;
+  place-items: center;
+  border-radius: 26px;
+  font-size: 2.6rem;
+  background: linear-gradient(160deg, color-mix(in srgb, var(--theme-primary) 82%, white), color-mix(in srgb, var(--theme-secondary) 58%, white));
+  color: white;
+  box-shadow: 0 16px 30px rgba(15, 23, 42, 0.16);
+}
+
+.book-cover-copy {
+  display: grid;
+  gap: 8px;
+}
+
+.book-source {
+  display: inline-flex;
+  width: fit-content;
+  padding: 8px 12px;
+  border-radius: 999px;
+  font-size: 0.9rem;
+  font-weight: 700;
+  background: color-mix(in srgb, var(--theme-surface) 90%, white 10%);
+  border: 1px solid color-mix(in srgb, var(--theme-primary) 16%, white);
+}
+
+.book-intro-card {
+  display: grid;
+  gap: 8px;
+  padding: 18px 20px;
+  border-radius: 24px;
+  background: color-mix(in srgb, var(--theme-secondary) 10%, var(--theme-surface));
+  border: 1px solid color-mix(in srgb, var(--theme-primary) 14%, white);
+}
+
+.chapter-list {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.chapter-card {
+  display: grid;
+  gap: 12px;
+  padding: 20px;
+  border-radius: 26px;
+  border: 1px solid color-mix(in srgb, var(--theme-primary) 18%, white);
+  background: color-mix(in srgb, var(--theme-surface) 94%, white 6%);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--theme-primary) 8%, white);
+}
+
+.chapter-badge {
+  display: inline-flex;
+  width: fit-content;
+  padding: 7px 11px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--theme-primary) 12%, white);
+  color: var(--theme-ink);
+  font-size: 0.82rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.chapter-points {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding-left: 18px;
+}
+
+.chapter-points li {
+  color: color-mix(in srgb, var(--theme-ink) 86%, #64748b);
 }
 
 .subject-card {
@@ -1084,6 +1178,10 @@ button:disabled {
     grid-template-columns: 1fr;
   }
 
+  .chapter-list {
+    grid-template-columns: 1fr;
+  }
+
   .report-stats-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -1145,6 +1243,10 @@ button:disabled {
     align-items: flex-start;
   }
 
+  .book-cover {
+    grid-template-columns: 1fr;
+  }
+
   .install-sheet,
   .install-actions {
     flex-direction: column;
@@ -1190,5 +1292,10 @@ button:disabled {
 
   .field-span-2 {
     grid-column: span 1;
+  }
+
+  .book-cover-mark {
+    width: 84px;
+    height: 102px;
   }
 }

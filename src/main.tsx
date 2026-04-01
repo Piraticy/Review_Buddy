@@ -5,7 +5,10 @@ import './styles.css';
 
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register(new URL('sw.js', document.baseURI).toString()).catch(() => undefined);
+    navigator.serviceWorker
+      .register(new URL('sw.js', document.baseURI).toString(), { updateViaCache: 'none' })
+      .then((registration) => registration.update())
+      .catch(() => undefined);
   });
 }
 

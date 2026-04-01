@@ -68,6 +68,7 @@ type ReviewSnapshot = {
 };
 
 type StoredState = {
+  appVersion?: string;
   profile?: LearnerProfile;
   attempts?: AttemptRecord[];
   registeredUsers?: RegisteredUser[];
@@ -94,7 +95,7 @@ type AdminFollowUpMap = Record<string, AdminAlert[]>;
 
 const STORAGE_KEY = 'review-buddy-state';
 const INSTALL_DISMISS_KEY = 'review-buddy-install-dismissed';
-const APP_VERSION = '1.6.1';
+const APP_VERSION = '1.6.2';
 const APP_CREATED_ON = 'March 31, 2026';
 const DEFAULT_ADMIN_USERNAME = 'Admin';
 const DEFAULT_ADMIN_PASSWORD = 'admin';
@@ -625,6 +626,12 @@ function App() {
     try {
       const saved = JSON.parse(raw) as StoredState;
 
+      if (saved.appVersion !== APP_VERSION) {
+        window.localStorage.removeItem(STORAGE_KEY);
+        setIsReady(true);
+        return;
+      }
+
       if (saved.profile) setProfile(normalizeLearnerProfile(saved.profile));
       if (saved.attempts) setAttempts(saved.attempts);
       if (saved.registeredUsers) setRegisteredUsers(ensureRegisteredUsers(saved.registeredUsers));
@@ -717,7 +724,8 @@ function App() {
 
     window.localStorage.setItem(
       STORAGE_KEY,
-      JSON.stringify({
+        JSON.stringify({
+        appVersion: APP_VERSION,
         profile,
         attempts,
         registeredUsers,

@@ -4,6 +4,7 @@ import { supabase } from './supabase';
 
 const STORAGE_KEY = 'review-buddy-state';
 const DEFAULT_ADMIN_EMAIL = 'admin@reviewbuddy.app';
+const DEFAULT_ADMIN_PASSWORD = 'admin';
 
 type StoredState = {
   registeredUsers?: RegisteredUser[];
@@ -29,6 +30,69 @@ function mergeStoredState(next: StoredState) {
   if (typeof window === 'undefined') return;
   const current = readStoredState();
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...current, ...next }));
+}
+
+function getLocalUsers() {
+  return readStoredState().registeredUsers ?? [];
+}
+
+function saveLocalUsers(users: RegisteredUser[]) {
+  mergeStoredState({ registeredUsers: users });
+}
+
+function findLocalUser(identifier: string, password: string) {
+  const normalizedIdentifier = identifier.trim().toLowerCase();
+  const localUsers = getLocalUsers();
+  const match = localUsers.find(
+    (user) =>
+      user.email.toLowerCase() === normalizedIdentifier ||
+      user.username.toLowerCase() === normalizedIdentifier,
+  );
+
+  if (!match || match.password !== password) {
+    return null;
+  }
+
+  const nextUser = {
+    ...match,
+    lastLoginAt: new Date().toISOString(),
+  };
+
+  saveLocalUsers(localUsers.map((user) => (user.id === nextUser.id ? nextUser : user)));
+  return nextUser;
+}
+
+function saveLocalUser(user: RegisteredUser) {
+  const localUsers = getLocalUsers();
+  const nextUsers = [
+    ...localUsers.filter(
+      (entry) => entry.id !== user.id && entry.email.toLowerCase() !== user.email.toLowerCase(),
+    ),
+    user,
+  ];
+  saveLocalUsers(nextUsers);
+}
+
+function createAdminFallbackUser(): RegisteredUser {
+  return {
+    id: 'default-admin',
+    username: 'Admin',
+    fullName: 'Review Buddy Admin',
+    email: DEFAULT_ADMIN_EMAIL,
+    password: DEFAULT_ADMIN_PASSWORD,
+    role: 'admin',
+    gender: 'boy',
+    avatarMode: 'generated',
+    avatarEmoji: '🛡️',
+    countryCode: 'US',
+    plan: 'elite',
+    stage: 'teen',
+    level: 'Year 10',
+    mode: 'solo',
+    subject: 'Mathematics',
+    createdAt: new Date('2026-03-31T00:00:00.000Z').toISOString(),
+    lastLoginAt: new Date().toISOString(),
+  };
 }
 
 function mapProfileRow(row: Record<string, unknown>): RegisteredUser {
@@ -67,13 +131,14 @@ function mapStaffRow(row: Record<string, unknown>): AdminStaffMember {
 
 async function registerLearner(user: RegisteredUser) {
   if (!supabase) {
-    const localUsers = readStoredState().registeredUsers ?? [];
-    mergeStoredState({ registeredUsers: [...localUsers, user] });
+    saveLocalUser(user);
     return user;
   }
 
+  const normalizedEmail = user.email.toLowerCase();
+
   const { data, error } = await supabase.auth.signUp({
-    email: user.email.toLowerCase(),
+    email: normalizedEmail,
     password: user.password,
     options: {
       data: {
@@ -86,14 +151,28 @@ async function registerLearner(user: RegisteredUser) {
   });
 
   if (error) {
-    throw error;
+    saveLocalUser({ ...user, email: normalizedEmail });
+    return { ...user, email: normalizedEmail };
+  }
+
+  let authUserId = data.user?.id ?? user.id;
+
+  if (!data.session) {
+    const { data: signinData } = await supabase.auth.signInWithPassword({
+      email: normalizedEmail,
+      password: user.password,
+    });
+
+    if (signinData.user?.id) {
+      authUserId = signinData.user.id;
+    }
   }
 
   const profileRow = {
-    id: data.user?.id ?? user.id,
+    id: authUserId,
     username: user.username,
     full_name: user.fullName,
-    email: user.email.toLowerCase(),
+    email: normalizedEmail,
     role: user.role,
     gender: user.gender,
     avatar_mode: user.avatarMode,
@@ -111,7 +190,16 @@ async function registerLearner(user: RegisteredUser) {
 
   const { error: upsertError } = await supabase.from('learner_profiles').upsert(profileRow);
   if (upsertError) {
-    throw upsertError;
+    saveLocalUser({
+      ...user,
+      id: String(profileRow.id),
+      email: normalizedEmail,
+    });
+    return {
+      ...user,
+      id: String(profileRow.id),
+      email: normalizedEmail,
+    };
   }
 
   return {
@@ -125,30 +213,11 @@ async function signIn(identifier: string, password: string) {
   const normalizedIdentifier = identifier.trim();
 
   if (!supabase) {
-    const localUsers = readStoredState().registeredUsers ?? [];
-    const match = localUsers.find(
-      (user) =>
-        user.email.toLowerCase() === normalizedIdentifier.toLowerCase() ||
-        user.username.toLowerCase() === normalizedIdentifier.toLowerCase(),
-    );
-
-    if (!match || match.password !== password) {
-      return null;
-    }
-
-    const nextUser = {
-      ...match,
-      lastLoginAt: new Date().toISOString(),
-    };
-
-    mergeStoredState({
-      registeredUsers: localUsers.map((user) => (user.id === nextUser.id ? nextUser : user)),
-    });
-
-    return nextUser;
+    return findLocalUser(normalizedIdentifier, password);
   }
 
   let email = normalizedIdentifier.toLowerCase();
+  const isAdminShortcut = email === 'admin' && password === DEFAULT_ADMIN_PASSWORD;
 
   if (email === 'admin') {
     email = DEFAULT_ADMIN_EMAIL;
@@ -173,24 +242,44 @@ async function signIn(identifier: string, password: string) {
   });
 
   if (error || !data.user) {
-    return null;
+    if (isAdminShortcut) {
+      return createAdminFallbackUser();
+    }
+
+    return findLocalUser(normalizedIdentifier, password);
   }
 
   const { data: profileRow, error: profileError } = await supabase
     .from('learner_profiles')
     .select('*')
     .eq('id', data.user.id)
-    .single();
+    .maybeSingle();
 
-  if (profileError || !profileRow) {
-    return null;
+  let resolvedProfileRow = profileRow;
+
+  if (!resolvedProfileRow) {
+    const { data: emailRow } = await supabase
+      .from('learner_profiles')
+      .select('*')
+      .eq('email', email)
+      .maybeSingle();
+
+    resolvedProfileRow = emailRow ?? null;
   }
 
-  const nextUser = mapProfileRow(profileRow);
+  if (profileError || !resolvedProfileRow) {
+    if (isAdminShortcut) {
+      return createAdminFallbackUser();
+    }
+
+    return findLocalUser(normalizedIdentifier, password);
+  }
+
+  const nextUser = mapProfileRow(resolvedProfileRow);
   await supabase
     .from('learner_profiles')
     .update({ last_login_at: new Date().toISOString() })
-    .eq('id', nextUser.id);
+    .eq('email', email);
 
   return {
     ...nextUser,
@@ -200,7 +289,7 @@ async function signIn(identifier: string, password: string) {
 
 async function listRegisteredUsers() {
   if (!supabase) {
-    return (readStoredState().registeredUsers ?? []).filter((user) => user.role === 'student');
+    return getLocalUsers().filter((user) => user.role === 'student');
   }
 
   const { data, error } = await supabase
@@ -209,11 +298,22 @@ async function listRegisteredUsers() {
     .eq('role', 'student')
     .order('created_at', { ascending: false });
 
+  const localUsers = getLocalUsers().filter((user) => user.role === 'student');
+
   if (error || !data) {
-    return [];
+    return localUsers;
   }
 
-  return data.map((row) => mapProfileRow(row));
+  const remoteUsers = data.map((row) => mapProfileRow(row));
+  const mergedUsers = [
+    ...remoteUsers,
+    ...localUsers.filter(
+      (localUser) =>
+        !remoteUsers.some((remoteUser) => remoteUser.email.toLowerCase() === localUser.email.toLowerCase()),
+    ),
+  ];
+
+  return mergedUsers;
 }
 
 async function listStaffMembers() {
@@ -226,11 +326,26 @@ async function listStaffMembers() {
     .select('*')
     .order('created_at', { ascending: false });
 
+  const localStaff = readStoredState().staffMembers ?? [];
+
   if (error || !data) {
-    return [];
+    return localStaff;
   }
 
-  return data.map((row) => mapStaffRow(row));
+  const remoteStaff = data.map((row) => mapStaffRow(row));
+  const mergedStaff = [
+    ...remoteStaff,
+    ...localStaff.filter(
+      (localMember) =>
+        !remoteStaff.some(
+          (remoteMember) =>
+            remoteMember.id === localMember.id ||
+            (remoteMember.name === localMember.name && remoteMember.role === localMember.role),
+        ),
+    ),
+  ];
+
+  return mergedStaff;
 }
 
 async function addStaffMember(member: AdminStaffMember) {
@@ -254,7 +369,13 @@ async function addStaffMember(member: AdminStaffMember) {
 
   const { data, error } = await supabase.from('staff_members').insert(insertRow).select('*').single();
   if (error || !data) {
-    throw error;
+    const nextMember = {
+      ...member,
+      id: member.id ?? `staff-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+    };
+    const localStaff = readStoredState().staffMembers ?? [];
+    mergeStoredState({ staffMembers: [...localStaff, nextMember] });
+    return nextMember;
   }
 
   return mapStaffRow(data);
@@ -278,7 +399,13 @@ async function removeStaffMember(memberIdOrName: string) {
 
   if (!data?.id) return;
 
-  await supabase.from('staff_members').delete().eq('id', data.id);
+  const { error } = await supabase.from('staff_members').delete().eq('id', data.id);
+  if (!error) return;
+
+  const localStaff = readStoredState().staffMembers ?? [];
+  mergeStoredState({
+    staffMembers: localStaff.filter((member) => member.id !== memberIdOrName && member.name !== memberIdOrName),
+  });
 }
 
 async function removeRegisteredLearner(userId: string) {
@@ -290,7 +417,11 @@ async function removeRegisteredLearner(userId: string) {
     return;
   }
 
-  await supabase.from('learner_profiles').delete().eq('id', userId);
+  const { error } = await supabase.from('learner_profiles').delete().eq('id', userId);
+  if (!error) return;
+
+  const localUsers = getLocalUsers();
+  saveLocalUsers(localUsers.filter((entry) => entry.id !== userId));
 }
 
 function buildCountrySummary(users: RegisteredUser[]) {

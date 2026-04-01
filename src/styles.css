@@ -451,6 +451,16 @@ button:disabled {
   font-weight: 700;
 }
 
+.page-chip-button {
+  cursor: pointer;
+  transition: transform 0.18s ease, border-color 0.18s ease, background 0.18s ease;
+}
+
+.page-chip-button:hover {
+  transform: translateY(-1px);
+  border-color: color-mix(in srgb, var(--theme-accent) 34%, white);
+}
+
 .page-chip-active {
   background: linear-gradient(135deg, color-mix(in srgb, var(--theme-primary) 14%, white), color-mix(in srgb, var(--theme-surface) 92%, white));
   color: var(--theme-ink);
@@ -918,6 +928,10 @@ button:disabled {
   gap: 14px;
 }
 
+.report-stats-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
 .table-row {
   display: grid;
   grid-template-columns: minmax(120px, 1.1fr) repeat(5, minmax(0, 0.88fr));
@@ -982,6 +996,12 @@ button:disabled {
 .table-row {
   padding: 12px 0;
   border-bottom: 1px solid color-mix(in srgb, var(--theme-primary) 10%, white);
+}
+
+.leaderboard-row > div,
+.history-row > div {
+  display: grid;
+  gap: 4px;
 }
 
 .leaderboard-row:last-child,
@@ -1053,6 +1073,10 @@ button:disabled {
   .note-grid {
     grid-template-columns: 1fr;
   }
+
+  .report-stats-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 820px) {
@@ -1099,6 +1123,7 @@ button:disabled {
   .benefit-grid,
   .field-grid,
   .stats-grid,
+  .report-stats-grid,
   .admin-grid,
   .subject-grid,
   .option-grid {
@@ -1132,7 +1157,8 @@ button:disabled {
   .sample-buttons,
   .banner-actions,
   .result-actions,
-  .palette-row {
+  .palette-row,
+  .page-chip-row {
     display: grid;
     grid-template-columns: 1fr;
   }

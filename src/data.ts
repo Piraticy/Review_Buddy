@@ -1067,7 +1067,7 @@ export function getAdminMetrics(countryCode: string) {
     liveActivity: [
       { learner: 'Asha M.', subject: 'Mathematics', status: 'Working now', plan: 'Elite', support: 'On track', staff: 'Mr. James' },
       { learner: 'Noah R.', subject: 'History', status: 'Finished', plan: 'Free', support: 'Review tomorrow', staff: 'Ms. Rehema' },
-      { learner: 'Little Star', subject: 'Colouring', status: 'Playing', plan: 'Trial', support: 'Needs a parent check-in', staff: 'Teacher Ada' },
+      { learner: 'Little Star', subject: 'Colouring', status: 'Practising', plan: 'Trial', support: 'Needs a parent check-in', staff: 'Teacher Ada' },
       { learner: 'Zuri T.', subject: 'Communication Skills', status: 'Reading', plan: 'Elite', support: 'Strong progress', staff: 'Mrs. Njeri' },
     ] satisfies AdminSession[],
     supportQueue: [

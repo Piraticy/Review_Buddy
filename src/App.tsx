@@ -14,6 +14,8 @@ import {
   getSubjectMeta,
   inferCountryCode,
   scoreQuiz,
+  type AdminAlert,
+  type AdminSession,
   type AdminStaffMember,
   type LearnerGender,
   type LearnerProfile,
@@ -78,6 +80,8 @@ type StoredState = {
   selectedSubject?: string | null;
   reviewSnapshot?: ReviewSnapshot | null;
   staffMembers?: ReturnType<typeof getAdminMetrics>['staffMembers'];
+  adminActivityByCountry?: AdminActivityMap;
+  followUpsByCountry?: AdminFollowUpMap;
 };
 
 type BeforeInstallPromptEvent = Event & {
@@ -85,9 +89,12 @@ type BeforeInstallPromptEvent = Event & {
   userChoice: Promise<{ outcome: 'accepted' | 'dismissed'; platform: string }>;
 };
 
+type AdminActivityMap = Record<string, AdminSession[]>;
+type AdminFollowUpMap = Record<string, AdminAlert[]>;
+
 const STORAGE_KEY = 'review-buddy-state';
 const INSTALL_DISMISS_KEY = 'review-buddy-install-dismissed';
-const APP_VERSION = '1.6.0';
+const APP_VERSION = '1.6.1';
 const APP_CREATED_ON = 'March 31, 2026';
 const DEFAULT_ADMIN_USERNAME = 'Admin';
 const DEFAULT_ADMIN_PASSWORD = 'admin';
@@ -427,6 +434,56 @@ function MoonIcon(props: SVGProps<SVGSVGElement>) {
   );
 }
 
+const ADMIN_TABS: { view: AdminView; label: string }[] = [
+  { view: 'overview', label: 'Overview' },
+  { view: 'countries', label: 'Countries' },
+  { view: 'staff', label: 'Staff' },
+  { view: 'learners', label: 'Registered learners' },
+  { view: 'followups', label: 'Follow-ups' },
+  { view: 'reports', label: 'Reports' },
+];
+
+function createAdminActivityByCountry(): AdminActivityMap {
+  return Object.fromEntries(
+    COUNTRIES.map((countryEntry) => [
+      countryEntry.code,
+      getAdminMetrics(countryEntry.code).liveActivity.map((session) => ({ ...session })),
+    ]),
+  );
+}
+
+function createAdminFollowUpByCountry(): AdminFollowUpMap {
+  return Object.fromEntries(
+    COUNTRIES.map((countryEntry) => [
+      countryEntry.code,
+      getAdminMetrics(countryEntry.code).supportQueue.map((item) => ({ ...item })),
+    ]),
+  );
+}
+
+function AdminTabs({
+  active,
+  onChange,
+}: {
+  active: AdminView;
+  onChange: (view: AdminView) => void;
+}) {
+  return (
+    <div className="page-chip-row">
+      {ADMIN_TABS.map((tab) => (
+        <button
+          key={tab.view}
+          type="button"
+          className={`page-chip page-chip-button${active === tab.view ? ' page-chip-active' : ''}`}
+          onClick={() => onChange(tab.view)}
+        >
+          {tab.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function ColoringBoard({ art, fillColor }: { art?: QuestionArt; fillColor?: string }) {
   const fill = fillColor ?? '#ffffff';
   const stroke = '#1f2937';
@@ -547,6 +604,8 @@ function App() {
   const [staffMembers, setStaffMembers] = useState<AdminStaffMember[]>(
     () => getAdminMetrics(createInitialProfile().countryCode).staffMembers,
   );
+  const [adminActivityByCountry, setAdminActivityByCountry] = useState<AdminActivityMap>(createAdminActivityByCountry);
+  const [followUpsByCountry, setFollowUpsByCountry] = useState<AdminFollowUpMap>(createAdminFollowUpByCountry);
   const [adminNotice, setAdminNotice] = useState('Choose a tool to manage staff, countries, or reports.');
   const [staffDraft, setStaffDraft] = useState({
     name: '',
@@ -578,6 +637,8 @@ function App() {
       if (saved.reviewSnapshot) setReviewSnapshot(saved.reviewSnapshot);
       if (saved.quizState) setQuizState(saved.quizState);
       if (saved.staffMembers) setStaffMembers(saved.staffMembers);
+      if (saved.adminActivityByCountry) setAdminActivityByCountry(saved.adminActivityByCountry);
+      if (saved.followUpsByCountry) setFollowUpsByCountry(saved.followUpsByCountry);
     } catch {
       window.localStorage.removeItem(STORAGE_KEY);
     } finally {
@@ -669,9 +730,27 @@ function App() {
         reviewSnapshot,
         quizState,
         staffMembers,
+        adminActivityByCountry,
+        followUpsByCountry,
       } satisfies StoredState),
     );
-  }, [adminView, attempts, authMode, isReady, profile, quizState, registeredUsers, reviewSnapshot, screen, selectedSubject, staffMembers, studentView, themeMode]);
+  }, [
+    adminActivityByCountry,
+    adminView,
+    attempts,
+    authMode,
+    followUpsByCountry,
+    isReady,
+    profile,
+    quizState,
+    registeredUsers,
+    reviewSnapshot,
+    screen,
+    selectedSubject,
+    staffMembers,
+    studentView,
+    themeMode,
+  ]);
 
   useEffect(() => {
     const levelOptions = getLevelOptions(profile.stage);
@@ -733,6 +812,17 @@ function App() {
     country: countryEntry,
     learners: recentRegistrations.filter((entry) => entry.countryCode === countryEntry.code),
   })).filter((entry) => entry.learners.length > 0);
+  const countryRegistrationCards = [
+    ...metrics.registeredCountries.map(
+      (entry) => registrationsByCountry.find((registration) => registration.code === entry.code) ?? entry,
+    ),
+    ...registrationsByCountry.filter(
+      (entry) => !metrics.registeredCountries.some((registration) => registration.code === entry.code),
+    ),
+  ];
+  const reportActivity = adminActivityByCountry[adminMetricsCode] ?? metrics.liveActivity;
+  const followUpItems = followUpsByCountry[adminMetricsCode] ?? metrics.supportQueue;
+  const focusedStaffMembers = staffMembers.filter((member) => !member.countryCode || member.countryCode === adminMetricsCode);
   const firstName = profile.fullName.trim().split(' ')[0] || 'Learner';
   const learningMaterial = getLearningMaterial(profile.countryCode, activeStudentSubject, profile.stage);
   const hasEliteReview = profile.plan === 'elite' && reviewSnapshot?.subject === activeStudentSubject;
@@ -893,6 +983,11 @@ function App() {
     setScreen(normalized.role === 'admin' ? 'admin' : 'student');
   }
 
+  function openAdminView(view: AdminView) {
+    setAdminView(view);
+    setAdminNotice('');
+  }
+
   async function handleAuthSubmit(event: FormEvent) {
     event.preventDefault();
     setAuthNotice('');
@@ -1012,12 +1107,42 @@ function App() {
 
   function addCountryFollowUp() {
     const focusCountry = getCountryByCode(adminFocusCode);
+    const nextItem = {
+      title: `Family follow-up ${followUpItems.length + 1}`,
+      detail: `Reach out to a new family in ${focusCountry.name} and guide them to a clear practise plan.`,
+    };
+
+    setFollowUpsByCountry((current) => ({
+      ...current,
+      [adminFocusCode]: [...(current[adminFocusCode] ?? []), nextItem],
+    }));
     setAdminNotice(`A new follow-up item was created for families in ${focusCountry.name}.`);
   }
 
   function exportCountryReport() {
     const focusCountry = getCountryByCode(adminFocusCode);
-    setAdminNotice(`A country report is ready for ${focusCountry.name}.`);
+    const reportLines = [
+      'Review Buddy report',
+      `Country: ${focusCountry.name}`,
+      `Curriculum: ${focusCountry.curriculum}`,
+      '',
+      'Current learner activity',
+      ...reportActivity.map(
+        (item) =>
+          `- ${item.learner}: ${item.subject} | ${item.plan} | ${item.status} | ${item.support} | ${item.staff}`,
+      ),
+      '',
+      'Follow-up queue',
+      ...followUpItems.map((item) => `- ${item.title}: ${item.detail}`),
+    ];
+    const blob = new Blob([reportLines.join('\n')], { type: 'text/plain;charset=utf-8' });
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `review-buddy-${focusCountry.code.toLowerCase()}-report.txt`;
+    link.click();
+    window.URL.revokeObjectURL(url);
+    setAdminNotice(`A country report was downloaded for ${focusCountry.name}.`);
   }
 
   async function removeRegisteredLearner(userId: string) {
@@ -1027,6 +1152,71 @@ function App() {
     await appRepository.removeRegisteredLearner(userId);
     setRegisteredUsers((current) => current.filter((entry) => entry.id !== userId));
     setAdminNotice(`${learner.fullName} was removed from registered learners.`);
+  }
+
+  async function addSampleStaffMember() {
+    const focusCountry = getCountryByCode(adminFocusCode);
+    const sampleNames = ['Ms. Amina', 'Mr. Kato', 'Teacher Zoe', 'Mrs. Nia'];
+    const sampleRoles = ['Learning guide', 'Parent support lead', 'Subject coach', 'Country coordinator'];
+    const sampleFocuses = [
+      'Helping new learners settle in',
+      'Practise support and follow-up care',
+      'Daily lesson rhythm and revision',
+      'Country sign-ups and family questions',
+    ];
+    const nextIndex = staffMembers.length % sampleNames.length;
+
+    try {
+      const savedMember = await appRepository.addStaffMember({
+        name: sampleNames[nextIndex],
+        role: sampleRoles[nextIndex],
+        focus: `${sampleFocuses[nextIndex]} · ${focusCountry.name}`,
+        status: 'Ready to assign',
+        countryCode: adminFocusCode,
+      });
+      setStaffMembers((current) => [...current, savedMember]);
+      setAdminNotice(`A sample staff profile was added for ${focusCountry.name}.`);
+    } catch {
+      setAdminNotice(`We could not add a sample staff profile for ${focusCountry.name} just now.`);
+    }
+  }
+
+  function addSampleReportActivity() {
+    const focusCountry = getCountryByCode(adminFocusCode);
+    const subjectOptions = getAvailableSubjects(adminFocusCode, 'teen', 'elite');
+    const sampleSubject = subjectOptions[reportActivity.length % subjectOptions.length] ?? 'Mathematics';
+    const nextSession = {
+      learner: `${focusCountry.name} learner ${reportActivity.length + 1}`,
+      subject: sampleSubject,
+      status: 'Practising',
+      plan: reportActivity.length % 2 === 0 ? 'Free' : 'Elite',
+      support: 'Fresh sample activity',
+      staff: focusedStaffMembers[0]?.name ?? 'Ready for assignment',
+    };
+
+    setAdminActivityByCountry((current) => ({
+      ...current,
+      [adminFocusCode]: [...(current[adminFocusCode] ?? []), nextSession],
+    }));
+    setAdminNotice(`A sample learner activity row was added for ${focusCountry.name}.`);
+  }
+
+  function removeCountryFollowUp(title: string) {
+    setFollowUpsByCountry((current) => ({
+      ...current,
+      [adminFocusCode]: (current[adminFocusCode] ?? []).filter((item) => item.title !== title),
+    }));
+    setAdminNotice('That follow-up item was removed.');
+  }
+
+  function removeReportActivity(activityKey: string) {
+    setAdminActivityByCountry((current) => ({
+      ...current,
+      [adminFocusCode]: (current[adminFocusCode] ?? []).filter(
+        (item) => `${item.learner}-${item.subject}-${item.staff}` !== activityKey,
+      ),
+    }));
+    setAdminNotice('That learner activity row was removed.');
   }
 
   function openSubject(subject: string) {
@@ -1945,7 +2135,7 @@ function App() {
                         disabled={speakingKey === currentQuestion.visual.soundText}
                         onClick={() => speakPrompt(currentQuestion.visual?.soundText ?? currentQuestion.prompt)}
                       >
-                        {speakingKey === currentQuestion.visual.soundText ? 'Playing...' : 'Hear it'}
+                        {speakingKey === currentQuestion.visual.soundText ? 'Speaking...' : 'Hear it'}
                       </button>
                     )}
                   </div>
@@ -2073,35 +2263,29 @@ function App() {
                     <h2>Open a section</h2>
                     <p>Keep the overview short, then open deeper pages inside admin when needed.</p>
                   </div>
-                  <div className="page-chip-row">
-                    <span className="page-chip page-chip-active">Overview</span>
-                    <span className="page-chip">Countries</span>
-                    <span className="page-chip">Staff</span>
-                    <span className="page-chip">Follow-ups</span>
-                    <span className="page-chip">Reports</span>
-                  </div>
+                  <AdminTabs active={adminView} onChange={openAdminView} />
                   <div className="option-grid">
-                    <button type="button" className="subject-card" onClick={() => setAdminView('countries')}>
+                    <button type="button" className="subject-card" onClick={() => openAdminView('countries')}>
                       <span className="subject-icon">🌍</span>
                       <strong>Registered countries</strong>
                       <span>See all countries, learner totals, families, and country leads.</span>
                     </button>
-                    <button type="button" className="subject-card" onClick={() => setAdminView('staff')}>
+                    <button type="button" className="subject-card" onClick={() => openAdminView('staff')}>
                       <span className="subject-icon">👥</span>
                       <strong>Staff</strong>
                       <span>Open the staff page with extra details and management actions.</span>
                     </button>
-                    <button type="button" className="subject-card" onClick={() => setAdminView('learners')}>
+                    <button type="button" className="subject-card" onClick={() => openAdminView('learners')}>
                       <span className="subject-icon">🧾</span>
                       <strong>Registered learners</strong>
                       <span>See who signed up, their country, selected plan, and latest login.</span>
                     </button>
-                    <button type="button" className="subject-card" onClick={() => setAdminView('followups')}>
+                    <button type="button" className="subject-card" onClick={() => openAdminView('followups')}>
                       <span className="subject-icon">📌</span>
                       <strong>Follow-up queue</strong>
                       <span>Open learner and family follow-up items with country filtering.</span>
                     </button>
-                    <button type="button" className="subject-card" onClick={() => setAdminView('reports')}>
+                    <button type="button" className="subject-card" onClick={() => openAdminView('reports')}>
                       <span className="subject-icon">📊</span>
                       <strong>Reports</strong>
                       <span>View leaderboards, popular subjects, plan use, and current activity.</span>
@@ -2135,21 +2319,16 @@ function App() {
                     <p>Select a country to refresh the support queue and reports.</p>
                   </div>
                   <div className="banner-actions">
-                    <button type="button" className="ghost-button" onClick={() => setAdminView('overview')}>
+                    <button type="button" className="ghost-button" onClick={() => openAdminView('overview')}>
                       Back to overview
                     </button>
                   </div>
                 </section>
 
                 <section className="setup-panel">
-                  <div className="page-chip-row">
-                    <span className="page-chip">Overview</span>
-                    <span className="page-chip page-chip-active">Countries</span>
-                    <span className="page-chip">Registered learners</span>
-                    <span className="page-chip">Follow-ups</span>
-                  </div>
+                  <AdminTabs active={adminView} onChange={openAdminView} />
                   <div className="country-list">
-                    {registrationsByCountry.length > 0 ? registrationsByCountry.map((entry) => {
+                    {countryRegistrationCards.length > 0 ? countryRegistrationCards.map((entry) => {
                       const entryCountry = getCountryByCode(entry.code);
 
                       return (
@@ -2165,7 +2344,7 @@ function App() {
                         </button>
                       );
                     }) : (
-                      <p className="empty-state">New sign-ups will add country totals here on this browser.</p>
+                      <p className="empty-state">Country totals will appear here as learners register.</p>
                     )}
                   </div>
                 </section>
@@ -2179,7 +2358,7 @@ function App() {
                     <p>{metrics.country.curriculum} · {metrics.country.curriculumFocus}</p>
                   </div>
                   <div className="history-list">
-                    {metrics.supportQueue.map((item) => (
+                    {followUpItems.map((item) => (
                       <article key={item.title} className="history-row">
                         <div>
                           <strong>{item.title}</strong>
@@ -2201,7 +2380,7 @@ function App() {
                     <p>View staff roles, support focus, and add or remove staff records.</p>
                   </div>
                   <div className="banner-actions">
-                    <button type="button" className="ghost-button" onClick={() => setAdminView('overview')}>
+                    <button type="button" className="ghost-button" onClick={() => openAdminView('overview')}>
                       Back to overview
                     </button>
                   </div>
@@ -2213,12 +2392,7 @@ function App() {
                     <h2>Staff details and actions</h2>
                     <p>{adminNotice}</p>
                   </div>
-                  <div className="page-chip-row">
-                    <span className="page-chip">Overview</span>
-                    <span className="page-chip page-chip-active">Staff</span>
-                    <span className="page-chip">Registered learners</span>
-                    <span className="page-chip">Reports</span>
-                  </div>
+                  <AdminTabs active={adminView} onChange={openAdminView} />
                   <div className="field-grid">
                     <label>
                       Staff name
@@ -2248,6 +2422,9 @@ function App() {
                   <div className="banner-actions">
                     <button type="button" className="ghost-button ghost-button-small" onClick={addStaffMember}>
                       Save staff member
+                    </button>
+                    <button type="button" className="ghost-button ghost-button-small" onClick={addSampleStaffMember}>
+                      Add sample staff
                     </button>
                   </div>
                   <div className="history-list">
@@ -2280,13 +2457,14 @@ function App() {
                     <h2>Who is managing the app</h2>
                   </div>
                   <div className="history-list">
-                    {metrics.liveActivity.map((session) => (
-                      <article key={`${session.learner}-${session.staff}`} className="history-row">
+                    {(focusedStaffMembers.length > 0 ? focusedStaffMembers : staffMembers).map((member) => (
+                      <article key={`${member.name}-${member.role}`} className="history-row">
                         <div>
-                          <strong>{session.staff}</strong>
-                          <span>{session.learner} · {session.subject}</span>
+                          <strong>{member.name}</strong>
+                          <span>{member.role}</span>
+                          <span>{member.focus}</span>
                         </div>
-                        <strong>{session.status}</strong>
+                        <strong>{member.status}</strong>
                       </article>
                     ))}
                   </div>
@@ -2300,10 +2478,10 @@ function App() {
                   <div>
                     <p className="eyebrow">Admin page</p>
                     <h2>Registered learners</h2>
-                    <p>Every learner account created on this browser appears here for admin review.</p>
+                    <p>Every learner account appears here for admin review.</p>
                   </div>
                   <div className="banner-actions">
-                    <button type="button" className="ghost-button" onClick={() => setAdminView('overview')}>
+                    <button type="button" className="ghost-button" onClick={() => openAdminView('overview')}>
                       Back to overview
                     </button>
                   </div>
@@ -2315,12 +2493,7 @@ function App() {
                     <h2>New accounts and plan choices</h2>
                     <p>Use this page to check who joined, what country they selected, and which plan they chose.</p>
                   </div>
-                  <div className="page-chip-row">
-                    <span className="page-chip">Overview</span>
-                    <span className="page-chip">Countries</span>
-                    <span className="page-chip page-chip-active">Registered learners</span>
-                    <span className="page-chip">Staff</span>
-                  </div>
+                  <AdminTabs active={adminView} onChange={openAdminView} />
                   <div className="country-groups">
                     {registrationsGroupedByCountry.length > 0 ? registrationsGroupedByCountry.map(({ country, learners }) => (
                       <section key={country.code} className="country-group-card">
@@ -2393,7 +2566,7 @@ function App() {
                     <p>Country-aware follow-up items for learners, families, and plan support.</p>
                   </div>
                   <div className="banner-actions">
-                    <button type="button" className="ghost-button" onClick={() => setAdminView('overview')}>
+                    <button type="button" className="ghost-button" onClick={() => openAdminView('overview')}>
                       Back to overview
                     </button>
                   </div>
@@ -2405,11 +2578,7 @@ function App() {
                     <h2>Follow-up items</h2>
                     <p>{adminNotice}</p>
                   </div>
-                  <div className="page-chip-row">
-                    <span className="page-chip">Overview</span>
-                    <span className="page-chip">Countries</span>
-                    <span className="page-chip page-chip-active">Follow-ups</span>
-                  </div>
+                  <AdminTabs active={adminView} onChange={openAdminView} />
                   <div className="banner-actions">
                     <button type="button" className="ghost-button ghost-button-small" onClick={addCountryFollowUp}>
                       Add follow-up
@@ -2419,11 +2588,20 @@ function App() {
                     </button>
                   </div>
                   <div className="history-list">
-                    {metrics.supportQueue.map((item) => (
+                    {followUpItems.map((item) => (
                       <article key={item.title} className="history-row">
                         <div>
                           <strong>{item.title}</strong>
                           <span>{item.detail}</span>
+                        </div>
+                        <div className="row-actions">
+                          <button
+                            type="button"
+                            className="ghost-button ghost-button-small"
+                            onClick={() => removeCountryFollowUp(item.title)}
+                          >
+                            Remove
+                          </button>
                         </div>
                       </article>
                     ))}
@@ -2439,7 +2617,7 @@ function App() {
                     <p>Lead country queue and family notes.</p>
                   </div>
                   <div className="country-list">
-                    {metrics.registeredCountries.map((entry) => (
+                    {countryRegistrationCards.map((entry) => (
                       <button
                         key={entry.code}
                         type="button"
@@ -2465,7 +2643,7 @@ function App() {
                     <p>Leaderboards, subject activity, plan mix, and current learner snapshots.</p>
                   </div>
                   <div className="banner-actions">
-                    <button type="button" className="ghost-button" onClick={() => setAdminView('overview')}>
+                    <button type="button" className="ghost-button" onClick={() => openAdminView('overview')}>
                       Back to overview
                     </button>
                   </div>
@@ -2475,22 +2653,54 @@ function App() {
                   <div className="panel-heading">
                     <p className="eyebrow">Current learning</p>
                     <h2>Current learner activity</h2>
+                    <p>{adminNotice || 'Keep reports active with a clear view of learner activity and trends.'}</p>
                   </div>
-                  <div className="page-chip-row">
-                    <span className="page-chip">Overview</span>
-                    <span className="page-chip">Staff</span>
-                    <span className="page-chip page-chip-active">Reports</span>
+                  <AdminTabs active={adminView} onChange={openAdminView} />
+                  <div className="stats-grid report-stats-grid">
+                    <article className="info-card">
+                      <strong>Current activity rows</strong>
+                      <p>{reportActivity.length}</p>
+                    </article>
+                    <article className="info-card">
+                      <strong>Follow-ups open</strong>
+                      <p>{followUpItems.length}</p>
+                    </article>
+                    <article className="info-card">
+                      <strong>Top subject</strong>
+                      <p>{metrics.subjectInsights[0]?.subject ?? 'Mathematics'}</p>
+                    </article>
+                    <article className="info-card">
+                      <strong>Country focus</strong>
+                      <p>{metrics.country.name}</p>
+                    </article>
                   </div>
-                  <div className="table-list">
-                    {metrics.liveActivity.map((session) => (
-                      <div key={`${session.learner}-${session.subject}`} className="table-row">
-                        <strong>{session.learner}</strong>
-                        <span>{session.subject}</span>
-                        <span>{session.plan}</span>
-                        <span>{session.status}</span>
-                        <span>{session.support}</span>
-                        <span>{session.staff}</span>
-                      </div>
+                  <div className="banner-actions">
+                    <button type="button" className="ghost-button ghost-button-small" onClick={addSampleReportActivity}>
+                      Add sample activity
+                    </button>
+                    <button type="button" className="ghost-button ghost-button-small" onClick={exportCountryReport}>
+                      Download report
+                    </button>
+                  </div>
+                  <div className="history-list">
+                    {reportActivity.map((session) => (
+                      <article key={`${session.learner}-${session.subject}-${session.staff}`} className="history-row">
+                        <div>
+                          <strong>{session.learner}</strong>
+                          <span>{session.subject} · {session.plan} · {session.status}</span>
+                          <span>{session.support}</span>
+                        </div>
+                        <div className="row-actions">
+                          <strong>{session.staff}</strong>
+                          <button
+                            type="button"
+                            className="ghost-button ghost-button-small"
+                            onClick={() => removeReportActivity(`${session.learner}-${session.subject}-${session.staff}`)}
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      </article>
                     ))}
                   </div>
                 </section>

@@ -67,6 +67,11 @@ type ReviewSnapshot = {
   date: string;
 };
 
+type PendingVerification = {
+  user: RegisteredUser;
+  sentAt: string;
+};
+
 type StoredState = {
   appVersion?: string;
   profile?: LearnerProfile;
@@ -83,6 +88,7 @@ type StoredState = {
   staffMembers?: AdminStaffMember[];
   adminActivityByCountry?: AdminActivityMap;
   followUpsByCountry?: AdminFollowUpMap;
+  pendingVerification?: PendingVerification | null;
 };
 
 type BeforeInstallPromptEvent = Event & {
@@ -99,7 +105,7 @@ type GeneratedAvatarOption = {
 
 const STORAGE_KEY = 'review-buddy-state';
 const INSTALL_DISMISS_KEY = 'review-buddy-install-dismissed';
-const APP_VERSION = '1.8.0';
+const APP_VERSION = '1.8.1';
 const APP_CREATED_ON = 'March 31, 2026';
 const DEFAULT_ADMIN_USERNAME = 'Admin';
 const DEFAULT_ADMIN_PASSWORD = 'admin';
@@ -528,6 +534,8 @@ function App() {
     role: '',
     focus: '',
   });
+  const [pendingVerification, setPendingVerification] = useState<PendingVerification | null>(null);
+  const [verificationCode, setVerificationCode] = useState('');
   const speechKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -561,6 +569,7 @@ function App() {
       if (saved.staffMembers) setStaffMembers(saved.staffMembers);
       if (saved.adminActivityByCountry) setAdminActivityByCountry(saved.adminActivityByCountry);
       if (saved.followUpsByCountry) setFollowUpsByCountry(saved.followUpsByCountry);
+      if (saved.pendingVerification) setPendingVerification(saved.pendingVerification);
     } catch {
       window.localStorage.removeItem(STORAGE_KEY);
     } finally {
@@ -655,6 +664,7 @@ function App() {
         staffMembers,
         adminActivityByCountry,
         followUpsByCountry,
+        pendingVerification,
       } satisfies StoredState),
     );
   }, [
@@ -665,6 +675,7 @@ function App() {
     followUpsByCountry,
     isReady,
     profile,
+    pendingVerification,
     quizState,
     registeredUsers,
     reviewSnapshot,
@@ -1032,6 +1043,30 @@ function App() {
     setAuthNotice('');
 
     if (authMode === 'signup') {
+      if (pendingVerification) {
+        if (!verificationCode.trim()) {
+          setAuthNotice('Enter the code sent to your email so we can finish creating the account.');
+          return;
+        }
+
+        try {
+          const savedUser = await appRepository.verifyRegistrationCode(
+            pendingVerification.user,
+            verificationCode,
+          );
+          const allUsers = await appRepository.listRegisteredUsers();
+          setRegisteredUsers(ensureRegisteredUsers([...allUsers, savedUser]));
+          setSigninIdentifier(savedUser.email);
+          setPendingVerification(null);
+          setVerificationCode('');
+          setAdminNotice(`${savedUser.fullName} finished email verification and joined registered learners.`);
+          enterWorkspace(savedUser);
+        } catch {
+          setAuthNotice('That code did not work. Check the email code and try again.');
+        }
+        return;
+      }
+
       const email = profile.email.trim().toLowerCase();
       const alreadyExists = registeredUsers.some((user) => user.email.toLowerCase() === email);
 
@@ -1042,14 +1077,21 @@ function App() {
 
       const newUser = createRegisteredUser(profile);
       try {
-        const savedUser = await appRepository.registerLearner(newUser);
-        const allUsers = await appRepository.listRegisteredUsers();
-        setRegisteredUsers(ensureRegisteredUsers([...allUsers, savedUser]));
-        setSigninIdentifier(savedUser.email);
-        setAdminNotice(`${savedUser.fullName} was added to registered learners.`);
-        enterWorkspace(savedUser);
+        const sentEmail = await appRepository.sendRegistrationCode({
+          email: newUser.email,
+          fullName: newUser.fullName,
+          username: newUser.username,
+          role: newUser.role,
+          countryCode: newUser.countryCode,
+        });
+        setPendingVerification({
+          user: { ...newUser, email: sentEmail },
+          sentAt: new Date().toISOString(),
+        });
+        setVerificationCode('');
+        setAuthNotice(`We sent a verification code to ${sentEmail}. Enter it below to finish creating the account.`);
       } catch {
-        setAuthNotice('We could not create the account just now. Please try again.');
+        setAuthNotice('We could not send the verification code just now. Please try again.');
       }
       return;
     }
@@ -1085,6 +1127,32 @@ function App() {
     setSelectedSubject(null);
     setReviewSnapshot(null);
     setQuizState(null);
+  }
+
+  async function resendVerificationCode() {
+    if (!pendingVerification) return;
+
+    try {
+      const sentEmail = await appRepository.sendRegistrationCode({
+        email: pendingVerification.user.email,
+        fullName: pendingVerification.user.fullName,
+        username: pendingVerification.user.username,
+        role: pendingVerification.user.role,
+        countryCode: pendingVerification.user.countryCode,
+      });
+      setPendingVerification((current) =>
+        current
+          ? {
+              ...current,
+              user: { ...current.user, email: sentEmail },
+              sentAt: new Date().toISOString(),
+            }
+          : null,
+      );
+      setAuthNotice(`A new verification code was sent to ${sentEmail}.`);
+    } catch {
+      setAuthNotice('We could not resend the verification code just now.');
+    }
   }
 
   async function handleInstallApp() {
@@ -1576,6 +1644,8 @@ function App() {
                 onClick={() => {
                   setAuthMode('signin');
                   setAuthNotice('');
+                  setPendingVerification(null);
+                  setVerificationCode('');
                   updateProfile('password', '');
                 }}
               >
@@ -1587,6 +1657,8 @@ function App() {
                 onClick={() => {
                   setAuthMode('signup');
                   setAuthNotice('');
+                  setPendingVerification(null);
+                  setVerificationCode('');
                   setProfile((current) =>
                     normalizeLearnerProfile({
                       ...current,
@@ -1601,7 +1673,7 @@ function App() {
             </div>
 
             <form className="auth-form" onSubmit={handleAuthSubmit}>
-              {authMode === 'signup' && (
+              {authMode === 'signup' && !pendingVerification && (
                 <label>
                   Full name
                   <input
@@ -1624,6 +1696,7 @@ function App() {
                       : updateProfile('email', event.target.value)
                   }
                   placeholder={authMode === 'signin' ? 'Email or Admin' : 'name@example.com'}
+                  disabled={authMode === 'signup' && Boolean(pendingVerification)}
                   required
                 />
               </label>
@@ -1635,11 +1708,12 @@ function App() {
                   value={profile.password}
                   onChange={(event) => updateProfile('password', event.target.value)}
                   placeholder={authMode === 'signin' ? 'Enter password' : 'Create password'}
+                  disabled={authMode === 'signup' && Boolean(pendingVerification)}
                   required
                 />
               </label>
 
-              {authMode === 'signup' && (
+              {authMode === 'signup' && !pendingVerification && (
                 <div className="field-grid">
                   <label>
                     Boy or girl
@@ -1680,7 +1754,7 @@ function App() {
                 </div>
               )}
 
-              {authMode === 'signup' && (
+              {authMode === 'signup' && !pendingVerification && (
                 <div className="field-grid">
                   <label>
                     Level
@@ -1710,7 +1784,7 @@ function App() {
                 </div>
               )}
 
-              {authMode === 'signup' && (
+              {authMode === 'signup' && !pendingVerification && (
                 <div className="avatar-picker">
                   <div className="panel-heading">
                     <p className="eyebrow">Picture</p>
@@ -1753,10 +1827,49 @@ function App() {
                 </div>
               )}
 
+              {authMode === 'signup' && pendingVerification && (
+                <div className="verification-panel">
+                  <div className="panel-heading">
+                    <p className="eyebrow">Email verification</p>
+                    <h2>Enter your email code</h2>
+                    <p>
+                      We sent a code to <strong>{pendingVerification.user.email}</strong>. Enter it here to finish creating the account.
+                    </p>
+                  </div>
+                  <label>
+                    Verification code
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      value={verificationCode}
+                      onChange={(event) => setVerificationCode(event.target.value)}
+                      placeholder="Enter the code from your email"
+                      required
+                    />
+                  </label>
+                  <div className="sample-buttons">
+                    <button type="button" className="ghost-button" onClick={() => void resendVerificationCode()}>
+                      Resend code
+                    </button>
+                    <button
+                      type="button"
+                      className="ghost-button"
+                      onClick={() => {
+                        setPendingVerification(null);
+                        setVerificationCode('');
+                        setAuthNotice('');
+                      }}
+                    >
+                      Change details
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {authNotice && <p className="auth-notice">{authNotice}</p>}
 
               <button className="primary-button" type="submit">
-                {authMode === 'signin' ? 'Continue' : 'Create account'}
+                {authMode === 'signin' ? 'Continue' : pendingVerification ? 'Verify email code' : 'Create account'}
               </button>
             </form>
           </section>

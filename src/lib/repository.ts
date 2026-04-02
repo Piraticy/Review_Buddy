@@ -11,6 +11,14 @@ type StoredState = {
   staffMembers?: AdminStaffMember[];
 };
 
+type VerificationRequest = {
+  email: string;
+  fullName: string;
+  username: string;
+  role: RegisteredUser['role'];
+  countryCode: string;
+};
+
 function readStoredState(): StoredState {
   if (typeof window === 'undefined') {
     return {};
@@ -206,6 +214,100 @@ async function registerLearner(user: RegisteredUser) {
     ...user,
     id: String(profileRow.id),
     email: profileRow.email,
+  };
+}
+
+async function sendRegistrationCode(request: VerificationRequest) {
+  if (!supabase) {
+    throw new Error('Supabase is required for email verification.');
+  }
+
+  const normalizedEmail = request.email.trim().toLowerCase();
+  const { error } = await supabase.auth.signInWithOtp({
+    email: normalizedEmail,
+    options: {
+      shouldCreateUser: true,
+      data: {
+        full_name: request.fullName,
+        username: request.username,
+        role: request.role,
+        country_code: request.countryCode,
+      },
+    },
+  });
+
+  if (error) {
+    throw error;
+  }
+
+  return normalizedEmail;
+}
+
+async function verifyRegistrationCode(user: RegisteredUser, code: string) {
+  if (!supabase) {
+    saveLocalUser(user);
+    return user;
+  }
+
+  const normalizedEmail = user.email.trim().toLowerCase();
+  const normalizedCode = code.trim();
+
+  const { data: otpData, error: otpError } = await supabase.auth.verifyOtp({
+    email: normalizedEmail,
+    token: normalizedCode,
+    type: 'email',
+  });
+
+  if (otpError || !otpData.user) {
+    throw otpError ?? new Error('The verification code could not be confirmed.');
+  }
+
+  const authUserId = otpData.user.id;
+
+  const { error: updateError } = await supabase.auth.updateUser({
+    password: user.password,
+    data: {
+      full_name: user.fullName,
+      username: user.username,
+      role: user.role,
+      country_code: user.countryCode,
+    },
+  });
+
+  if (updateError) {
+    throw updateError;
+  }
+
+  const profileRow = {
+    id: authUserId,
+    username: user.username,
+    full_name: user.fullName,
+    email: normalizedEmail,
+    role: user.role,
+    gender: user.gender,
+    avatar_mode: user.avatarMode,
+    avatar_emoji: user.avatarEmoji,
+    avatar_image: user.avatarImage ?? null,
+    country_code: user.countryCode,
+    plan: user.plan,
+    stage: user.stage,
+    level: user.level,
+    mode: user.mode,
+    subject: user.subject,
+    created_at: user.createdAt,
+    last_login_at: new Date().toISOString(),
+  };
+
+  const { error: upsertError } = await supabase.from('learner_profiles').upsert(profileRow);
+  if (upsertError) {
+    throw upsertError;
+  }
+
+  return {
+    ...user,
+    id: String(authUserId),
+    email: normalizedEmail,
+    lastLoginAt: profileRow.last_login_at,
   };
 }
 
@@ -522,6 +624,8 @@ async function listCountryRegistrations() {
 
 export const appRepository = {
   registerLearner,
+  sendRegistrationCode,
+  verifyRegistrationCode,
   signIn,
   syncLearnerProfile,
   listRegisteredUsers,

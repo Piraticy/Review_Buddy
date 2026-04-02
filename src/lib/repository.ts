@@ -223,10 +223,12 @@ async function sendRegistrationCode(request: VerificationRequest) {
   }
 
   const normalizedEmail = request.email.trim().toLowerCase();
-  const { error } = await supabase.auth.signInWithOtp({
+  const temporaryPassword = `ReviewBuddy-${Math.random().toString(36).slice(2)}-Otp1!`;
+
+  const { error } = await supabase.auth.signUp({
     email: normalizedEmail,
+    password: temporaryPassword,
     options: {
-      shouldCreateUser: true,
       data: {
         full_name: request.fullName,
         username: request.username,
@@ -263,20 +265,11 @@ async function verifyRegistrationCode(user: RegisteredUser, code: string) {
   }
 
   const authUserId = otpData.user.id;
-
   const { error: updateError } = await supabase.auth.updateUser({
     password: user.password,
-    data: {
-      full_name: user.fullName,
-      username: user.username,
-      role: user.role,
-      country_code: user.countryCode,
-    },
   });
 
-  if (updateError) {
-    throw updateError;
-  }
+  if (updateError) throw updateError;
 
   const profileRow = {
     id: authUserId,
@@ -309,6 +302,24 @@ async function verifyRegistrationCode(user: RegisteredUser, code: string) {
     email: normalizedEmail,
     lastLoginAt: profileRow.last_login_at,
   };
+}
+
+async function resendRegistrationCode(email: string) {
+  if (!supabase) {
+    throw new Error('Supabase is required for email verification.');
+  }
+
+  const normalizedEmail = email.trim().toLowerCase();
+  const { error } = await supabase.auth.resend({
+    type: 'signup',
+    email: normalizedEmail,
+  });
+
+  if (error) {
+    throw error;
+  }
+
+  return normalizedEmail;
 }
 
 async function signIn(identifier: string, password: string) {
@@ -626,6 +637,7 @@ export const appRepository = {
   registerLearner,
   sendRegistrationCode,
   verifyRegistrationCode,
+  resendRegistrationCode,
   signIn,
   syncLearnerProfile,
   listRegisteredUsers,

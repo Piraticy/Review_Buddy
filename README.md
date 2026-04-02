@@ -3,7 +3,7 @@
 Review Buddy is a responsive after-school learning app for kids and teens.
 It supports country-aware onboarding, age-level learning paths, learner and admin roles, a cleaner public-facing register/sign-in flow, and a shared backend-ready data layer.
 
-Current version: `1.8.1`
+Current version: `1.8.2`
 
 Production URL: `https://review-buddy-gray.vercel.app`
 
@@ -112,8 +112,8 @@ To enable the shared backend:
 1. Create a Supabase project.
 2. Run the SQL in [supabase/schema.sql](/Users/adamrobertmwakisyala/Desktop/Devs/Review_Buddy/supabase/schema.sql).
 3. Add `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` from Supabase to your local `.env` and Vercel project environment variables.
-4. In Supabase Auth settings, keep email signups enabled.
-5. For email-code verification, update the Supabase email template to include the OTP token value so learners receive a code they can type into the app.
+4. In Supabase Authentication settings, keep the Email provider enabled and keep email confirmation turned on.
+5. In the Supabase confirmation email template, include the OTP token value so learners receive a code they can type into the app.
 6. In Supabase Auth settings, create the admin auth user for `admin@reviewbuddy.app` with password `admin`.
 7. Redeploy the app.
 

@@ -105,7 +105,7 @@ type GeneratedAvatarOption = {
 
 const STORAGE_KEY = 'review-buddy-state';
 const INSTALL_DISMISS_KEY = 'review-buddy-install-dismissed';
-const APP_VERSION = '1.8.1';
+const APP_VERSION = '1.8.2';
 const APP_CREATED_ON = 'March 31, 2026';
 const DEFAULT_ADMIN_USERNAME = 'Admin';
 const DEFAULT_ADMIN_PASSWORD = 'admin';
@@ -502,6 +502,14 @@ function getGeneratedAvatarOptions(gender: LearnerGender) {
 
 function getDefaultGeneratedAvatar(gender: LearnerGender) {
   return getGeneratedAvatarOptions(gender)[0];
+}
+
+function getErrorMessage(error: unknown, fallback: string) {
+  if (error && typeof error === 'object' && 'message' in error && typeof error.message === 'string') {
+    return error.message;
+  }
+
+  return fallback;
 }
 
 function App() {
@@ -1061,8 +1069,8 @@ function App() {
           setVerificationCode('');
           setAdminNotice(`${savedUser.fullName} finished email verification and joined registered learners.`);
           enterWorkspace(savedUser);
-        } catch {
-          setAuthNotice('That code did not work. Check the email code and try again.');
+        } catch (error) {
+          setAuthNotice(getErrorMessage(error, 'That code did not work. Check the email code and try again.'));
         }
         return;
       }
@@ -1090,8 +1098,8 @@ function App() {
         });
         setVerificationCode('');
         setAuthNotice(`We sent a verification code to ${sentEmail}. Enter it below to finish creating the account.`);
-      } catch {
-        setAuthNotice('We could not send the verification code just now. Please try again.');
+      } catch (error) {
+        setAuthNotice(getErrorMessage(error, 'We could not send the verification code just now. Please try again.'));
       }
       return;
     }
@@ -1133,13 +1141,7 @@ function App() {
     if (!pendingVerification) return;
 
     try {
-      const sentEmail = await appRepository.sendRegistrationCode({
-        email: pendingVerification.user.email,
-        fullName: pendingVerification.user.fullName,
-        username: pendingVerification.user.username,
-        role: pendingVerification.user.role,
-        countryCode: pendingVerification.user.countryCode,
-      });
+      const sentEmail = await appRepository.resendRegistrationCode(pendingVerification.user.email);
       setPendingVerification((current) =>
         current
           ? {
@@ -1150,8 +1152,8 @@ function App() {
           : null,
       );
       setAuthNotice(`A new verification code was sent to ${sentEmail}.`);
-    } catch {
-      setAuthNotice('We could not resend the verification code just now.');
+    } catch (error) {
+      setAuthNotice(getErrorMessage(error, 'We could not resend the verification code just now.'));
     }
   }
 

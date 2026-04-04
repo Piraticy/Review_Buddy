@@ -431,11 +431,80 @@ button:disabled {
 
 .verification-panel {
   display: grid;
-  gap: 14px;
-  padding: 18px;
+  gap: 16px;
+  padding: 22px;
+  border-radius: 26px;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--theme-surface) 98%, white 2%), color-mix(in srgb, var(--theme-surface) 92%, white 8%)),
+    color-mix(in srgb, var(--theme-surface) 96%, white 4%);
+  border: 1px solid color-mix(in srgb, var(--theme-primary) 18%, white);
+  box-shadow: 0 22px 40px rgba(15, 23, 42, 0.08);
+}
+
+.verification-header {
+  display: grid;
+  grid-template-columns: 68px minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.verification-mark {
+  width: 68px;
+  height: 68px;
+  display: grid;
+  place-items: center;
   border-radius: 22px;
-  background: color-mix(in srgb, var(--theme-surface) 96%, white 4%);
+  font-size: 1.9rem;
+  background: linear-gradient(135deg, color-mix(in srgb, var(--theme-primary) 16%, white), color-mix(in srgb, var(--theme-secondary) 36%, white));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--theme-primary) 16%, white);
+}
+
+.verification-chip-row {
+  gap: 8px;
+}
+
+.verification-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 18px;
+  border-radius: 20px;
+  background: color-mix(in srgb, var(--theme-secondary) 10%, var(--theme-surface));
+  border: 1px solid color-mix(in srgb, var(--theme-primary) 12%, white);
+}
+
+.verification-copy {
+  display: grid;
+  gap: 6px;
+}
+
+.verification-copy p {
+  margin: 0;
+}
+
+.verification-timer {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 160px;
+  padding: 10px 14px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--theme-surface) 88%, white 12%);
   border: 1px solid color-mix(in srgb, var(--theme-primary) 14%, white);
+  font-size: 0.92rem;
+  font-weight: 800;
+  color: color-mix(in srgb, var(--theme-ink) 78%, #64748b);
+}
+
+.verification-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.auth-notice-inline {
+  margin: 0;
 }
 
 .sample-buttons,
@@ -493,6 +562,19 @@ button:disabled {
   color: #f8fafc;
 }
 
+.app-shell[data-theme='night'] .password-toggle,
+.app-shell[data-theme='night'] .verification-card,
+.app-shell[data-theme='night'] .verification-timer {
+  background: rgba(15, 23, 42, 0.78);
+  color: #f8fafc;
+  border-color: rgba(148, 163, 184, 0.22);
+}
+
+.app-shell[data-theme='night'] .verification-panel {
+  background: rgba(17, 24, 39, 0.92);
+  border-color: rgba(148, 163, 184, 0.2);
+}
+
 .subject-card-active,
 .choice-button-selected,
 .palette-button-active {
@@ -503,6 +585,29 @@ button:disabled {
 .auth-form {
   display: grid;
   gap: 14px;
+}
+
+.password-field {
+  position: relative;
+}
+
+.password-field input {
+  padding-right: 82px;
+}
+
+.password-toggle {
+  position: absolute;
+  top: 50%;
+  right: 10px;
+  transform: translateY(-50%);
+  min-width: 58px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--theme-surface) 90%, white 10%);
+  border: 1px solid color-mix(in srgb, var(--theme-primary) 14%, white);
+  color: var(--theme-ink);
+  font-size: 0.86rem;
+  font-weight: 800;
 }
 
 .auth-form label,
@@ -1252,6 +1357,13 @@ button:disabled {
     align-items: flex-start;
   }
 
+  .verification-header,
+  .verification-card {
+    grid-template-columns: 1fr;
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
   .book-cover {
     grid-template-columns: 1fr;
   }
@@ -1279,7 +1391,8 @@ button:disabled {
   .banner-actions,
   .result-actions,
   .palette-row,
-  .page-chip-row {
+  .page-chip-row,
+  .verification-actions {
     display: grid;
     grid-template-columns: 1fr;
   }

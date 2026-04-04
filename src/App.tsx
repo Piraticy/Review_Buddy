@@ -105,10 +105,11 @@ type GeneratedAvatarOption = {
 
 const STORAGE_KEY = 'review-buddy-state';
 const INSTALL_DISMISS_KEY = 'review-buddy-install-dismissed';
-const APP_VERSION = '1.8.2';
+const APP_VERSION = '1.8.3';
 const APP_CREATED_ON = 'March 31, 2026';
 const DEFAULT_ADMIN_USERNAME = 'Admin';
 const DEFAULT_ADMIN_PASSWORD = 'admin';
+const RESEND_COOLDOWN_SECONDS = 60;
 const GENERATED_AVATARS: Record<LearnerGender, GeneratedAvatarOption[]> = {
   boy: [
     { emoji: '👦🏻', label: 'Bright starter' },
@@ -242,6 +243,12 @@ function createDefaultAdminUser(): RegisteredUser {
     createdAt: new Date('2026-03-31T00:00:00.000Z').toISOString(),
     lastLoginAt: undefined,
   };
+}
+
+function formatClock(totalSeconds: number): string {
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
 }
 
 function normalizeLearnerProfile(input?: Partial<LearnerProfile>): LearnerProfile {
@@ -544,6 +551,8 @@ function App() {
   });
   const [pendingVerification, setPendingVerification] = useState<PendingVerification | null>(null);
   const [verificationCode, setVerificationCode] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [resendSecondsLeft, setResendSecondsLeft] = useState(0);
   const speechKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -722,6 +731,32 @@ function App() {
     }
   }, [profile.countryCode, screen]);
 
+  useEffect(() => {
+    if (!pendingVerification) {
+      setResendSecondsLeft(0);
+      return;
+    }
+
+    const sentAt = new Date(pendingVerification.sentAt).getTime();
+    if (Number.isNaN(sentAt)) {
+      setResendSecondsLeft(0);
+      return;
+    }
+
+    const updateCountdown = () => {
+      const remaining = Math.max(
+        0,
+        Math.ceil((sentAt + RESEND_COOLDOWN_SECONDS * 1000 - Date.now()) / 1000),
+      );
+      setResendSecondsLeft(remaining);
+    };
+
+    updateCountdown();
+    const timer = window.setInterval(updateCountdown, 1000);
+
+    return () => window.clearInterval(timer);
+  }, [pendingVerification]);
+
   const country = getCountryByCode(profile.countryCode);
   const availableSubjects = getAvailableSubjects(profile.countryCode, profile.stage, profile.plan);
   const currentQuestion = quizState?.questions[quizState.currentIndex];
@@ -872,6 +907,10 @@ function App() {
     profile.level,
   );
   const hasEliteReview = profile.plan === 'elite' && reviewSnapshot?.subject === activeStudentSubject;
+  const isVerificationStep = authMode === 'signup' && Boolean(pendingVerification);
+  const isResendLocked = resendSecondsLeft > 0;
+  const verificationFirstName =
+    pendingVerification?.user.fullName.trim().split(' ')[0] || 'your';
 
   useEffect(() => {
     if ('speechSynthesis' in window) {
@@ -1097,7 +1136,7 @@ function App() {
           sentAt: new Date().toISOString(),
         });
         setVerificationCode('');
-        setAuthNotice(`We sent a verification code to ${sentEmail}. Enter it below to finish creating the account.`);
+        setAuthNotice('');
       } catch (error) {
         setAuthNotice(getErrorMessage(error, 'We could not send the verification code just now. Please try again.'));
       }
@@ -1135,10 +1174,13 @@ function App() {
     setSelectedSubject(null);
     setReviewSnapshot(null);
     setQuizState(null);
+    setPendingVerification(null);
+    setVerificationCode('');
+    setShowPassword(false);
   }
 
   async function resendVerificationCode() {
-    if (!pendingVerification) return;
+    if (!pendingVerification || isResendLocked) return;
 
     try {
       const sentEmail = await appRepository.resendRegistrationCode(pendingVerification.user.email);
@@ -1151,7 +1193,7 @@ function App() {
             }
           : null,
       );
-      setAuthNotice(`A new verification code was sent to ${sentEmail}.`);
+      setAuthNotice(`A fresh code was sent to ${sentEmail}.`);
     } catch (error) {
       setAuthNotice(getErrorMessage(error, 'We could not resend the verification code just now.'));
     }
@@ -1648,6 +1690,7 @@ function App() {
                   setAuthNotice('');
                   setPendingVerification(null);
                   setVerificationCode('');
+                  setShowPassword(false);
                   updateProfile('password', '');
                 }}
               >
@@ -1661,6 +1704,7 @@ function App() {
                   setAuthNotice('');
                   setPendingVerification(null);
                   setVerificationCode('');
+                  setShowPassword(false);
                   setProfile((current) =>
                     normalizeLearnerProfile({
                       ...current,
@@ -1687,33 +1731,45 @@ function App() {
                 </label>
               )}
 
-              <label>
-                {authMode === 'signin' ? 'Email or username' : 'Email'}
-                <input
-                  type={authMode === 'signin' ? 'text' : 'email'}
-                  value={authMode === 'signin' ? signinIdentifier : profile.email}
-                  onChange={(event) =>
-                    authMode === 'signin'
-                      ? setSigninIdentifier(event.target.value)
-                      : updateProfile('email', event.target.value)
-                  }
-                  placeholder={authMode === 'signin' ? 'Email or Admin' : 'name@example.com'}
-                  disabled={authMode === 'signup' && Boolean(pendingVerification)}
-                  required
-                />
-              </label>
+              {!isVerificationStep && (
+                <label>
+                  {authMode === 'signin' ? 'Email or username' : 'Email'}
+                  <input
+                    type={authMode === 'signin' ? 'text' : 'email'}
+                    value={authMode === 'signin' ? signinIdentifier : profile.email}
+                    onChange={(event) =>
+                      authMode === 'signin'
+                        ? setSigninIdentifier(event.target.value)
+                        : updateProfile('email', event.target.value)
+                    }
+                    placeholder={authMode === 'signin' ? 'Email or Admin' : 'name@example.com'}
+                    required
+                  />
+                </label>
+              )}
 
-              <label>
-                Password
-                <input
-                  type="password"
-                  value={profile.password}
-                  onChange={(event) => updateProfile('password', event.target.value)}
-                  placeholder={authMode === 'signin' ? 'Enter password' : 'Create password'}
-                  disabled={authMode === 'signup' && Boolean(pendingVerification)}
-                  required
-                />
-              </label>
+              {!isVerificationStep && (
+                <label>
+                  Password
+                  <div className="password-field">
+                    <input
+                      type={showPassword ? 'text' : 'password'}
+                      value={profile.password}
+                      onChange={(event) => updateProfile('password', event.target.value)}
+                      placeholder={authMode === 'signin' ? 'Enter password' : 'Create password'}
+                      required
+                    />
+                    <button
+                      type="button"
+                      className="password-toggle"
+                      onClick={() => setShowPassword((current) => !current)}
+                      aria-label={showPassword ? 'Hide password' : 'Show password'}
+                    >
+                      {showPassword ? 'Hide' : 'Show'}
+                    </button>
+                  </div>
+                </label>
+              )}
 
               {authMode === 'signup' && !pendingVerification && (
                 <div className="field-grid">
@@ -1831,13 +1887,38 @@ function App() {
 
               {authMode === 'signup' && pendingVerification && (
                 <div className="verification-panel">
-                  <div className="panel-heading">
-                    <p className="eyebrow">Email verification</p>
-                    <h2>Enter your email code</h2>
-                    <p>
-                      We sent a code to <strong>{pendingVerification.user.email}</strong>. Enter it here to finish creating the account.
-                    </p>
+                  <div className="verification-header">
+                    <div className="verification-mark" aria-hidden="true">
+                      ✉️
+                    </div>
+                    <div className="panel-heading">
+                      <p className="eyebrow">Email verification</p>
+                      <h2>Enter your email code</h2>
+                      <p>
+                        Check <strong>{pendingVerification.user.email}</strong> and enter the code to
+                        finish creating {verificationFirstName}&rsquo;s account.
+                      </p>
+                    </div>
                   </div>
+
+                  <div className="page-chip-row verification-chip-row">
+                    <span className="page-chip">{pendingVerification.user.fullName}</span>
+                    <span className="page-chip">{getCountryByCode(pendingVerification.user.countryCode).name}</span>
+                    <span className="page-chip">{pendingVerification.user.level}</span>
+                  </div>
+
+                  <div className="verification-card">
+                    <div className="verification-copy">
+                      <strong>Almost ready</strong>
+                      <p>Only the code step is left. Your registration details are already saved for this sign-up.</p>
+                    </div>
+                    <div className="verification-timer">
+                      {isResendLocked
+                        ? `You can resend in ${formatClock(resendSecondsLeft)}`
+                        : 'You can ask for a new code now.'}
+                    </div>
+                  </div>
+
                   <label>
                     Verification code
                     <input
@@ -1849,9 +1930,17 @@ function App() {
                       required
                     />
                   </label>
-                  <div className="sample-buttons">
-                    <button type="button" className="ghost-button" onClick={() => void resendVerificationCode()}>
-                      Resend code
+
+                  {authNotice && <p className="auth-notice auth-notice-inline">{authNotice}</p>}
+
+                  <div className="verification-actions">
+                    <button
+                      type="button"
+                      className="ghost-button"
+                      onClick={() => void resendVerificationCode()}
+                      disabled={isResendLocked}
+                    >
+                      {isResendLocked ? `Resend in ${formatClock(resendSecondsLeft)}` : 'Resend code'}
                     </button>
                     <button
                       type="button"
@@ -1868,7 +1957,7 @@ function App() {
                 </div>
               )}
 
-              {authNotice && <p className="auth-notice">{authNotice}</p>}
+              {!isVerificationStep && authNotice && <p className="auth-notice">{authNotice}</p>}
 
               <button className="primary-button" type="submit">
                 {authMode === 'signin' ? 'Continue' : pendingVerification ? 'Verify email code' : 'Create account'}

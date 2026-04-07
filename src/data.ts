@@ -1,4 +1,4 @@
-export type Role = 'student' | 'admin';
+export type Role = 'student' | 'admin' | 'staff';
 export type Plan = 'free' | 'trial' | 'elite';
 export type Stage = 'kindergarten' | 'primary' | 'teen';
 export type QuizMode = 'solo' | 'group';
@@ -146,6 +146,22 @@ export type LearningMaterial = {
   chapters: LearningChapter[];
   activityHint: string;
   bookIcon: string;
+};
+
+export type LearningVideoScene = {
+  title: string;
+  subtitle: string;
+  visual: string;
+  narration: string;
+  bullets: string[];
+};
+
+export type LearningVideo = {
+  title: string;
+  subtitle: string;
+  intro: string;
+  durationLabel: string;
+  scenes: LearningVideoScene[];
 };
 
 type PromptTuple = [string, string, string[], string];
@@ -1073,6 +1089,60 @@ export function getLearningMaterial(
     chapters,
     activityHint: `Read the chapters first, then open a fresh ${subjectMeta.title.toLowerCase()} quiz or full exam.`,
     bookIcon: subjectMeta.icon,
+  };
+}
+
+export function getLearningVideo(
+  countryCode: string,
+  subject: string,
+  stage: Stage,
+  level: string,
+): LearningVideo {
+  const country = getCountryByCode(countryCode);
+  const subjectMeta = getSubjectMeta(subject);
+  const material = getLearningMaterial(countryCode, subject, stage, level);
+
+  const introScene: LearningVideoScene = {
+    title: `${subjectMeta.title} in ${country.name}`,
+    subtitle: `${level} · ${country.curriculum}`,
+    visual: subjectMeta.icon,
+    narration:
+      stage === 'kindergarten'
+        ? `Welcome to ${subjectMeta.title}. This short lesson follows ${country.name} and keeps the ideas easy for ${level}.`
+        : `Welcome to ${subjectMeta.title}. This short lesson follows ${country.name}, ${level}, and the ${country.curriculum} direction.`,
+    bullets: [
+      material.sourceLine,
+      material.intro,
+      `Focus: ${country.curriculumFocus}`,
+    ],
+  };
+
+  const chapterScenes = material.chapters.map((chapter, index) => ({
+    title: chapter.title,
+    subtitle: `Scene ${index + 1}`,
+    visual: subjectMeta.icon,
+    narration: chapter.summary,
+    bullets: chapter.points.slice(0, 3),
+  }));
+
+  const finalScene: LearningVideoScene = {
+    title: 'Next step',
+    subtitle: `${country.name} · ${subjectMeta.title}`,
+    visual: '🎯',
+    narration: `You have finished the quick lesson for ${subjectMeta.title}. Open a quiz or full exam when you are ready.`,
+    bullets: [
+      `Review ${level} ideas once more.`,
+      `Try a fresh quiz for ${subjectMeta.title}.`,
+      `Use the exam when you want a longer check.`,
+    ],
+  };
+
+  return {
+    title: `${subjectMeta.title} lesson video`,
+    subtitle: `${country.name} · ${level}`,
+    intro: `A short guided lesson reel shaped for ${country.name} and ${level}.`,
+    durationLabel: `${chapterScenes.length + 2} scenes`,
+    scenes: [introScene, ...chapterScenes, finalScene],
   };
 }
 

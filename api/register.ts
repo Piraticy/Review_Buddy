@@ -6,7 +6,7 @@ type RegisteredUserPayload = {
   fullName: string;
   email: string;
   password: string;
-  role: 'student' | 'admin';
+  role: 'student' | 'admin' | 'staff';
   gender: 'boy' | 'girl';
   avatarMode: 'generated' | 'upload';
   avatarEmoji: string;

@@ -6,6 +6,7 @@ import {
   getAvailableSubjects,
   getCountryByCode,
   getLearningMaterial,
+  getLearningVideo,
   getLeaderboard,
   getLevelOptions,
   getPlanDetails,
@@ -37,8 +38,8 @@ type AttemptRecord = {
 
 type AuthMode = 'signin' | 'signup';
 type ThemeMode = 'country' | 'sunny' | 'ocean' | 'night';
-type Screen = 'auth' | 'student' | 'admin' | 'quiz';
-type StudentView = 'home' | 'subject' | 'notes' | 'review';
+type Screen = 'auth' | 'student' | 'admin' | 'staff' | 'quiz';
+type StudentView = 'home' | 'subject' | 'notes' | 'review' | 'feedback';
 type AdminView = 'overview' | 'countries' | 'staff' | 'learners' | 'followups' | 'reports';
 type AssessmentKind = 'quiz' | 'exam';
 type ThemeVars = {
@@ -67,6 +68,17 @@ type ReviewSnapshot = {
   date: string;
 };
 
+type FeedbackEntry = {
+  id: string;
+  userName: string;
+  role: LearnerProfile['role'];
+  countryCode: string;
+  rating: number;
+  choice: string;
+  comment: string;
+  createdAt: string;
+};
+
 type StoredState = {
   appVersion?: string;
   profile?: LearnerProfile;
@@ -83,6 +95,7 @@ type StoredState = {
   staffMembers?: AdminStaffMember[];
   adminActivityByCountry?: AdminActivityMap;
   followUpsByCountry?: AdminFollowUpMap;
+  feedbackEntries?: FeedbackEntry[];
 };
 
 type BeforeInstallPromptEvent = Event & {
@@ -99,10 +112,12 @@ type GeneratedAvatarOption = {
 
 const STORAGE_KEY = 'review-buddy-state';
 const INSTALL_DISMISS_KEY = 'review-buddy-install-dismissed';
-const APP_VERSION = '1.8.6';
+const APP_VERSION = '1.8.7';
 const APP_CREATED_ON = 'March 31, 2026';
 const DEFAULT_ADMIN_USERNAME = 'Admin';
 const DEFAULT_ADMIN_PASSWORD = 'admin';
+const DEFAULT_STAFF_USERNAME = 'Staff';
+const DEFAULT_STAFF_PASSWORD = 'staff';
 const GENERATED_AVATARS: Record<LearnerGender, GeneratedAvatarOption[]> = {
   boy: [
     { emoji: '👦🏻', label: 'Bright starter' },
@@ -173,15 +188,15 @@ const themePresets: Record<Exclude<ThemeMode, 'country'>, ThemeVars> = {
 const benefitCards = [
   {
     title: 'Easy to begin',
-    detail: 'Join in a moment and move straight into learning.',
+    detail: 'Join fast and start learning.',
   },
   {
     title: 'Practice feels fresh',
-    detail: 'New question sets keep revision from feeling repeated.',
+    detail: 'Fresh sets keep practice new.',
   },
   {
     title: 'Progress stays clear',
-    detail: 'Scores and activity are simple for learners and families to follow.',
+    detail: 'Scores stay easy to follow.',
   },
 ];
 
@@ -226,6 +241,28 @@ function createDefaultAdminUser(): RegisteredUser {
     level: 'Year 10',
     mode: 'solo',
     subject: 'Mathematics',
+    createdAt: new Date('2026-03-31T00:00:00.000Z').toISOString(),
+    lastLoginAt: undefined,
+  };
+}
+
+function createDefaultStaffUser(): RegisteredUser {
+  return {
+    id: 'default-staff',
+    username: DEFAULT_STAFF_USERNAME,
+    fullName: 'Review Buddy Staff',
+    email: 'staff@reviewbuddy.app',
+    password: DEFAULT_STAFF_PASSWORD,
+    role: 'staff',
+    gender: 'girl',
+    avatarMode: 'generated',
+    avatarEmoji: '🧑🏽‍🏫',
+    countryCode: 'TZ',
+    plan: 'elite',
+    stage: 'primary',
+    level: 'Grade 4',
+    mode: 'solo',
+    subject: 'Communication Skills',
     createdAt: new Date('2026-03-31T00:00:00.000Z').toISOString(),
     lastLoginAt: undefined,
   };
@@ -277,6 +314,7 @@ function normalizeRegisteredUser(user: Partial<RegisteredUser>): RegisteredUser 
 
 function ensureRegisteredUsers(users?: RegisteredUser[]) {
   const adminUser = createDefaultAdminUser();
+  const staffUser = createDefaultStaffUser();
   const safeUsers = (users ?? []).map((user) => normalizeRegisteredUser(user));
   const hasAdmin = safeUsers.some(
     (user) =>
@@ -284,12 +322,18 @@ function ensureRegisteredUsers(users?: RegisteredUser[]) {
       (user.username.toLowerCase() === DEFAULT_ADMIN_USERNAME.toLowerCase() ||
         user.email.toLowerCase() === adminUser.email.toLowerCase()),
   );
+  const hasStaff = safeUsers.some(
+    (user) =>
+      user.role === 'staff' &&
+      (user.username.toLowerCase() === DEFAULT_STAFF_USERNAME.toLowerCase() ||
+        user.email.toLowerCase() === staffUser.email.toLowerCase()),
+  );
 
-  if (hasAdmin) {
-    return safeUsers;
-  }
+  const seededUsers = [...safeUsers];
+  if (!hasStaff) seededUsers.unshift(staffUser);
+  if (!hasAdmin) seededUsers.unshift(adminUser);
 
-  return [adminUser, ...safeUsers];
+  return seededUsers;
 }
 
 function LogoMark() {
@@ -374,6 +418,42 @@ const ADMIN_TABS: { view: AdminView; label: string; icon: string }[] = [
   { view: 'reports', label: 'Reports', icon: '📊' },
 ];
 
+const FEEDBACK_CHOICES = [
+  'Easy to use',
+  'Looks good on my device',
+  'Lessons are clear',
+  'Quiz is helpful',
+  'Needs better speed',
+  'Needs simpler pages',
+];
+
+const SIGNIN_SHORTCUTS = [
+  {
+    key: 'learner',
+    label: 'Learner',
+    icon: '🎒',
+    description: 'Email and password',
+    identifier: '',
+    password: '',
+  },
+  {
+    key: 'staff',
+    label: 'Staff',
+    icon: '🧑🏽‍🏫',
+    description: 'Staff / staff',
+    identifier: DEFAULT_STAFF_USERNAME,
+    password: DEFAULT_STAFF_PASSWORD,
+  },
+  {
+    key: 'admin',
+    label: 'Admin',
+    icon: '🛡️',
+    description: 'Admin / admin',
+    identifier: DEFAULT_ADMIN_USERNAME,
+    password: DEFAULT_ADMIN_PASSWORD,
+  },
+] as const;
+
 function AdminTabs({
   active,
   onChange,
@@ -392,11 +472,65 @@ function AdminTabs({
           aria-label={tab.label}
         >
           <span className="page-chip-icon" aria-hidden="true">{tab.icon}</span>
-          {tab.label}
+          <span className="page-chip-label">{tab.label}</span>
         </button>
       ))}
     </div>
   );
+}
+
+function FeedbackStars({
+  rating,
+  onChange,
+}: {
+  rating: number;
+  onChange: (next: number) => void;
+}) {
+  return (
+    <div className="feedback-stars" role="radiogroup" aria-label="Feedback rating">
+      {[1, 2, 3, 4, 5].map((star) => (
+        <button
+          key={star}
+          type="button"
+          className={`star-button${rating >= star ? ' star-button-active' : ''}`}
+          aria-label={`${star} star${star === 1 ? '' : 's'}`}
+          aria-pressed={rating === star}
+          onClick={() => onChange(star)}
+        >
+          ★
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function buildFeedbackSummary(entries: FeedbackEntry[]) {
+  if (entries.length === 0) {
+    return {
+      average: 0,
+      lowCount: 0,
+      headline: 'No feedback yet',
+      detail: 'Survey replies will appear here after learners share them.',
+    };
+  }
+
+  const average = Math.round((entries.reduce((sum, entry) => sum + entry.rating, 0) / entries.length) * 10) / 10;
+  const lowCount = entries.filter((entry) => entry.rating < 3).length;
+  const choiceCounts = entries.reduce<Record<string, number>>((summary, entry) => {
+    summary[entry.choice] = (summary[entry.choice] ?? 0) + 1;
+    return summary;
+  }, {});
+  const topChoice = Object.entries(choiceCounts).sort((left, right) => right[1] - left[1])[0]?.[0] ?? 'General feedback';
+
+  return {
+    average,
+    lowCount,
+    headline: topChoice,
+    detail:
+      lowCount > 0
+        ? `${lowCount} reply${lowCount === 1 ? '' : 'ies'} need attention first.`
+        : 'Most learners are sharing positive feedback.',
+  };
 }
 
 function ColoringBoard({ art, fillColor }: { art?: QuestionArt; fillColor?: string }) {
@@ -531,6 +665,7 @@ function App() {
   const [staffMembers, setStaffMembers] = useState<AdminStaffMember[]>([]);
   const [adminActivityByCountry, setAdminActivityByCountry] = useState<AdminActivityMap>({});
   const [followUpsByCountry, setFollowUpsByCountry] = useState<AdminFollowUpMap>({});
+  const [feedbackEntries, setFeedbackEntries] = useState<FeedbackEntry[]>([]);
   const [adminNotice, setAdminNotice] = useState('Choose a tool to manage staff, countries, or reports.');
   const [staffDraft, setStaffDraft] = useState({
     name: '',
@@ -538,6 +673,10 @@ function App() {
     focus: '',
   });
   const [showPassword, setShowPassword] = useState(false);
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [feedbackRating, setFeedbackRating] = useState(0);
+  const [feedbackChoice, setFeedbackChoice] = useState(FEEDBACK_CHOICES[0]);
+  const [feedbackComment, setFeedbackComment] = useState('');
   const speechKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -571,6 +710,7 @@ function App() {
       if (saved.staffMembers) setStaffMembers(saved.staffMembers);
       if (saved.adminActivityByCountry) setAdminActivityByCountry(saved.adminActivityByCountry);
       if (saved.followUpsByCountry) setFollowUpsByCountry(saved.followUpsByCountry);
+      if (saved.feedbackEntries) setFeedbackEntries(saved.feedbackEntries);
     } catch {
       window.localStorage.removeItem(STORAGE_KEY);
     } finally {
@@ -665,6 +805,7 @@ function App() {
         staffMembers,
         adminActivityByCountry,
         followUpsByCountry,
+        feedbackEntries,
       } satisfies StoredState),
     );
   }, [
@@ -683,6 +824,7 @@ function App() {
     staffMembers,
     studentView,
     themeMode,
+    feedbackEntries,
   ]);
 
   useEffect(() => {
@@ -725,6 +867,7 @@ function App() {
   );
   const adminCountry = getCountryByCode(adminMetricsCode);
   const learnerRegistrations = registeredUsers.filter((entry) => entry.role === 'student');
+  const staffRegistrations = registeredUsers.filter((entry) => entry.role === 'staff');
   const focusedLearners = learnerRegistrations.filter((entry) => entry.countryCode === adminMetricsCode);
   const liveWindowMs = 30 * 60 * 1000;
   const recentWindowMs = 7 * 24 * 60 * 60 * 1000;
@@ -758,6 +901,10 @@ function App() {
   })).filter((entry) => entry.learners.length > 0);
   const countryRegistrationCards = registrationsByCountry;
   const focusedStaffMembers = staffMembers.filter((member) => !member.countryCode || member.countryCode === adminMetricsCode);
+  const feedbackSummary = buildFeedbackSummary(feedbackEntries);
+  const recentFeedback = [...feedbackEntries]
+    .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())
+    .slice(0, 5);
   const onlineStaffMembers = focusedStaffMembers.filter(
     (member) => !member.status.toLowerCase().includes('offline') && !member.status.toLowerCase().includes('away'),
   );
@@ -862,7 +1009,14 @@ function App() {
     profile.stage,
     profile.level,
   );
-  const hasEliteReview = profile.plan === 'elite' && reviewSnapshot?.subject === activeStudentSubject;
+  const learningVideo = getLearningVideo(
+    profile.countryCode,
+    activeStudentSubject,
+    profile.stage,
+    profile.level,
+  );
+  const generatedAvatarOptions = getGeneratedAvatarOptions(profile.gender);
+  const chosenAvatarOption = generatedAvatarOptions.find((option) => option.emoji === profile.avatarEmoji);
 
   useEffect(() => {
     if ('speechSynthesis' in window) {
@@ -1017,7 +1171,7 @@ function App() {
     setSelectedSubject(normalized.subject);
     setStudentView('home');
     setAdminView('overview');
-    setScreen(normalized.role === 'admin' ? 'admin' : 'student');
+    setScreen(normalized.role === 'admin' ? 'admin' : normalized.role === 'staff' ? 'staff' : 'student');
 
     if (normalized.role === 'student') {
       void appRepository.syncLearnerProfile({
@@ -1042,6 +1196,11 @@ function App() {
     setAuthNotice('');
 
     if (authMode === 'signup') {
+      if (profile.password !== confirmPassword) {
+        setAuthNotice('Passwords do not match yet.');
+        return;
+      }
+
       const email = profile.email.trim().toLowerCase();
       const alreadyExists = registeredUsers.some((user) => user.email.toLowerCase() === email);
 
@@ -1057,6 +1216,7 @@ function App() {
         setRegisteredUsers(ensureRegisteredUsers(allUsers));
         setSigninIdentifier(savedUser.email);
         setAdminNotice(`${savedUser.fullName} joined registered learners.`);
+        setConfirmPassword('');
         enterWorkspace(savedUser);
       } catch (error) {
         setAuthNotice(getErrorMessage(error, 'We could not create the account just now. Please try again.'));
@@ -1096,6 +1256,7 @@ function App() {
     setReviewSnapshot(null);
     setQuizState(null);
     setShowPassword(false);
+    setConfirmPassword('');
   }
 
   async function handleInstallApp() {
@@ -1230,6 +1391,37 @@ function App() {
   function openLearningNotes(subject: string) {
     setSelectedSubject(subject);
     setStudentView('notes');
+  }
+
+  function openFeedbackPage() {
+    setAuthNotice('');
+    setStudentView('feedback');
+  }
+
+  function submitFeedback() {
+    if (!feedbackRating) {
+      setAuthNotice('Choose a star rating first.');
+      return;
+    }
+
+    const nextEntry: FeedbackEntry = {
+      id: `feedback-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`,
+      userName: profile.fullName || firstName,
+      role: profile.role,
+      countryCode: profile.countryCode,
+      rating: feedbackRating,
+      choice: feedbackChoice,
+      comment: feedbackComment.trim(),
+      createdAt: new Date().toISOString(),
+    };
+
+    setFeedbackEntries((current) => [nextEntry, ...current].slice(0, 60));
+    setFeedbackRating(0);
+    setFeedbackChoice(FEEDBACK_CHOICES[0]);
+    setFeedbackComment('');
+    setAuthNotice('');
+    setAdminNotice('New feedback was added for admin review.');
+    setStudentView('home');
   }
 
   function startQuiz(subject: string, kind: AssessmentKind = 'quiz') {
@@ -1522,12 +1714,12 @@ function App() {
         </section>
       )}
 
-      <header className="topbar">
+      <header className={`topbar topbar-${screen}`}>
         <div className="brand-lockup">
           {screen === 'auth' ? <LogoMark /> : <ProfileMark profile={profile} />}
           <div>
             <p className="eyebrow">Review Buddy</p>
-            <h1 className="brand-title">
+            <h1 className={`brand-title${screen === 'auth' ? '' : ' brand-title-dashboard'}`}>
               {screen === 'auth'
                 ? 'Easy learning made simple.'
                 : screen === 'quiz'
@@ -1577,7 +1769,7 @@ function App() {
             <div className="panel-heading">
               <p className="eyebrow">Welcome</p>
               <h2>{authMode === 'signin' ? 'Sign in to continue' : 'Create a new account'}</h2>
-              <p>{authMode === 'signin' ? 'Pick up learning where you left off.' : 'Create a learning space that feels like your own.'}</p>
+              <p>{authMode === 'signin' ? 'Pick up where you left off.' : 'Create your space in a few taps.'}</p>
             </div>
 
             <div className="mode-toggle" role="tablist" aria-label="Account mode">
@@ -1614,8 +1806,33 @@ function App() {
             </div>
 
             <form className="auth-form" onSubmit={handleAuthSubmit}>
+              {authMode === 'signin' && (
+                <div className="signin-shortcuts" aria-label="Quick access">
+                  {SIGNIN_SHORTCUTS.map((shortcut) => (
+                    <button
+                      key={shortcut.key}
+                      type="button"
+                      className={`shortcut-pill${
+                        (shortcut.identifier && signinIdentifier.trim().toLowerCase() === shortcut.identifier.toLowerCase()) ||
+                        (!shortcut.identifier && !signinIdentifier)
+                          ? ' shortcut-pill-active'
+                          : ''
+                      }`}
+                      onClick={() => {
+                        setSigninIdentifier(shortcut.identifier);
+                        updateProfile('password', shortcut.password);
+                        setAuthNotice('');
+                      }}
+                    >
+                      <span aria-hidden="true">{shortcut.icon}</span>
+                      <span>{shortcut.label}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+
               {authMode === 'signup' && (
-                <label>
+                <label className="field-span-2">
                   Full name
                   <input
                     value={profile.fullName}
@@ -1661,6 +1878,21 @@ function App() {
                   </button>
                 </div>
               </label>
+
+              {authMode === 'signup' && (
+                <label>
+                  Confirm password
+                  <div className="password-field">
+                    <input
+                      type={showPassword ? 'text' : 'password'}
+                      value={confirmPassword}
+                      onChange={(event) => setConfirmPassword(event.target.value)}
+                      placeholder="Repeat password"
+                      required
+                    />
+                  </div>
+                </label>
+              )}
 
               {authMode === 'signup' && (
                 <div className="field-grid">
@@ -1734,26 +1966,28 @@ function App() {
               )}
 
               {authMode === 'signup' && (
-                <div className="avatar-picker">
+                <div className="avatar-picker compact-avatar-picker">
                   <div className="panel-heading">
-                    <p className="eyebrow">Picture</p>
-                    <h2>Pick a look</h2>
+                    <p className="eyebrow">Avatar</p>
+                    <h2>Choose a look</h2>
                   </div>
-                  <div className="avatar-row">
-                    {getGeneratedAvatarOptions(profile.gender).map((option) => (
-                      <button
-                        key={`${profile.gender}-${option.emoji}-${option.label}`}
-                        type="button"
-                        className={`avatar-choice${profile.avatarMode === 'generated' && profile.avatarEmoji === option.emoji ? ' avatar-choice-active' : ''}`}
-                        onClick={() => chooseGeneratedAvatar(option.emoji)}
-                        aria-label={`Choose ${option.label}`}
+                  <div className="field-grid compact-picker-grid">
+                    <label>
+                      Icon
+                      <select
+                        value={profile.avatarMode === 'generated' ? profile.avatarEmoji : generatedAvatarOptions[0].emoji}
+                        onChange={(event) => chooseGeneratedAvatar(event.target.value)}
                       >
-                        <span>{option.emoji}</span>
-                      </button>
-                    ))}
-                    <label className="upload-avatar">
+                        {generatedAvatarOptions.map((option) => (
+                          <option key={`${profile.gender}-${option.emoji}-${option.label}`} value={option.emoji}>
+                            {option.emoji} {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="upload-avatar upload-avatar-compact">
                       <span className="upload-avatar-icon" aria-hidden="true">📷</span>
-                      <span>Add</span>
+                      <span>Add picture</span>
                       <input
                         type="file"
                         accept="image/*"
@@ -1761,11 +1995,11 @@ function App() {
                       />
                     </label>
                   </div>
-                  <div className="avatar-preview-card">
+                  <div className="avatar-preview-card compact-avatar-preview">
                     <ProfileMark profile={profile} />
                     <div>
                       <strong>{profile.fullName.trim() || 'Preview'}</strong>
-                      <p>{getFlagEmoji(profile.countryCode)} {getCountryByCode(profile.countryCode).name}</p>
+                      <p>{profile.avatarMode === 'upload' ? 'Photo' : chosenAvatarOption?.label ?? 'Icon'}</p>
                     </div>
                   </div>
                 </div>
@@ -1791,7 +2025,7 @@ function App() {
                     <p>{country.name} · {getStageLabel(profile.stage)} · {getPlanLabel(profile.plan)}</p>
                   </div>
                   <div className="banner-actions">
-                    <button type="button" className="ghost-button" onClick={logout}>
+                    <button type="button" className="primary-button action-button-prominent" onClick={logout}>
                       Sign out
                     </button>
                   </div>
@@ -1801,7 +2035,7 @@ function App() {
                   <div className="panel-heading">
                     <p className="eyebrow">Today&apos;s learning</p>
                     <h2>Pick a subject</h2>
-                    <p>Each subject opens its own learning page with notes, a fresh quiz, and a full exam.</p>
+                    <p>Open notes, a quiz, or a full exam.</p>
                   </div>
 
                   <div className="page-chip-row">
@@ -1887,6 +2121,17 @@ function App() {
               </section>
 
               <aside className="dashboard-side">
+                <section className="side-card accent-side-card">
+                  <div className="panel-heading">
+                    <p className="eyebrow">Quick feedback</p>
+                    <h2>Tell us how it feels</h2>
+                    <p>One short survey helps us make lessons and pages better.</p>
+                  </div>
+                  <button type="button" className="primary-button" onClick={openFeedbackPage}>
+                    Open feedback
+                  </button>
+                </section>
+
                 <section className="side-card">
                   <div className="panel-heading">
                     <p className="eyebrow">Top learners</p>
@@ -1940,8 +2185,15 @@ function App() {
                     <p>{country.name} · {profile.level} · {getPlanLabel(profile.plan)}</p>
                   </div>
                   <div className="banner-actions">
-                    <button type="button" className="ghost-button" onClick={() => setStudentView('home')}>
+                    <button
+                      type="button"
+                      className="primary-button action-button-prominent"
+                      onClick={() => setStudentView('home')}
+                    >
                       Back to subjects
+                    </button>
+                    <button type="button" className="primary-button" onClick={logout}>
+                      Sign out
                     </button>
                   </div>
                 </section>
@@ -1950,23 +2202,28 @@ function App() {
                   <div className="panel-heading">
                     <p className="eyebrow">Choose an activity</p>
                     <h2>Learn, quiz, or sit a full exam</h2>
-                    <p>Open the notes book first, then move into a fresh quiz or full exam for this subject.</p>
+                    <p>Pick one and continue.</p>
                   </div>
                   <div className="option-grid">
                     <button type="button" className="subject-card" onClick={() => openLearningNotes(activeStudentSubject)}>
                       <span className="subject-icon">📘</span>
                       <strong>Learning notes</strong>
-                      <span>Open a book-style reading page shaped for {country.name}, {profile.level}, and {activeStudentSubject}.</span>
+                      <span>{getFlagEmoji(country.code)} {country.name} · {profile.level}</span>
+                    </button>
+                    <button type="button" className="subject-card" onClick={openFeedbackPage}>
+                      <span className="subject-icon">💡</span>
+                      <strong>Feedback survey</strong>
+                      <span>Quick rating and comment.</span>
                     </button>
                     <button type="button" className="subject-card" onClick={() => startQuiz(activeStudentSubject, 'quiz')}>
                       <span className="subject-icon">📝</span>
                       <strong>Quick quiz</strong>
-                      <span>Fresh practice questions built for this subject, learner level, and country direction.</span>
+                      <span>Short fresh practice.</span>
                     </button>
                     <button type="button" className="subject-card" onClick={() => startQuiz(activeStudentSubject, 'exam')}>
                       <span className="subject-icon">🎓</span>
                       <strong>Full exam</strong>
-                      <span>Longer question sets after reading and revision.</span>
+                      <span>Longer test run.</span>
                     </button>
                   </div>
                 </section>
@@ -1975,27 +2232,20 @@ function App() {
               <aside className="dashboard-side">
                 <section className="side-card">
                   <div className="panel-heading">
-                    <p className="eyebrow">Elite tools</p>
-                    <h2>Review and certificate options</h2>
-                    <p>These features open after Elite learners finish a quiz or exam.</p>
+                    <p className="eyebrow">Quick lesson</p>
+                    <h2>{learningVideo.title}</h2>
+                    <p>{learningVideo.durationLabel} · {learningVideo.subtitle}</p>
                   </div>
-                  <div className="sample-buttons">
-                    <button
-                      type="button"
-                      className="ghost-button"
-                      onClick={openReviewPage}
-                      disabled={!hasEliteReview}
-                    >
-                      Review quiz
-                    </button>
-                    <button
-                      type="button"
-                      className="ghost-button"
-                      onClick={downloadCertificate}
-                      disabled={!hasEliteReview || !reviewSnapshot?.result.passed}
-                    >
-                      Generate certificate
-                    </button>
+                  <div className="video-scene-list">
+                    {learningVideo.scenes.slice(0, 3).map((scene) => (
+                      <article key={scene.title} className="video-scene-card">
+                        <span className="subject-icon video-scene-icon">{scene.visual}</span>
+                        <div>
+                          <strong>{scene.title}</strong>
+                          <p>{scene.narration}</p>
+                        </div>
+                      </article>
+                    ))}
                   </div>
                 </section>
 
@@ -2029,8 +2279,15 @@ function App() {
                     <p>{country.name} · {profile.level} · {getPlanLabel(profile.plan)}</p>
                   </div>
                   <div className="banner-actions">
-                    <button type="button" className="ghost-button" onClick={() => setStudentView('subject')}>
+                    <button
+                      type="button"
+                      className="primary-button action-button-prominent"
+                      onClick={() => setStudentView('subject')}
+                    >
                       Back to subject page
+                    </button>
+                    <button type="button" className="primary-button" onClick={logout}>
+                      Sign out
                     </button>
                   </div>
                 </section>
@@ -2104,7 +2361,7 @@ function App() {
                 </section>
               </aside>
             </>
-          ) : (
+          ) : studentView === 'review' ? (
             <>
               <section className="dashboard-main">
                 <section className="welcome-banner">
@@ -2114,7 +2371,11 @@ function App() {
                     <p>Elite learners can revisit each answer and compare it with the correct one.</p>
                   </div>
                   <div className="banner-actions">
-                    <button type="button" className="ghost-button" onClick={() => setStudentView('subject')}>
+                    <button
+                      type="button"
+                      className="primary-button action-button-prominent"
+                      onClick={() => setStudentView('subject')}
+                    >
                       Back to subject
                     </button>
                   </div>
@@ -2172,7 +2433,177 @@ function App() {
                 </section>
               </aside>
             </>
+          ) : (
+            <>
+              <section className="dashboard-main">
+                <section className="welcome-banner">
+                  <div>
+                    <p className="eyebrow">Feedback survey</p>
+                    <h2>Tell us how this learning page feels</h2>
+                    <p>{country.name} · {activeStudentSubject} · {profile.level}</p>
+                  </div>
+                  <div className="banner-actions">
+                    <button
+                      type="button"
+                      className="primary-button action-button-prominent"
+                      onClick={() => setStudentView('subject')}
+                    >
+                      Back to subject
+                    </button>
+                    <button type="button" className="primary-button" onClick={logout}>
+                      Sign out
+                    </button>
+                  </div>
+                </section>
+
+                <section className="setup-panel feedback-panel">
+                  <div className="panel-heading">
+                    <p className="eyebrow">Quick survey</p>
+                    <h2>Simple feedback</h2>
+                    <p>Rate the experience, choose one main point, and leave an optional comment.</p>
+                  </div>
+                  <article className="feedback-card">
+                    <div className="feedback-row">
+                      <strong>How do you rate this page?</strong>
+                      <FeedbackStars rating={feedbackRating} onChange={setFeedbackRating} />
+                    </div>
+                    <label>
+                      Best match
+                      <select value={feedbackChoice} onChange={(event) => setFeedbackChoice(event.target.value)}>
+                        {FEEDBACK_CHOICES.map((choice) => (
+                          <option key={choice} value={choice}>
+                            {choice}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      Comment
+                      <textarea
+                        rows={4}
+                        value={feedbackComment}
+                        onChange={(event) => setFeedbackComment(event.target.value)}
+                        placeholder="Add one short note if you want."
+                      />
+                    </label>
+                    {authNotice && <p className="auth-notice auth-notice-inline">{authNotice}</p>}
+                    <div className="sample-buttons">
+                      <button type="button" className="primary-button" onClick={submitFeedback}>
+                        Send feedback
+                      </button>
+                      <button type="button" className="ghost-button" onClick={() => setStudentView('subject')}>
+                        Not now
+                      </button>
+                    </div>
+                  </article>
+                </section>
+              </section>
+
+              <aside className="dashboard-side">
+                <section className="side-card">
+                  <div className="panel-heading">
+                    <p className="eyebrow">What happens</p>
+                    <h2>Your voice helps</h2>
+                    <p>Low ratings rise first.</p>
+                  </div>
+                  <div className="mini-stat-list">
+                    <article className="mini-stat-card">
+                      <span>⭐</span>
+                      <strong>{feedbackSummary.average || 0}</strong>
+                    </article>
+                    <article className="mini-stat-card">
+                      <span>⚠️</span>
+                      <strong>{feedbackSummary.lowCount}</strong>
+                    </article>
+                  </div>
+                </section>
+              </aside>
+            </>
           )}
+        </main>
+      ) : screen === 'staff' ? (
+        <main className="dashboard-layout">
+          <section className="dashboard-main">
+            <section className="welcome-banner">
+              <div>
+                <p className="eyebrow">Staff lounge</p>
+                <h2>{firstName}, support today&apos;s learners</h2>
+                <p>{country.name} · {profile.subject}</p>
+              </div>
+              <div className="banner-actions">
+                <button type="button" className="primary-button action-button-prominent" onClick={logout}>
+                  Sign out
+                </button>
+              </div>
+            </section>
+
+            <section className="stats-grid">
+              <article className="info-card">
+                <strong>🧒 Learners</strong>
+                <p>{focusedLearners.length}</p>
+              </article>
+              <article className="info-card">
+                <strong>📚 Active</strong>
+                <p>{recentActiveLearners.length}</p>
+              </article>
+              <article className="info-card">
+                <strong>👥 Staff</strong>
+                <p>{staffRegistrations.length || onlineStaffMembers.length}</p>
+              </article>
+              <article className="info-card">
+                <strong>⚠️ Alerts</strong>
+                <p>{feedbackSummary.lowCount}</p>
+              </article>
+            </section>
+
+            <section className="setup-panel">
+              <div className="panel-heading">
+                <p className="eyebrow">Today</p>
+                <h2>Assigned lounge</h2>
+                <p>Keep an eye on recent learners, low ratings, and where support is needed next.</p>
+              </div>
+              <div className="history-list">
+                {recentLearnerActivity.length > 0 ? recentLearnerActivity.slice(0, 5).map((entry) => (
+                  <article key={entry.id} className="history-row">
+                    <div>
+                      <strong>{entry.fullName}</strong>
+                      <span>
+                        {getFlagEmoji(entry.countryCode)} {entry.subject} · {entry.level}
+                      </span>
+                    </div>
+                    <strong>{entry.lastLoginAt ? 'Active' : 'New'}</strong>
+                  </article>
+                )) : (
+                  <p className="empty-state">Learner activity will show here as people start practising.</p>
+                )}
+              </div>
+            </section>
+          </section>
+
+          <aside className="dashboard-side">
+            <section className="side-card accent-side-card">
+              <div className="panel-heading">
+                <p className="eyebrow">AI summary</p>
+                <h2>{feedbackSummary.headline}</h2>
+                <p>{feedbackSummary.detail}</p>
+              </div>
+              <div className="history-list">
+                {recentFeedback.length > 0 ? recentFeedback.map((entry) => (
+                  <article key={entry.id} className="history-row">
+                    <div>
+                      <strong>{'⭐'.repeat(entry.rating)}</strong>
+                      <span>
+                        {getFlagEmoji(entry.countryCode)} {entry.choice}
+                      </span>
+                      {entry.comment && <span>{entry.comment}</span>}
+                    </div>
+                  </article>
+                )) : (
+                  <p className="empty-state">Survey replies will show here after learners send feedback.</p>
+                )}
+              </div>
+            </section>
+          </aside>
         </main>
       ) : screen === 'quiz' && quizState && currentQuestion ? (
         <main className="quiz-page">
@@ -2307,10 +2738,10 @@ function App() {
                   <div>
                     <p className="eyebrow">School overview</p>
                     <h2>Today&apos;s learning picture</h2>
-                    <p>{adminCountry.name} · {adminCountry.curriculum} · learner and staff overview</p>
+                    <p>{getFlagEmoji(adminCountry.code)} {adminCountry.name} · {adminCountry.curriculum}</p>
                   </div>
                   <div className="banner-actions">
-                    <button type="button" className="ghost-button" onClick={logout}>
+                    <button type="button" className="primary-button" onClick={logout}>
                       Sign out
                     </button>
                   </div>
@@ -2388,6 +2819,23 @@ function App() {
                     <article className="mini-stat-card">
                       <span>👥</span>
                       <strong>{onlineStaffMembers.length}</strong>
+                    </article>
+                  </div>
+                </section>
+                <section className="side-card">
+                  <div className="panel-heading">
+                    <p className="eyebrow">AI summary</p>
+                    <h2>{feedbackSummary.headline}</h2>
+                    <p>{feedbackSummary.detail}</p>
+                  </div>
+                  <div className="mini-stat-list">
+                    <article className="mini-stat-card">
+                      <span>⭐</span>
+                      <strong>{feedbackSummary.average || 0}</strong>
+                    </article>
+                    <article className="mini-stat-card">
+                      <span>⚠️</span>
+                      <strong>{feedbackSummary.lowCount}</strong>
                     </article>
                   </div>
                 </section>
@@ -2510,7 +2958,7 @@ function App() {
                   </div>
                   <div className="banner-actions">
                     <button type="button" className="ghost-button ghost-button-small" onClick={addStaffMember}>
-                      Save staff member
+                      Add staff
                     </button>
                   </div>
                   <div className="history-list">
@@ -2836,6 +3284,29 @@ function App() {
                       </article>
                     )) : (
                       <p className="empty-state">Subject activity will appear here after learners begin using the app.</p>
+                    )}
+                  </div>
+                </section>
+
+                <section className="side-card">
+                  <div className="panel-heading">
+                    <p className="eyebrow">AI summary</p>
+                    <h2>{feedbackSummary.headline}</h2>
+                    <p>{feedbackSummary.detail}</p>
+                  </div>
+                  <div className="history-list">
+                    {recentFeedback.length > 0 ? recentFeedback.map((entry) => (
+                      <article key={entry.id} className="history-row">
+                        <div>
+                          <strong>{'⭐'.repeat(entry.rating)}</strong>
+                          <span>
+                            {getFlagEmoji(entry.countryCode)} {entry.choice}
+                          </span>
+                          {entry.comment && <span>{entry.comment}</span>}
+                        </div>
+                      </article>
+                    )) : (
+                      <p className="empty-state">Survey replies will show here after learners send feedback.</p>
                     )}
                   </div>
                 </section>

@@ -159,21 +159,28 @@ async function registerLearner(user: RegisteredUser) {
   });
 
   if (error) {
-    saveLocalUser({ ...user, email: normalizedEmail });
-    return { ...user, email: normalizedEmail };
+    throw error;
   }
 
-  let authUserId = data.user?.id ?? user.id;
+  let authUserId = data.user?.id;
 
   if (!data.session) {
-    const { data: signinData } = await supabase.auth.signInWithPassword({
+    const { data: signinData, error: signinError } = await supabase.auth.signInWithPassword({
       email: normalizedEmail,
       password: user.password,
     });
 
-    if (signinData.user?.id) {
-      authUserId = signinData.user.id;
+    if (signinError || !signinData.user?.id) {
+      throw new Error(
+        'Supabase still requires email confirmation. Turn off email confirmation in Supabase to allow instant registration.',
+      );
     }
+
+    authUserId = signinData.user.id;
+  }
+
+  if (!authUserId) {
+    throw new Error('We could not create the learner account just now.');
   }
 
   const profileRow = {
@@ -198,23 +205,17 @@ async function registerLearner(user: RegisteredUser) {
 
   const { error: upsertError } = await supabase.from('learner_profiles').upsert(profileRow);
   if (upsertError) {
-    saveLocalUser({
-      ...user,
-      id: String(profileRow.id),
-      email: normalizedEmail,
-    });
-    return {
-      ...user,
-      id: String(profileRow.id),
-      email: normalizedEmail,
-    };
+    throw upsertError;
   }
 
-  return {
+  const savedUser = {
     ...user,
     id: String(profileRow.id),
     email: profileRow.email,
+    lastLoginAt: String(profileRow.last_login_at),
   };
+  saveLocalUser(savedUser);
+  return savedUser;
 }
 
 async function sendRegistrationCode(request: VerificationRequest) {

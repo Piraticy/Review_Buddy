@@ -67,11 +67,6 @@ type ReviewSnapshot = {
   date: string;
 };
 
-type PendingVerification = {
-  user: RegisteredUser;
-  sentAt: string;
-};
-
 type StoredState = {
   appVersion?: string;
   profile?: LearnerProfile;
@@ -88,7 +83,6 @@ type StoredState = {
   staffMembers?: AdminStaffMember[];
   adminActivityByCountry?: AdminActivityMap;
   followUpsByCountry?: AdminFollowUpMap;
-  pendingVerification?: PendingVerification | null;
 };
 
 type BeforeInstallPromptEvent = Event & {
@@ -105,11 +99,10 @@ type GeneratedAvatarOption = {
 
 const STORAGE_KEY = 'review-buddy-state';
 const INSTALL_DISMISS_KEY = 'review-buddy-install-dismissed';
-const APP_VERSION = '1.8.3';
+const APP_VERSION = '1.8.4';
 const APP_CREATED_ON = 'March 31, 2026';
 const DEFAULT_ADMIN_USERNAME = 'Admin';
 const DEFAULT_ADMIN_PASSWORD = 'admin';
-const RESEND_COOLDOWN_SECONDS = 60;
 const GENERATED_AVATARS: Record<LearnerGender, GeneratedAvatarOption[]> = {
   boy: [
     { emoji: '👦🏻', label: 'Bright starter' },
@@ -243,12 +236,6 @@ function createDefaultAdminUser(): RegisteredUser {
     createdAt: new Date('2026-03-31T00:00:00.000Z').toISOString(),
     lastLoginAt: undefined,
   };
-}
-
-function formatClock(totalSeconds: number): string {
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
 }
 
 function normalizeLearnerProfile(input?: Partial<LearnerProfile>): LearnerProfile {
@@ -549,10 +536,7 @@ function App() {
     role: '',
     focus: '',
   });
-  const [pendingVerification, setPendingVerification] = useState<PendingVerification | null>(null);
-  const [verificationCode, setVerificationCode] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [resendSecondsLeft, setResendSecondsLeft] = useState(0);
   const speechKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -586,7 +570,6 @@ function App() {
       if (saved.staffMembers) setStaffMembers(saved.staffMembers);
       if (saved.adminActivityByCountry) setAdminActivityByCountry(saved.adminActivityByCountry);
       if (saved.followUpsByCountry) setFollowUpsByCountry(saved.followUpsByCountry);
-      if (saved.pendingVerification) setPendingVerification(saved.pendingVerification);
     } catch {
       window.localStorage.removeItem(STORAGE_KEY);
     } finally {
@@ -681,7 +664,6 @@ function App() {
         staffMembers,
         adminActivityByCountry,
         followUpsByCountry,
-        pendingVerification,
       } satisfies StoredState),
     );
   }, [
@@ -692,7 +674,6 @@ function App() {
     followUpsByCountry,
     isReady,
     profile,
-    pendingVerification,
     quizState,
     registeredUsers,
     reviewSnapshot,
@@ -730,32 +711,6 @@ function App() {
       setAdminFocusCode(profile.countryCode);
     }
   }, [profile.countryCode, screen]);
-
-  useEffect(() => {
-    if (!pendingVerification) {
-      setResendSecondsLeft(0);
-      return;
-    }
-
-    const sentAt = new Date(pendingVerification.sentAt).getTime();
-    if (Number.isNaN(sentAt)) {
-      setResendSecondsLeft(0);
-      return;
-    }
-
-    const updateCountdown = () => {
-      const remaining = Math.max(
-        0,
-        Math.ceil((sentAt + RESEND_COOLDOWN_SECONDS * 1000 - Date.now()) / 1000),
-      );
-      setResendSecondsLeft(remaining);
-    };
-
-    updateCountdown();
-    const timer = window.setInterval(updateCountdown, 1000);
-
-    return () => window.clearInterval(timer);
-  }, [pendingVerification]);
 
   const country = getCountryByCode(profile.countryCode);
   const availableSubjects = getAvailableSubjects(profile.countryCode, profile.stage, profile.plan);
@@ -907,10 +862,6 @@ function App() {
     profile.level,
   );
   const hasEliteReview = profile.plan === 'elite' && reviewSnapshot?.subject === activeStudentSubject;
-  const isVerificationStep = authMode === 'signup' && Boolean(pendingVerification);
-  const isResendLocked = resendSecondsLeft > 0;
-  const verificationFirstName =
-    pendingVerification?.user.fullName.trim().split(' ')[0] || 'your';
 
   useEffect(() => {
     if ('speechSynthesis' in window) {
@@ -1090,30 +1041,6 @@ function App() {
     setAuthNotice('');
 
     if (authMode === 'signup') {
-      if (pendingVerification) {
-        if (!verificationCode.trim()) {
-          setAuthNotice('Enter the code sent to your email so we can finish creating the account.');
-          return;
-        }
-
-        try {
-          const savedUser = await appRepository.verifyRegistrationCode(
-            pendingVerification.user,
-            verificationCode,
-          );
-          const allUsers = await appRepository.listRegisteredUsers();
-          setRegisteredUsers(ensureRegisteredUsers([...allUsers, savedUser]));
-          setSigninIdentifier(savedUser.email);
-          setPendingVerification(null);
-          setVerificationCode('');
-          setAdminNotice(`${savedUser.fullName} finished email verification and joined registered learners.`);
-          enterWorkspace(savedUser);
-        } catch (error) {
-          setAuthNotice(getErrorMessage(error, 'That code did not work. Check the email code and try again.'));
-        }
-        return;
-      }
-
       const email = profile.email.trim().toLowerCase();
       const alreadyExists = registeredUsers.some((user) => user.email.toLowerCase() === email);
 
@@ -1124,21 +1051,14 @@ function App() {
 
       const newUser = createRegisteredUser(profile);
       try {
-        const sentEmail = await appRepository.sendRegistrationCode({
-          email: newUser.email,
-          fullName: newUser.fullName,
-          username: newUser.username,
-          role: newUser.role,
-          countryCode: newUser.countryCode,
-        });
-        setPendingVerification({
-          user: { ...newUser, email: sentEmail },
-          sentAt: new Date().toISOString(),
-        });
-        setVerificationCode('');
-        setAuthNotice('');
+        const savedUser = await appRepository.registerLearner(newUser);
+        const allUsers = await appRepository.listRegisteredUsers();
+        setRegisteredUsers(ensureRegisteredUsers(allUsers));
+        setSigninIdentifier(savedUser.email);
+        setAdminNotice(`${savedUser.fullName} joined registered learners.`);
+        enterWorkspace(savedUser);
       } catch (error) {
-        setAuthNotice(getErrorMessage(error, 'We could not send the verification code just now. Please try again.'));
+        setAuthNotice(getErrorMessage(error, 'We could not create the account just now. Please try again.'));
       }
       return;
     }
@@ -1174,29 +1094,7 @@ function App() {
     setSelectedSubject(null);
     setReviewSnapshot(null);
     setQuizState(null);
-    setPendingVerification(null);
-    setVerificationCode('');
     setShowPassword(false);
-  }
-
-  async function resendVerificationCode() {
-    if (!pendingVerification || isResendLocked) return;
-
-    try {
-      const sentEmail = await appRepository.resendRegistrationCode(pendingVerification.user.email);
-      setPendingVerification((current) =>
-        current
-          ? {
-              ...current,
-              user: { ...current.user, email: sentEmail },
-              sentAt: new Date().toISOString(),
-            }
-          : null,
-      );
-      setAuthNotice(`A fresh code was sent to ${sentEmail}.`);
-    } catch (error) {
-      setAuthNotice(getErrorMessage(error, 'We could not resend the verification code just now.'));
-    }
   }
 
   async function handleInstallApp() {
@@ -1688,8 +1586,6 @@ function App() {
                 onClick={() => {
                   setAuthMode('signin');
                   setAuthNotice('');
-                  setPendingVerification(null);
-                  setVerificationCode('');
                   setShowPassword(false);
                   updateProfile('password', '');
                 }}
@@ -1702,8 +1598,6 @@ function App() {
                 onClick={() => {
                   setAuthMode('signup');
                   setAuthNotice('');
-                  setPendingVerification(null);
-                  setVerificationCode('');
                   setShowPassword(false);
                   setProfile((current) =>
                     normalizeLearnerProfile({
@@ -1719,7 +1613,7 @@ function App() {
             </div>
 
             <form className="auth-form" onSubmit={handleAuthSubmit}>
-              {authMode === 'signup' && !pendingVerification && (
+              {authMode === 'signup' && (
                 <label>
                   Full name
                   <input
@@ -1731,47 +1625,43 @@ function App() {
                 </label>
               )}
 
-              {!isVerificationStep && (
-                <label>
-                  {authMode === 'signin' ? 'Email or username' : 'Email'}
+              <label>
+                {authMode === 'signin' ? 'Email or username' : 'Email'}
+                <input
+                  type={authMode === 'signin' ? 'text' : 'email'}
+                  value={authMode === 'signin' ? signinIdentifier : profile.email}
+                  onChange={(event) =>
+                    authMode === 'signin'
+                      ? setSigninIdentifier(event.target.value)
+                      : updateProfile('email', event.target.value)
+                  }
+                  placeholder={authMode === 'signin' ? 'Email or Admin' : 'name@example.com'}
+                  required
+                />
+              </label>
+
+              <label>
+                Password
+                <div className="password-field">
                   <input
-                    type={authMode === 'signin' ? 'text' : 'email'}
-                    value={authMode === 'signin' ? signinIdentifier : profile.email}
-                    onChange={(event) =>
-                      authMode === 'signin'
-                        ? setSigninIdentifier(event.target.value)
-                        : updateProfile('email', event.target.value)
-                    }
-                    placeholder={authMode === 'signin' ? 'Email or Admin' : 'name@example.com'}
+                    type={showPassword ? 'text' : 'password'}
+                    value={profile.password}
+                    onChange={(event) => updateProfile('password', event.target.value)}
+                    placeholder={authMode === 'signin' ? 'Enter password' : 'Create password'}
                     required
                   />
-                </label>
-              )}
+                  <button
+                    type="button"
+                    className="password-toggle"
+                    onClick={() => setShowPassword((current) => !current)}
+                    aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  >
+                    {showPassword ? 'Hide' : 'Show'}
+                  </button>
+                </div>
+              </label>
 
-              {!isVerificationStep && (
-                <label>
-                  Password
-                  <div className="password-field">
-                    <input
-                      type={showPassword ? 'text' : 'password'}
-                      value={profile.password}
-                      onChange={(event) => updateProfile('password', event.target.value)}
-                      placeholder={authMode === 'signin' ? 'Enter password' : 'Create password'}
-                      required
-                    />
-                    <button
-                      type="button"
-                      className="password-toggle"
-                      onClick={() => setShowPassword((current) => !current)}
-                      aria-label={showPassword ? 'Hide password' : 'Show password'}
-                    >
-                      {showPassword ? 'Hide' : 'Show'}
-                    </button>
-                  </div>
-                </label>
-              )}
-
-              {authMode === 'signup' && !pendingVerification && (
+              {authMode === 'signup' && (
                 <div className="field-grid">
                   <label>
                     Boy or girl
@@ -1812,7 +1702,7 @@ function App() {
                 </div>
               )}
 
-              {authMode === 'signup' && !pendingVerification && (
+              {authMode === 'signup' && (
                 <div className="field-grid">
                   <label>
                     Level
@@ -1842,7 +1732,7 @@ function App() {
                 </div>
               )}
 
-              {authMode === 'signup' && !pendingVerification && (
+              {authMode === 'signup' && (
                 <div className="avatar-picker">
                   <div className="panel-heading">
                     <p className="eyebrow">Picture</p>
@@ -1885,82 +1775,10 @@ function App() {
                 </div>
               )}
 
-              {authMode === 'signup' && pendingVerification && (
-                <div className="verification-panel">
-                  <div className="verification-header">
-                    <div className="verification-mark" aria-hidden="true">
-                      ✉️
-                    </div>
-                    <div className="panel-heading">
-                      <p className="eyebrow">Email verification</p>
-                      <h2>Enter your email code</h2>
-                      <p>
-                        Check <strong>{pendingVerification.user.email}</strong> and enter the code to
-                        finish creating {verificationFirstName}&rsquo;s account.
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="page-chip-row verification-chip-row">
-                    <span className="page-chip">{pendingVerification.user.fullName}</span>
-                    <span className="page-chip">{getCountryByCode(pendingVerification.user.countryCode).name}</span>
-                    <span className="page-chip">{pendingVerification.user.level}</span>
-                  </div>
-
-                  <div className="verification-card">
-                    <div className="verification-copy">
-                      <strong>Almost ready</strong>
-                      <p>Only the code step is left. Your registration details are already saved for this sign-up.</p>
-                    </div>
-                    <div className="verification-timer">
-                      {isResendLocked
-                        ? `You can resend in ${formatClock(resendSecondsLeft)}`
-                        : 'You can ask for a new code now.'}
-                    </div>
-                  </div>
-
-                  <label>
-                    Verification code
-                    <input
-                      type="text"
-                      inputMode="numeric"
-                      value={verificationCode}
-                      onChange={(event) => setVerificationCode(event.target.value)}
-                      placeholder="Enter the code from your email"
-                      required
-                    />
-                  </label>
-
-                  {authNotice && <p className="auth-notice auth-notice-inline">{authNotice}</p>}
-
-                  <div className="verification-actions">
-                    <button
-                      type="button"
-                      className="ghost-button"
-                      onClick={() => void resendVerificationCode()}
-                      disabled={isResendLocked}
-                    >
-                      {isResendLocked ? `Resend in ${formatClock(resendSecondsLeft)}` : 'Resend code'}
-                    </button>
-                    <button
-                      type="button"
-                      className="ghost-button"
-                      onClick={() => {
-                        setPendingVerification(null);
-                        setVerificationCode('');
-                        setAuthNotice('');
-                      }}
-                    >
-                      Change details
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {!isVerificationStep && authNotice && <p className="auth-notice">{authNotice}</p>}
+              {authNotice && <p className="auth-notice">{authNotice}</p>}
 
               <button className="primary-button" type="submit">
-                {authMode === 'signin' ? 'Continue' : pendingVerification ? 'Verify email code' : 'Create account'}
+                {authMode === 'signin' ? 'Continue' : 'Create account'}
               </button>
             </form>
           </section>

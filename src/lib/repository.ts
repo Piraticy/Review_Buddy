@@ -143,76 +143,40 @@ async function registerLearner(user: RegisteredUser) {
     return user;
   }
 
-  const normalizedEmail = user.email.toLowerCase();
-
-  const { data, error } = await supabase.auth.signUp({
-    email: normalizedEmail,
-    password: user.password,
-    options: {
-      data: {
-        full_name: user.fullName,
-        username: user.username,
-        role: user.role,
-        country_code: user.countryCode,
-      },
+  const response = await fetch('/api/register', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
     },
+    body: JSON.stringify(user),
   });
 
-  if (error) {
-    throw error;
+  const payload = (await response.json().catch(() => null)) as
+    | {
+        error?: string;
+        user?: RegisteredUser;
+      }
+    | null;
+
+  if (!response.ok || !payload?.user) {
+    throw new Error(payload?.error ?? 'We could not create the learner account just now.');
   }
 
-  let authUserId = data.user?.id;
-
-  if (!data.session) {
-    const { data: signinData, error: signinError } = await supabase.auth.signInWithPassword({
-      email: normalizedEmail,
-      password: user.password,
-    });
-
-    if (signinError || !signinData.user?.id) {
-      throw new Error(
-        'Supabase still requires email confirmation. Turn off email confirmation in Supabase to allow instant registration.',
-      );
-    }
-
-    authUserId = signinData.user.id;
-  }
-
-  if (!authUserId) {
-    throw new Error('We could not create the learner account just now.');
-  }
-
-  const profileRow = {
-    id: authUserId,
-    username: user.username,
-    full_name: user.fullName,
+  const normalizedEmail = payload.user.email.toLowerCase();
+  const { data: signinData, error: signinError } = await supabase.auth.signInWithPassword({
     email: normalizedEmail,
-    role: user.role,
-    gender: user.gender,
-    avatar_mode: user.avatarMode,
-    avatar_emoji: user.avatarEmoji,
-    avatar_image: user.avatarImage ?? null,
-    country_code: user.countryCode,
-    plan: user.plan,
-    stage: user.stage,
-    level: user.level,
-    mode: user.mode,
-    subject: user.subject,
-    created_at: user.createdAt,
-    last_login_at: user.lastLoginAt ?? new Date().toISOString(),
-  };
+    password: user.password,
+  });
 
-  const { error: upsertError } = await supabase.from('learner_profiles').upsert(profileRow);
-  if (upsertError) {
-    throw upsertError;
+  if (signinError || !signinData.user?.id) {
+    throw new Error(
+      'Your account was created, but the first sign-in could not finish. Try signing in now with your email and password.',
+    );
   }
 
-  const savedUser = {
-    ...user,
-    id: String(profileRow.id),
-    email: profileRow.email,
-    lastLoginAt: String(profileRow.last_login_at),
+  const savedUser: RegisteredUser = {
+    ...payload.user,
+    lastLoginAt: new Date().toISOString(),
   };
   saveLocalUser(savedUser);
   return savedUser;

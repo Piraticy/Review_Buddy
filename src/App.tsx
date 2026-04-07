@@ -99,7 +99,7 @@ type GeneratedAvatarOption = {
 
 const STORAGE_KEY = 'review-buddy-state';
 const INSTALL_DISMISS_KEY = 'review-buddy-install-dismissed';
-const APP_VERSION = '1.8.5';
+const APP_VERSION = '1.8.6';
 const APP_CREATED_ON = 'March 31, 2026';
 const DEFAULT_ADMIN_USERNAME = 'Admin';
 const DEFAULT_ADMIN_PASSWORD = 'admin';
@@ -183,13 +183,6 @@ const benefitCards = [
     title: 'Progress stays clear',
     detail: 'Scores and activity are simple for learners and families to follow.',
   },
-];
-
-const adminPrivileges = [
-  'See who is learning right now',
-  'Track scores, trial progress, and family follow-ups',
-  'Spot the most active subjects and learner groups',
-  'Keep one calm overview for schools and families',
 ];
 
 function createInitialProfile(): LearnerProfile {
@@ -366,13 +359,19 @@ function MoonIcon(props: SVGProps<SVGSVGElement>) {
   );
 }
 
-const ADMIN_TABS: { view: AdminView; label: string }[] = [
-  { view: 'overview', label: 'Overview' },
-  { view: 'countries', label: 'Countries' },
-  { view: 'staff', label: 'Staff' },
-  { view: 'learners', label: 'Registered learners' },
-  { view: 'followups', label: 'Follow-ups' },
-  { view: 'reports', label: 'Reports' },
+function getFlagEmoji(code: string) {
+  return code
+    .toUpperCase()
+    .replace(/./g, (char) => String.fromCodePoint(127397 + char.charCodeAt(0)));
+}
+
+const ADMIN_TABS: { view: AdminView; label: string; icon: string }[] = [
+  { view: 'overview', label: 'Overview', icon: '🏠' },
+  { view: 'countries', label: 'Countries', icon: '🌍' },
+  { view: 'staff', label: 'Staff', icon: '👥' },
+  { view: 'learners', label: 'Learners', icon: '🧒' },
+  { view: 'followups', label: 'Follow-ups', icon: '📌' },
+  { view: 'reports', label: 'Reports', icon: '📊' },
 ];
 
 function AdminTabs({
@@ -390,7 +389,9 @@ function AdminTabs({
           type="button"
           className={`page-chip page-chip-button${active === tab.view ? ' page-chip-active' : ''}`}
           onClick={() => onChange(tab.view)}
+          aria-label={tab.label}
         >
+          <span className="page-chip-icon" aria-hidden="true">{tab.icon}</span>
           {tab.label}
         </button>
       ))}
@@ -1682,7 +1683,7 @@ function App() {
                     >
                       {COUNTRIES.map((entry) => (
                         <option key={entry.code} value={entry.code}>
-                          {entry.name}
+                          {getFlagEmoji(entry.code)} {entry.name}
                         </option>
                       ))}
                     </select>
@@ -1736,8 +1737,7 @@ function App() {
                 <div className="avatar-picker">
                   <div className="panel-heading">
                     <p className="eyebrow">Picture</p>
-                    <h2>Choose a look</h2>
-                    <p>Pick a ready-made icon or add a picture.</p>
+                    <h2>Pick a look</h2>
                   </div>
                   <div className="avatar-row">
                     {getGeneratedAvatarOptions(profile.gender).map((option) => (
@@ -1749,11 +1749,11 @@ function App() {
                         aria-label={`Choose ${option.label}`}
                       >
                         <span>{option.emoji}</span>
-                        <small>{option.label}</small>
                       </button>
                     ))}
                     <label className="upload-avatar">
-                      <span>Add picture</span>
+                      <span className="upload-avatar-icon" aria-hidden="true">📷</span>
+                      <span>Add</span>
                       <input
                         type="file"
                         accept="image/*"
@@ -1764,12 +1764,8 @@ function App() {
                   <div className="avatar-preview-card">
                     <ProfileMark profile={profile} />
                     <div>
-                      <strong>{profile.fullName.trim() || 'Your picture preview'}</strong>
-                      <p>
-                        {profile.avatarMode === 'upload'
-                          ? 'Your uploaded picture is ready.'
-                          : `Your chosen icon will appear around the app. ${getGeneratedAvatarOptions(profile.gender).find((option) => option.emoji === profile.avatarEmoji)?.label ?? 'Ready-made look'}.`}
-                      </p>
+                      <strong>{profile.fullName.trim() || 'Preview'}</strong>
+                      <p>{getFlagEmoji(profile.countryCode)} {getCountryByCode(profile.countryCode).name}</p>
                     </div>
                   </div>
                 </div>
@@ -2342,35 +2338,29 @@ function App() {
                 <section className="setup-panel">
                   <div className="panel-heading">
                     <p className="eyebrow">Admin pages</p>
-                    <h2>Open a section</h2>
-                    <p>Keep the overview short, then open deeper pages inside admin when needed.</p>
+                    <h2>Quick pages</h2>
                   </div>
                   <AdminTabs active={adminView} onChange={openAdminView} />
                   <div className="option-grid">
                     <button type="button" className="subject-card" onClick={() => openAdminView('countries')}>
                       <span className="subject-icon">🌍</span>
-                      <strong>Registered countries</strong>
-                      <span>See all countries, learner totals, families, and country leads.</span>
+                      <strong>Countries</strong>
                     </button>
                     <button type="button" className="subject-card" onClick={() => openAdminView('staff')}>
                       <span className="subject-icon">👥</span>
                       <strong>Staff</strong>
-                      <span>Open the staff page with extra details and management actions.</span>
                     </button>
                     <button type="button" className="subject-card" onClick={() => openAdminView('learners')}>
                       <span className="subject-icon">🧾</span>
-                      <strong>Registered learners</strong>
-                      <span>See who signed up, their country, selected plan, and latest login.</span>
+                      <strong>Learners</strong>
                     </button>
                     <button type="button" className="subject-card" onClick={() => openAdminView('followups')}>
                       <span className="subject-icon">📌</span>
-                      <strong>Follow-up queue</strong>
-                      <span>Open learner and family follow-up items with country filtering.</span>
+                      <strong>Follow-ups</strong>
                     </button>
                     <button type="button" className="subject-card" onClick={() => openAdminView('reports')}>
                       <span className="subject-icon">📊</span>
                       <strong>Reports</strong>
-                      <span>View leaderboards, popular subjects, plan use, and current activity.</span>
                     </button>
                   </div>
                 </section>
@@ -2380,14 +2370,26 @@ function App() {
                 <section className="side-card">
                   <div className="panel-heading">
                     <p className="eyebrow">Quick view</p>
-                    <h2>Admin tools at a glance</h2>
-                    <p>Open a page to view more without keeping this dashboard too long.</p>
+                    <h2>At a glance</h2>
                   </div>
-                  <ul className="simple-list">
-                    {adminPrivileges.map((item) => (
-                      <li key={item}>{item}</li>
-                    ))}
-                  </ul>
+                  <div className="mini-stat-list">
+                    <article className="mini-stat-card">
+                      <span>🧒</span>
+                      <strong>{learnerRegistrations.length}</strong>
+                    </article>
+                    <article className="mini-stat-card">
+                      <span>🌍</span>
+                      <strong>{registrationsByCountry.length}</strong>
+                    </article>
+                    <article className="mini-stat-card">
+                      <span>📚</span>
+                      <strong>{recentActiveLearners.length}</strong>
+                    </article>
+                    <article className="mini-stat-card">
+                      <span>👥</span>
+                      <strong>{onlineStaffMembers.length}</strong>
+                    </article>
+                  </div>
                 </section>
               </aside>
             </>
@@ -2398,7 +2400,7 @@ function App() {
                   <div>
                     <p className="eyebrow">Admin page</p>
                     <h2>Registered countries</h2>
-                    <p>Select a country to refresh the support queue and reports.</p>
+                    <p>Pick a flag.</p>
                   </div>
                   <div className="banner-actions">
                     <button type="button" className="ghost-button" onClick={() => openAdminView('overview')}>
@@ -2420,9 +2422,14 @@ function App() {
                           className={`country-button${adminFocusCode === entry.code ? ' country-button-active' : ''}`}
                           onClick={() => setAdminFocusCode(entry.code)}
                         >
-                          <strong>{entryCountry.name}</strong>
-                          <span>{entry.learners} learners · {entry.families} families</span>
-                          <span>Lead: {entry.staffLead}</span>
+                          <div className="country-button-main">
+                            <span className="flag-badge" aria-hidden="true">{getFlagEmoji(entry.code)}</span>
+                            <strong>{entryCountry.name}</strong>
+                          </div>
+                          <div className="country-badges">
+                            <span className="mini-badge">🧒 {entry.learners}</span>
+                            <span className="mini-badge">🏠 {entry.families}</span>
+                          </div>
                         </button>
                       );
                     }) : (
@@ -2436,8 +2443,8 @@ function App() {
                 <section className="side-card">
                   <div className="panel-heading">
                     <p className="eyebrow">Country focus</p>
-                    <h2>{adminCountry.name}</h2>
-                    <p>{adminCountry.curriculum} · {adminCountry.curriculumFocus}</p>
+                    <h2>{getFlagEmoji(adminCountry.code)} {adminCountry.name}</h2>
+                    <p>{adminCountry.curriculum}</p>
                   </div>
                   <div className="history-list">
                     {followUpItems.map((item) => (
@@ -2459,7 +2466,7 @@ function App() {
                   <div>
                     <p className="eyebrow">Admin page</p>
                     <h2>Staff</h2>
-                    <p>View staff roles, support focus, and add or remove staff records.</p>
+                    <p>Team list.</p>
                   </div>
                   <div className="banner-actions">
                     <button type="button" className="ghost-button" onClick={() => openAdminView('overview')}>
@@ -2471,8 +2478,8 @@ function App() {
                 <section className="setup-panel">
                   <div className="panel-heading">
                     <p className="eyebrow">Manage staff</p>
-                    <h2>Staff details and actions</h2>
-                    <p>{adminNotice}</p>
+                    <h2>Staff</h2>
+                    {adminNotice && <p>{adminNotice}</p>}
                   </div>
                   <AdminTabs active={adminView} onChange={openAdminView} />
                   <div className="field-grid">
@@ -2481,7 +2488,7 @@ function App() {
                       <input
                         value={staffDraft.name}
                         onChange={(event) => setStaffDraft((current) => ({ ...current, name: event.target.value }))}
-                        placeholder="e.g. Ms. Amina"
+                        placeholder="Name"
                       />
                     </label>
                     <label>
@@ -2489,7 +2496,7 @@ function App() {
                       <input
                         value={staffDraft.role}
                         onChange={(event) => setStaffDraft((current) => ({ ...current, role: event.target.value }))}
-                        placeholder="e.g. Family success lead"
+                        placeholder="Role"
                       />
                     </label>
                     <label className="field-span-2">
@@ -2497,7 +2504,7 @@ function App() {
                       <input
                         value={staffDraft.focus}
                         onChange={(event) => setStaffDraft((current) => ({ ...current, focus: event.target.value }))}
-                        placeholder="e.g. Parent support and learner follow-up"
+                        placeholder="Focus"
                       />
                     </label>
                   </div>
@@ -2511,7 +2518,7 @@ function App() {
                       <article key={`${member.name}-${member.role}`} className="history-row">
                         <div>
                           <strong>{member.name}</strong>
-                          <span>{member.role} · {member.focus}</span>
+                          <span>{member.role}</span>
                         </div>
                         <div className="row-actions">
                           <strong>{member.status}</strong>
@@ -2535,7 +2542,7 @@ function App() {
                 <section className="side-card">
                   <div className="panel-heading">
                     <p className="eyebrow">Staff links</p>
-                    <h2>Who is managing the app</h2>
+                    <h2>Team</h2>
                   </div>
                   <div className="history-list">
                     {(focusedStaffMembers.length > 0 ? focusedStaffMembers : staffMembers).length > 0 ? (focusedStaffMembers.length > 0 ? focusedStaffMembers : staffMembers).map((member) => (
@@ -2543,7 +2550,6 @@ function App() {
                         <div>
                           <strong>{member.name}</strong>
                           <span>{member.role}</span>
-                          <span>{member.focus}</span>
                         </div>
                         <strong>{member.status}</strong>
                       </article>
@@ -2561,7 +2567,7 @@ function App() {
                   <div>
                     <p className="eyebrow">Admin page</p>
                     <h2>Registered learners</h2>
-                    <p>Every learner account appears here for admin review.</p>
+                    <p>Live sign-ups.</p>
                   </div>
                   <div className="banner-actions">
                     <button type="button" className="ghost-button" onClick={() => openAdminView('overview')}>
@@ -2573,17 +2579,15 @@ function App() {
                 <section className="setup-panel">
                   <div className="panel-heading">
                     <p className="eyebrow">Learner records</p>
-                    <h2>New accounts and plan choices</h2>
-                    <p>Use this page to check who joined, what country they selected, and which plan they chose.</p>
+                    <h2>Learners</h2>
                   </div>
                   <AdminTabs active={adminView} onChange={openAdminView} />
                   <div className="country-groups">
                     {registrationsGroupedByCountry.length > 0 ? registrationsGroupedByCountry.map(({ country, learners }) => (
                       <section key={country.code} className="country-group-card">
                         <div className="panel-heading">
-                          <p className="eyebrow">{country.name}</p>
+                          <p className="eyebrow">{getFlagEmoji(country.code)} {country.name}</p>
                           <h2>{learners.length} learner{learners.length === 1 ? '' : 's'}</h2>
-                          <p>{country.curriculum}</p>
                         </div>
                         <div className="history-list">
                           {learners.map((entry) => (
@@ -2591,14 +2595,11 @@ function App() {
                               <div>
                                 <strong>{entry.fullName}</strong>
                                 <span>
-                                  {getStageLabel(entry.stage)} · {getPlanLabel(entry.plan)} · {entry.gender === 'boy' ? 'Boy' : 'Girl'}
-                                </span>
-                                <span>
-                                  {entry.email} · Joined {new Date(entry.createdAt).toLocaleDateString()}
+                                  {getFlagEmoji(entry.countryCode)} {getPlanLabel(entry.plan)} · {getStageLabel(entry.stage)}
                                 </span>
                               </div>
                               <div className="row-actions">
-                                <strong>{entry.lastLoginAt ? `Last login ${new Date(entry.lastLoginAt).toLocaleDateString()}` : 'New account'}</strong>
+                                <strong>{entry.lastLoginAt ? new Date(entry.lastLoginAt).toLocaleDateString() : 'New'}</strong>
                                 <button
                                   type="button"
                                   className="ghost-button ghost-button-small"
@@ -2623,16 +2624,15 @@ function App() {
                   <div className="panel-heading">
                     <p className="eyebrow">Registration summary</p>
                     <h2>{learnerRegistrations.length} learner accounts</h2>
-                    <p>Countries and plan choices update as new learners register.</p>
                   </div>
                   <div className="history-list">
                     {registrationsByCountry.length > 0 ? registrationsByCountry.map((entry) => (
                       <article key={entry.code} className="history-row">
                         <div>
-                          <strong>{getCountryByCode(entry.code).name}</strong>
-                          <span>{entry.learners} learner{entry.learners === 1 ? '' : 's'} · {entry.families} families</span>
+                          <strong>{getFlagEmoji(entry.code)} {getCountryByCode(entry.code).name}</strong>
+                          <span>{entry.learners} · {entry.families}</span>
                         </div>
-                        <strong>{entry.staffLead}</strong>
+                        <strong>👥</strong>
                       </article>
                     )) : (
                       <p className="empty-state">Country totals will appear after learners create accounts.</p>
@@ -2648,7 +2648,7 @@ function App() {
                   <div>
                     <p className="eyebrow">Admin page</p>
                     <h2>Follow-up queue</h2>
-                    <p>Country-aware follow-up items for learners, families, and plan support.</p>
+                    <p>Support list.</p>
                   </div>
                   <div className="banner-actions">
                     <button type="button" className="ghost-button" onClick={() => openAdminView('overview')}>
@@ -2660,8 +2660,8 @@ function App() {
                 <section className="setup-panel">
                   <div className="panel-heading">
                     <p className="eyebrow">Queue actions</p>
-                    <h2>Follow-up items</h2>
-                    <p>{adminNotice}</p>
+                    <h2>Follow-ups</h2>
+                    {adminNotice && <p>{adminNotice}</p>}
                   </div>
                   <AdminTabs active={adminView} onChange={openAdminView} />
                   <div className="banner-actions">
@@ -2700,8 +2700,7 @@ function App() {
                 <section className="side-card">
                   <div className="panel-heading">
                     <p className="eyebrow">Country focus</p>
-                    <h2>{adminCountry.name}</h2>
-                    <p>Lead country queue and family notes.</p>
+                    <h2>{getFlagEmoji(adminCountry.code)} {adminCountry.name}</h2>
                   </div>
                   <div className="country-list">
                     {countryRegistrationCards.length > 0 ? countryRegistrationCards.map((entry) => (
@@ -2711,9 +2710,14 @@ function App() {
                         className={`country-button${adminFocusCode === entry.code ? ' country-button-active' : ''}`}
                         onClick={() => setAdminFocusCode(entry.code)}
                       >
-                        <strong>{getCountryByCode(entry.code).name}</strong>
-                        <span>{entry.learners} learners · {entry.families} families</span>
-                        <span>Lead: {entry.staffLead}</span>
+                        <div className="country-button-main">
+                          <span className="flag-badge" aria-hidden="true">{getFlagEmoji(entry.code)}</span>
+                          <strong>{getCountryByCode(entry.code).name}</strong>
+                        </div>
+                        <div className="country-badges">
+                          <span className="mini-badge">🧒 {entry.learners}</span>
+                          <span className="mini-badge">🏠 {entry.families}</span>
+                        </div>
                       </button>
                     )) : (
                       <p className="empty-state">No registered countries yet. New learner sign-ups will appear here automatically.</p>
@@ -2729,7 +2733,7 @@ function App() {
                   <div>
                     <p className="eyebrow">Admin page</p>
                     <h2>Reports</h2>
-                    <p>Leaderboards, subject activity, plan mix, and current learner snapshots.</p>
+                    <p>Live view.</p>
                   </div>
                   <div className="banner-actions">
                     <button type="button" className="ghost-button" onClick={() => openAdminView('overview')}>
@@ -2742,25 +2746,25 @@ function App() {
                   <div className="panel-heading">
                     <p className="eyebrow">Current learning</p>
                     <h2>Current learner activity</h2>
-                    <p>{adminNotice || 'Keep reports active with a clear view of learner activity and trends.'}</p>
+                    {adminNotice && <p>{adminNotice}</p>}
                   </div>
                   <AdminTabs active={adminView} onChange={openAdminView} />
                   <div className="stats-grid report-stats-grid">
                     <article className="info-card">
-                      <strong>Current activity rows</strong>
+                      <strong>📚 Activity</strong>
                       <p>{reportActivity.length}</p>
                     </article>
                     <article className="info-card">
-                      <strong>Follow-ups open</strong>
+                      <strong>📌 Follow-ups</strong>
                       <p>{followUpItems.length}</p>
                     </article>
                     <article className="info-card">
-                      <strong>Top subject</strong>
+                      <strong>🏆 Top subject</strong>
                       <p>{subjectInsights[0]?.subject ?? 'No activity yet'}</p>
                     </article>
                     <article className="info-card">
-                      <strong>Country focus</strong>
-                      <p>{adminCountry.name}</p>
+                      <strong>🌍 Country</strong>
+                      <p>{getFlagEmoji(adminCountry.code)} {adminCountry.name}</p>
                     </article>
                   </div>
                   <div className="banner-actions">
@@ -2788,24 +2792,24 @@ function App() {
                         </div>
                       </article>
                     )) : (
-                      <p className="empty-state">Current learner activity will appear here as learners sign in and practise.</p>
-                    )}
-                  </div>
-                </section>
+                    <p className="empty-state">Current learner activity will appear here as learners sign in and practise.</p>
+                  )}
+                </div>
+              </section>
               </section>
 
               <aside className="dashboard-side">
                 <section className="side-card">
                   <div className="panel-heading">
                     <p className="eyebrow">Top performers</p>
-                    <h2>Leaderboard preview</h2>
+                    <h2>Leaderboard</h2>
                   </div>
                   <div className="leaderboard-list">
                     {leaderboard.map((entry, index) => (
                       <article key={`${entry.name}-${index}`} className="leaderboard-row">
                         <div>
                           <strong>#{index + 1} {entry.name}</strong>
-                          <span>{getCountryByCode(entry.countryCode).name}</span>
+                          <span>{getFlagEmoji(entry.countryCode)} {getCountryByCode(entry.countryCode).name}</span>
                         </div>
                         <strong>{entry.score}%</strong>
                       </article>
@@ -2816,7 +2820,7 @@ function App() {
                 <section className="side-card">
                   <div className="panel-heading">
                     <p className="eyebrow">Popular subjects</p>
-                    <h2>Where learners are spending time</h2>
+                    <h2>Subjects</h2>
                   </div>
                   <div className="history-list">
                     {subjectInsights.length > 0 ? subjectInsights.map((item) => (
@@ -2839,7 +2843,7 @@ function App() {
                 <section className="side-card">
                   <div className="panel-heading">
                     <p className="eyebrow">Plan mix</p>
-                    <h2>How families are using access plans</h2>
+                    <h2>Plans</h2>
                   </div>
                   <div className="history-list">
                     {planMix.map((item) => (

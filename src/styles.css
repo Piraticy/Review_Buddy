@@ -289,6 +289,11 @@ button:disabled {
   gap: 14px;
 }
 
+.auth-layout-single {
+  grid-template-columns: minmax(0, 920px);
+  justify-content: center;
+}
+
 .dashboard-layout {
   grid-template-columns: minmax(0, 1.55fr) minmax(240px, 300px);
 }
@@ -390,6 +395,20 @@ button:disabled {
 .auth-card {
   display: grid;
   gap: 12px;
+}
+
+.auth-card-wide {
+  width: 100%;
+  max-width: 920px;
+  margin-inline: auto;
+}
+
+.benefit-grid-compact {
+  margin-top: 0;
+}
+
+.benefit-grid-compact .info-card {
+  padding: 12px;
 }
 
 .signin-shortcuts {
@@ -1005,6 +1024,11 @@ button:disabled {
 
 .feedback-panel {
   gap: 14px;
+}
+
+.feedback-question-list {
+  display: grid;
+  gap: 12px;
 }
 
 .feedback-card {

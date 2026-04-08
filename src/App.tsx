@@ -75,9 +75,12 @@ type FeedbackEntry = {
   countryCode: string;
   rating: number;
   choice: string;
+  ratings: Record<FeedbackQuestionKey, number>;
   comment: string;
   createdAt: string;
 };
+
+type FeedbackQuestionKey = 'ease' | 'clarity' | 'look' | 'speed' | 'confidence';
 
 type StoredState = {
   appVersion?: string;
@@ -112,7 +115,7 @@ type GeneratedAvatarOption = {
 
 const STORAGE_KEY = 'review-buddy-state';
 const INSTALL_DISMISS_KEY = 'review-buddy-install-dismissed';
-const APP_VERSION = '1.8.8';
+const APP_VERSION = '1.8.9';
 const APP_CREATED_ON = 'March 31, 2026';
 const DEFAULT_ADMIN_USERNAME = 'Admin';
 const DEFAULT_ADMIN_PASSWORD = 'admin';
@@ -420,11 +423,18 @@ const ADMIN_TABS: { view: AdminView; label: string; icon: string }[] = [
 
 const FEEDBACK_CHOICES = [
   'Easy to use',
-  'Looks good on my device',
-  'Lessons are clear',
-  'Quiz is helpful',
-  'Needs better speed',
-  'Needs simpler pages',
+  'Clear lessons',
+  'Looks good',
+  'Fast enough',
+  'Helps me learn',
+];
+
+const FEEDBACK_QUESTIONS: { key: FeedbackQuestionKey; label: string }[] = [
+  { key: 'ease', label: 'How easy was this page?' },
+  { key: 'clarity', label: 'How clear were the lessons?' },
+  { key: 'look', label: 'How does the page look?' },
+  { key: 'speed', label: 'How fast did it feel?' },
+  { key: 'confidence', label: 'How much did it help you learn?' },
 ];
 
 function AdminTabs({
@@ -489,16 +499,18 @@ function buildFeedbackSummary(entries: FeedbackEntry[]) {
 
   const average = Math.round((entries.reduce((sum, entry) => sum + entry.rating, 0) / entries.length) * 10) / 10;
   const lowCount = entries.filter((entry) => entry.rating < 3).length;
-  const choiceCounts = entries.reduce<Record<string, number>>((summary, entry) => {
-    summary[entry.choice] = (summary[entry.choice] ?? 0) + 1;
-    return summary;
-  }, {});
-  const topChoice = Object.entries(choiceCounts).sort((left, right) => right[1] - left[1])[0]?.[0] ?? 'General feedback';
+  const questionAverages = FEEDBACK_QUESTIONS.map((question) => ({
+    label: question.label,
+    average:
+      entries.reduce((sum, entry) => sum + (entry.ratings?.[question.key] ?? entry.rating), 0) / entries.length,
+  })).sort((left, right) => left.average - right.average);
+
+  const weakestQuestion = questionAverages[0]?.label ?? 'General feedback';
 
   return {
     average,
     lowCount,
-    headline: topChoice,
+    headline: weakestQuestion,
     detail:
       lowCount > 0
         ? `${lowCount} reply${lowCount === 1 ? '' : 'ies'} need attention first.`
@@ -606,6 +618,16 @@ function getDefaultGeneratedAvatar(gender: LearnerGender) {
   return getGeneratedAvatarOptions(gender)[0];
 }
 
+function createEmptyFeedbackRatings(): Record<FeedbackQuestionKey, number> {
+  return {
+    ease: 0,
+    clarity: 0,
+    look: 0,
+    speed: 0,
+    confidence: 0,
+  };
+}
+
 function getErrorMessage(error: unknown, fallback: string) {
   if (error && typeof error === 'object' && 'message' in error && typeof error.message === 'string') {
     return error.message;
@@ -647,8 +669,7 @@ function App() {
   });
   const [showPassword, setShowPassword] = useState(false);
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [feedbackRating, setFeedbackRating] = useState(0);
-  const [feedbackChoice, setFeedbackChoice] = useState(FEEDBACK_CHOICES[0]);
+  const [feedbackRatings, setFeedbackRatings] = useState<Record<FeedbackQuestionKey, number>>(createEmptyFeedbackRatings);
   const [feedbackComment, setFeedbackComment] = useState('');
   const speechKeyRef = useRef<string | null>(null);
 
@@ -1377,25 +1398,32 @@ function App() {
   }
 
   function submitFeedback() {
-    if (!feedbackRating) {
-      setAuthNotice('Choose a star rating first.');
+    const ratingsList = FEEDBACK_QUESTIONS.map((question) => feedbackRatings[question.key]);
+
+    if (ratingsList.some((rating) => !rating)) {
+      setAuthNotice('Rate each question with stars first.');
       return;
     }
+
+    const averageRating = Math.round((ratingsList.reduce((sum, rating) => sum + rating, 0) / ratingsList.length) * 10) / 10;
+    const lowestQuestion = FEEDBACK_QUESTIONS
+      .map((question) => ({ ...question, rating: feedbackRatings[question.key] }))
+      .sort((left, right) => left.rating - right.rating)[0];
 
     const nextEntry: FeedbackEntry = {
       id: `feedback-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`,
       userName: profile.fullName || firstName,
       role: profile.role,
       countryCode: profile.countryCode,
-      rating: feedbackRating,
-      choice: feedbackChoice,
+      rating: averageRating,
+      choice: lowestQuestion?.label ?? FEEDBACK_CHOICES[0],
+      ratings: feedbackRatings,
       comment: feedbackComment.trim(),
       createdAt: new Date().toISOString(),
     };
 
     setFeedbackEntries((current) => [nextEntry, ...current].slice(0, 60));
-    setFeedbackRating(0);
-    setFeedbackChoice(FEEDBACK_CHOICES[0]);
+    setFeedbackRatings(createEmptyFeedbackRatings());
     setFeedbackComment('');
     setAuthNotice('');
     setAdminNotice('New feedback was added for admin review.');
@@ -1730,29 +1758,21 @@ function App() {
       </header>
 
       {screen === 'auth' ? (
-        <main className="auth-layout">
-          <section className="hero-card">
-            <p className="eyebrow">After-school support</p>
-            <h2>Friendly learning for kids, teens, and the grown-ups helping them.</h2>
-            <p className="hero-copy">
-              Choose your level and start on any device.
-            </p>
+        <main className="auth-layout auth-layout-single">
+          <section className="auth-card auth-card-wide">
+            <div className="panel-heading">
+              <p className="eyebrow">Welcome</p>
+              <h2>{authMode === 'signin' ? 'Sign in to continue' : 'Create a new account'}</h2>
+              <p>{authMode === 'signin' ? 'Welcome back.' : 'Quick setup.'}</p>
+            </div>
 
-            <div className="benefit-grid">
+            <div className="benefit-grid benefit-grid-compact">
               {benefitCards.map((card) => (
                 <article key={card.title} className="info-card">
                   <strong>{card.title}</strong>
                   <p>{card.detail}</p>
                 </article>
               ))}
-            </div>
-          </section>
-
-          <section className="auth-card">
-            <div className="panel-heading">
-              <p className="eyebrow">Welcome</p>
-              <h2>{authMode === 'signin' ? 'Sign in to continue' : 'Create a new account'}</h2>
-              <p>{authMode === 'signin' ? 'Welcome back.' : 'Quick setup.'}</p>
             </div>
 
             <div className="mode-toggle" role="tablist" aria-label="Account mode">
@@ -2546,28 +2566,30 @@ function App() {
                 <section className="setup-panel feedback-panel">
                   <div className="panel-heading">
                     <p className="eyebrow">Quick survey</p>
-                    <h2>Simple feedback</h2>
-                    <p>Rate the experience, choose one main point, and leave an optional comment.</p>
+                    <h2>Rate this page</h2>
+                    <p>Five quick ratings and one optional comment.</p>
                   </div>
                   <article className="feedback-card">
-                    <div className="feedback-row">
-                      <strong>How do you rate this page?</strong>
-                      <FeedbackStars rating={feedbackRating} onChange={setFeedbackRating} />
+                    <div className="feedback-question-list">
+                      {FEEDBACK_QUESTIONS.map((question) => (
+                        <div key={question.key} className="feedback-row">
+                          <strong>{question.label}</strong>
+                          <FeedbackStars
+                            rating={feedbackRatings[question.key]}
+                            onChange={(next) =>
+                              setFeedbackRatings((current) => ({
+                                ...current,
+                                [question.key]: next,
+                              }))
+                            }
+                          />
+                        </div>
+                      ))}
                     </div>
                     <label>
-                      Best match
-                      <select value={feedbackChoice} onChange={(event) => setFeedbackChoice(event.target.value)}>
-                        {FEEDBACK_CHOICES.map((choice) => (
-                          <option key={choice} value={choice}>
-                            {choice}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    <label>
-                      Comment
+                      Optional comment
                       <textarea
-                        rows={4}
+                        rows={3}
                         value={feedbackComment}
                         onChange={(event) => setFeedbackComment(event.target.value)}
                         placeholder="Add one short note if you want."
@@ -2602,6 +2624,30 @@ function App() {
                       <span>⚠️</span>
                       <strong>{feedbackSummary.lowCount}</strong>
                     </article>
+                  </div>
+                  <div className="history-list">
+                    {FEEDBACK_QUESTIONS.map((question) => {
+                      const avg =
+                        feedbackEntries.length > 0
+                          ? Math.round(
+                              (feedbackEntries.reduce(
+                                (sum, entry) => sum + (entry.ratings?.[question.key] ?? entry.rating),
+                                0,
+                              ) /
+                                feedbackEntries.length) *
+                                10,
+                            ) / 10
+                          : 0;
+
+                      return (
+                        <article key={question.key} className="history-row">
+                          <div>
+                            <strong>{question.label}</strong>
+                          </div>
+                          <strong>{avg || '-'}</strong>
+                        </article>
+                      );
+                    })}
                   </div>
                 </section>
               </aside>

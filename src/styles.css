@@ -87,7 +87,7 @@ button:disabled {
 .site-footer {
   position: relative;
   z-index: 1;
-  max-width: 1240px;
+  max-width: 1180px;
   margin-inline: auto;
 }
 
@@ -286,11 +286,11 @@ button:disabled {
 .dashboard-layout {
   display: grid;
   grid-template-columns: minmax(0, 1.2fr) minmax(320px, 440px);
-  gap: 18px;
+  gap: 14px;
 }
 
 .dashboard-layout {
-  grid-template-columns: minmax(0, 1.6fr) minmax(250px, 320px);
+  grid-template-columns: minmax(0, 1.55fr) minmax(240px, 300px);
 }
 
 .hero-card,
@@ -315,8 +315,8 @@ button:disabled {
 .empty-quiz,
 .side-card,
 .quiz-shell {
-  border-radius: 30px;
-  padding: 20px;
+  border-radius: 26px;
+  padding: 18px;
 }
 
 .app-shell[data-theme='night'] .hero-card,
@@ -373,12 +373,12 @@ button:disabled {
 
 .benefit-grid {
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  margin-top: 16px;
+  margin-top: 12px;
 }
 
 .info-card {
-  border-radius: 24px;
-  padding: 16px;
+  border-radius: 20px;
+  padding: 14px;
   border: 1px solid color-mix(in srgb, var(--theme-primary) 14%, white);
 }
 
@@ -389,7 +389,7 @@ button:disabled {
 
 .auth-card {
   display: grid;
-  gap: 14px;
+  gap: 12px;
 }
 
 .signin-shortcuts {
@@ -544,14 +544,14 @@ button:disabled {
 .page-chip-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;
+  gap: 8px;
 }
 
 .page-chip {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 12px;
+  padding: 7px 11px;
   border-radius: 999px;
   background: color-mix(in srgb, var(--theme-surface) 90%, white 10%);
   border: 1px solid color-mix(in srgb, var(--theme-primary) 14%, white);
@@ -624,7 +624,7 @@ button:disabled {
 
 .auth-form {
   display: grid;
-  gap: 12px;
+  gap: 10px;
 }
 
 .password-field {
@@ -667,7 +667,7 @@ button:disabled {
   width: 100%;
   border: 1px solid color-mix(in srgb, var(--theme-primary) 18%, white);
   border-radius: 16px;
-  padding: 12px 14px;
+  padding: 11px 13px;
   background: color-mix(in srgb, var(--theme-surface) 94%, white 6%);
   color: var(--theme-ink);
 }
@@ -699,16 +699,16 @@ button:disabled {
 .dashboard-main,
 .dashboard-side {
   display: grid;
-  gap: 16px;
+  gap: 14px;
 }
 
 .welcome-banner {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
-  border-radius: 28px;
-  padding: 18px 20px;
+  gap: 14px;
+  border-radius: 24px;
+  padding: 16px 18px;
   background: color-mix(in srgb, var(--theme-surface) 90%, white 10%);
   border: 1px solid color-mix(in srgb, var(--theme-primary) 18%, white);
   box-shadow: 0 18px 34px rgba(15, 23, 42, 0.08);
@@ -724,6 +724,11 @@ button:disabled {
     0 0 0 4px color-mix(in srgb, var(--theme-accent) 10%, transparent);
 }
 
+.banner-actions .primary-button,
+.banner-actions .ghost-button {
+  min-width: 148px;
+}
+
 .ghost-button-small {
   padding: 9px 14px;
   font-size: 0.92rem;
@@ -731,11 +736,12 @@ button:disabled {
 
 .stats-grid {
   grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
 }
 
 .setup-panel {
   display: grid;
-  gap: 14px;
+  gap: 12px;
 }
 
 .plan-note {
@@ -754,6 +760,7 @@ button:disabled {
 
 .option-grid {
   grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
 }
 
 .option-grid-single {
@@ -861,8 +868,8 @@ button:disabled {
   justify-items: start;
   gap: 6px;
   text-align: left;
-  border-radius: 24px;
-  padding: 16px;
+  border-radius: 20px;
+  padding: 14px;
   border: 1px solid color-mix(in srgb, var(--theme-primary) 24%, white);
   background: color-mix(in srgb, var(--theme-surface) 92%, white 8%);
   color: var(--theme-ink);
@@ -907,9 +914,9 @@ button:disabled {
 
 .avatar-picker {
   display: grid;
-  gap: 10px;
-  padding: 14px;
-  border-radius: 22px;
+  gap: 8px;
+  padding: 12px;
+  border-radius: 20px;
   background: color-mix(in srgb, var(--theme-surface) 94%, white 6%);
   border: 1px solid color-mix(in srgb, var(--theme-primary) 14%, white);
 }
@@ -980,19 +987,20 @@ button:disabled {
 }
 
 .upload-avatar-compact {
-  min-height: 60px;
+  min-height: 54px;
   min-width: 0;
   flex-direction: row;
   border-radius: 16px;
 }
 
 .compact-avatar-preview .profile-mark {
-  width: 52px;
-  height: 52px;
+  width: 46px;
+  height: 46px;
 }
 
 .compact-avatar-preview p {
   margin: 2px 0 0;
+  font-size: 0.9rem;
 }
 
 .feedback-panel {
@@ -1286,6 +1294,7 @@ button:disabled {
 .side-card {
   display: grid;
   gap: 14px;
+  padding: 16px;
 }
 
 .report-stats-grid {
@@ -1310,7 +1319,7 @@ button:disabled {
 .country-group-card {
   display: grid;
   gap: 12px;
-  padding: 18px;
+  padding: 16px;
   border-radius: 24px;
   border: 1px solid color-mix(in srgb, var(--theme-primary) 14%, white);
   background: color-mix(in srgb, var(--theme-surface) 94%, white 6%);
@@ -1418,6 +1427,20 @@ button:disabled {
   gap: 8px;
 }
 
+.video-lesson-hero {
+  align-items: start;
+}
+
+.video-scene-list-full {
+  gap: 14px;
+}
+
+.video-scene-card-full {
+  grid-template-columns: 52px minmax(0, 1fr);
+  border-radius: 20px;
+  padding: 14px;
+}
+
 .subject-card span:last-child:empty {
   display: none;
 }
@@ -1471,6 +1494,10 @@ button:disabled {
     grid-template-columns: 1fr;
   }
 
+  .auth-layout > .hero-card {
+    display: none;
+  }
+
   .stats-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -1505,6 +1532,9 @@ button:disabled {
   .theme-toolbar {
     justify-content: flex-end;
     margin-left: auto;
+    position: sticky;
+    top: 8px;
+    z-index: 2;
   }
 
   .brand-title {
@@ -1518,10 +1548,6 @@ button:disabled {
 
   .auth-layout > .auth-card {
     order: 1;
-  }
-
-  .auth-layout > .hero-card {
-    display: none;
   }
 
   .topbar,
@@ -1589,8 +1615,8 @@ button:disabled {
   .side-card,
   .welcome-banner,
   .hero-card {
-    padding: 16px;
-    border-radius: 24px;
+    padding: 14px;
+    border-radius: 22px;
   }
 
   .certificate-top,
@@ -1617,21 +1643,18 @@ button:disabled {
 
   .theme-toolbar {
     order: -1;
-    position: sticky;
-    top: 8px;
-    z-index: 2;
     align-self: flex-end;
     margin-left: auto;
   }
 
   .brand-title {
     max-width: 8ch;
-    font-size: clamp(1.9rem, 10vw, 2.8rem);
+    font-size: clamp(1.75rem, 9vw, 2.55rem);
   }
 
   .brand-title-dashboard {
     max-width: 9ch;
-    font-size: clamp(2rem, 10vw, 3rem);
+    font-size: clamp(1.85rem, 9.4vw, 2.8rem);
   }
 
   .page-chip-label {
@@ -1677,5 +1700,10 @@ button:disabled {
   .feedback-row,
   .video-scene-card {
     grid-template-columns: 1fr;
+  }
+
+  .banner-actions .primary-button,
+  .banner-actions .ghost-button {
+    min-width: 0;
   }
 }

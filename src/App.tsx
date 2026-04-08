@@ -39,7 +39,7 @@ type AttemptRecord = {
 type AuthMode = 'signin' | 'signup';
 type ThemeMode = 'country' | 'sunny' | 'ocean' | 'night';
 type Screen = 'auth' | 'student' | 'admin' | 'staff' | 'quiz';
-type StudentView = 'home' | 'subject' | 'notes' | 'review' | 'feedback';
+type StudentView = 'home' | 'subject' | 'notes' | 'video' | 'review' | 'feedback';
 type AdminView = 'overview' | 'countries' | 'staff' | 'learners' | 'followups' | 'reports';
 type AssessmentKind = 'quiz' | 'exam';
 type ThemeVars = {
@@ -112,7 +112,7 @@ type GeneratedAvatarOption = {
 
 const STORAGE_KEY = 'review-buddy-state';
 const INSTALL_DISMISS_KEY = 'review-buddy-install-dismissed';
-const APP_VERSION = '1.8.7';
+const APP_VERSION = '1.8.8';
 const APP_CREATED_ON = 'March 31, 2026';
 const DEFAULT_ADMIN_USERNAME = 'Admin';
 const DEFAULT_ADMIN_PASSWORD = 'admin';
@@ -426,33 +426,6 @@ const FEEDBACK_CHOICES = [
   'Needs better speed',
   'Needs simpler pages',
 ];
-
-const SIGNIN_SHORTCUTS = [
-  {
-    key: 'learner',
-    label: 'Learner',
-    icon: '🎒',
-    description: 'Email and password',
-    identifier: '',
-    password: '',
-  },
-  {
-    key: 'staff',
-    label: 'Staff',
-    icon: '🧑🏽‍🏫',
-    description: 'Staff / staff',
-    identifier: DEFAULT_STAFF_USERNAME,
-    password: DEFAULT_STAFF_PASSWORD,
-  },
-  {
-    key: 'admin',
-    label: 'Admin',
-    icon: '🛡️',
-    description: 'Admin / admin',
-    identifier: DEFAULT_ADMIN_USERNAME,
-    password: DEFAULT_ADMIN_PASSWORD,
-  },
-] as const;
 
 function AdminTabs({
   active,
@@ -1393,6 +1366,11 @@ function App() {
     setStudentView('notes');
   }
 
+  function openVideoLesson(subject: string) {
+    setSelectedSubject(subject);
+    setStudentView('video');
+  }
+
   function openFeedbackPage() {
     setAuthNotice('');
     setStudentView('feedback');
@@ -1724,7 +1702,13 @@ function App() {
                 ? 'Easy learning made simple.'
                 : screen === 'quiz'
                   ? quizState?.activeSubject ?? profile.subject
-                  : `Welcome, ${profile.fullName}`}
+                  : screen === 'admin'
+                    ? 'Admin'
+                    : screen === 'staff'
+                      ? 'Staff lounge'
+                      : studentView === 'subject' && selectedSubject
+                        ? selectedSubject
+                        : `Welcome, ${firstName}`}
             </h1>
           </div>
         </div>
@@ -1751,8 +1735,7 @@ function App() {
             <p className="eyebrow">After-school support</p>
             <h2>Friendly learning for kids, teens, and the grown-ups helping them.</h2>
             <p className="hero-copy">
-              Choose a country, pick the right learner level, and start with a clear learning
-              space that feels simple on phones, tablets, and computers.
+              Choose your level and start on any device.
             </p>
 
             <div className="benefit-grid">
@@ -1769,7 +1752,7 @@ function App() {
             <div className="panel-heading">
               <p className="eyebrow">Welcome</p>
               <h2>{authMode === 'signin' ? 'Sign in to continue' : 'Create a new account'}</h2>
-              <p>{authMode === 'signin' ? 'Pick up where you left off.' : 'Create your space in a few taps.'}</p>
+              <p>{authMode === 'signin' ? 'Welcome back.' : 'Quick setup.'}</p>
             </div>
 
             <div className="mode-toggle" role="tablist" aria-label="Account mode">
@@ -1806,92 +1789,99 @@ function App() {
             </div>
 
             <form className="auth-form" onSubmit={handleAuthSubmit}>
-              {authMode === 'signin' && (
-                <div className="signin-shortcuts" aria-label="Quick access">
-                  {SIGNIN_SHORTCUTS.map((shortcut) => (
-                    <button
-                      key={shortcut.key}
-                      type="button"
-                      className={`shortcut-pill${
-                        (shortcut.identifier && signinIdentifier.trim().toLowerCase() === shortcut.identifier.toLowerCase()) ||
-                        (!shortcut.identifier && !signinIdentifier)
-                          ? ' shortcut-pill-active'
-                          : ''
-                      }`}
-                      onClick={() => {
-                        setSigninIdentifier(shortcut.identifier);
-                        updateProfile('password', shortcut.password);
-                        setAuthNotice('');
-                      }}
-                    >
-                      <span aria-hidden="true">{shortcut.icon}</span>
-                      <span>{shortcut.label}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
-
               {authMode === 'signup' && (
-                <label className="field-span-2">
-                  Full name
-                  <input
-                    value={profile.fullName}
-                    onChange={(event) => updateProfile('fullName', event.target.value)}
-                    placeholder="e.g. Amina Hassan"
-                    required
-                  />
-                </label>
-              )}
-
-              <label>
-                {authMode === 'signin' ? 'Email or username' : 'Email'}
-                <input
-                  type={authMode === 'signin' ? 'text' : 'email'}
-                  value={authMode === 'signin' ? signinIdentifier : profile.email}
-                  onChange={(event) =>
-                    authMode === 'signin'
-                      ? setSigninIdentifier(event.target.value)
-                      : updateProfile('email', event.target.value)
-                  }
-                  placeholder={authMode === 'signin' ? 'Email or Admin' : 'name@example.com'}
-                  required
-                />
-              </label>
-
-              <label>
-                Password
-                <div className="password-field">
-                  <input
-                    type={showPassword ? 'text' : 'password'}
-                    value={profile.password}
-                    onChange={(event) => updateProfile('password', event.target.value)}
-                    placeholder={authMode === 'signin' ? 'Enter password' : 'Create password'}
-                    required
-                  />
-                  <button
-                    type="button"
-                    className="password-toggle"
-                    onClick={() => setShowPassword((current) => !current)}
-                    aria-label={showPassword ? 'Hide password' : 'Show password'}
-                  >
-                    {showPassword ? 'Hide' : 'Show'}
-                  </button>
-                </div>
-              </label>
-
-              {authMode === 'signup' && (
-                <label>
-                  Confirm password
-                  <div className="password-field">
+                <div className="field-grid auth-field-grid">
+                  <label className="field-span-2">
+                    Full name
                     <input
-                      type={showPassword ? 'text' : 'password'}
-                      value={confirmPassword}
-                      onChange={(event) => setConfirmPassword(event.target.value)}
-                      placeholder="Repeat password"
+                      value={profile.fullName}
+                      onChange={(event) => updateProfile('fullName', event.target.value)}
+                      placeholder="Your name"
                       required
                     />
-                  </div>
-                </label>
+                  </label>
+
+                  <label>
+                    Email
+                    <input
+                      type="email"
+                      value={profile.email}
+                      onChange={(event) => updateProfile('email', event.target.value)}
+                      placeholder="name@example.com"
+                      required
+                    />
+                  </label>
+
+                  <label>
+                    Password
+                    <div className="password-field">
+                      <input
+                        type={showPassword ? 'text' : 'password'}
+                        value={profile.password}
+                        onChange={(event) => updateProfile('password', event.target.value)}
+                        placeholder="Create password"
+                        required
+                      />
+                      <button
+                        type="button"
+                        className="password-toggle"
+                        onClick={() => setShowPassword((current) => !current)}
+                        aria-label={showPassword ? 'Hide password' : 'Show password'}
+                      >
+                        {showPassword ? 'Hide' : 'Show'}
+                      </button>
+                    </div>
+                  </label>
+
+                  <label>
+                    Confirm password
+                    <div className="password-field">
+                      <input
+                        type={showPassword ? 'text' : 'password'}
+                        value={confirmPassword}
+                        onChange={(event) => setConfirmPassword(event.target.value)}
+                        placeholder="Repeat password"
+                        required
+                      />
+                    </div>
+                  </label>
+                </div>
+              )}
+
+              {authMode === 'signin' && (
+                <>
+                  <label>
+                    Email or username
+                    <input
+                      type="text"
+                      value={signinIdentifier}
+                      onChange={(event) => setSigninIdentifier(event.target.value)}
+                      placeholder="Email, Admin, or Staff"
+                      required
+                    />
+                  </label>
+
+                  <label>
+                    Password
+                    <div className="password-field">
+                      <input
+                        type={showPassword ? 'text' : 'password'}
+                        value={profile.password}
+                        onChange={(event) => updateProfile('password', event.target.value)}
+                        placeholder="Enter password"
+                        required
+                      />
+                      <button
+                        type="button"
+                        className="password-toggle"
+                        onClick={() => setShowPassword((current) => !current)}
+                        aria-label={showPassword ? 'Hide password' : 'Show password'}
+                      >
+                        {showPassword ? 'Hide' : 'Show'}
+                      </button>
+                    </div>
+                  </label>
+                </>
               )}
 
               {authMode === 'signup' && (
@@ -1970,6 +1960,7 @@ function App() {
                   <div className="panel-heading">
                     <p className="eyebrow">Avatar</p>
                     <h2>Choose a look</h2>
+                    <p>Pick one icon or add a photo.</p>
                   </div>
                   <div className="field-grid compact-picker-grid">
                     <label>
@@ -1998,8 +1989,8 @@ function App() {
                   <div className="avatar-preview-card compact-avatar-preview">
                     <ProfileMark profile={profile} />
                     <div>
-                      <strong>{profile.fullName.trim() || 'Preview'}</strong>
-                      <p>{profile.avatarMode === 'upload' ? 'Photo' : chosenAvatarOption?.label ?? 'Icon'}</p>
+                      <strong>{profile.avatarMode === 'upload' ? 'Photo' : chosenAvatarOption?.label ?? 'Icon'}</strong>
+                      <p>{getFlagEmoji(profile.countryCode)} {getCountryByCode(profile.countryCode).name}</p>
                     </div>
                   </div>
                 </div>
@@ -2022,7 +2013,7 @@ function App() {
                   <div>
                     <p className="eyebrow">Learning home</p>
                     <h2>{firstName}, choose what to practise next</h2>
-                    <p>{country.name} · {getStageLabel(profile.stage)} · {getPlanLabel(profile.plan)}</p>
+                    <p>{getFlagEmoji(country.code)} {country.name} · {getStageLabel(profile.stage)}</p>
                   </div>
                   <div className="banner-actions">
                     <button type="button" className="primary-button action-button-prominent" onClick={logout}>
@@ -2035,12 +2026,12 @@ function App() {
                   <div className="panel-heading">
                     <p className="eyebrow">Today&apos;s learning</p>
                     <h2>Pick a subject</h2>
-                    <p>Open notes, a quiz, or a full exam.</p>
+                    <p>Notes, video, quiz, or exam.</p>
                   </div>
 
                   <div className="page-chip-row">
-                    <span className="page-chip page-chip-active">Subjects</span>
-                    <span className="page-chip">Choose one to continue</span>
+                    <span className="page-chip page-chip-active">📚 Subjects</span>
+                    <span className="page-chip">{getFlagEmoji(country.code)} {country.name}</span>
                   </div>
 
                   <div className="field-grid">
@@ -2182,7 +2173,7 @@ function App() {
                   <div>
                     <p className="eyebrow">Subject page</p>
                     <h2>{activeStudentSubject}</h2>
-                    <p>{country.name} · {profile.level} · {getPlanLabel(profile.plan)}</p>
+                    <p>{getFlagEmoji(country.code)} {country.name} · {profile.level}</p>
                   </div>
                   <div className="banner-actions">
                     <button
@@ -2210,6 +2201,11 @@ function App() {
                       <strong>Learning notes</strong>
                       <span>{getFlagEmoji(country.code)} {country.name} · {profile.level}</span>
                     </button>
+                    <button type="button" className="subject-card" onClick={() => openVideoLesson(activeStudentSubject)}>
+                      <span className="subject-icon">🎬</span>
+                      <strong>Video lesson</strong>
+                      <span>{learningVideo.durationLabel}</span>
+                    </button>
                     <button type="button" className="subject-card" onClick={openFeedbackPage}>
                       <span className="subject-icon">💡</span>
                       <strong>Feedback survey</strong>
@@ -2232,9 +2228,9 @@ function App() {
               <aside className="dashboard-side">
                 <section className="side-card">
                   <div className="panel-heading">
-                    <p className="eyebrow">Quick lesson</p>
+                    <p className="eyebrow">Video lesson</p>
                     <h2>{learningVideo.title}</h2>
-                    <p>{learningVideo.durationLabel} · {learningVideo.subtitle}</p>
+                    <p>{learningVideo.durationLabel}</p>
                   </div>
                   <div className="video-scene-list">
                     {learningVideo.scenes.slice(0, 3).map((scene) => (
@@ -2247,6 +2243,9 @@ function App() {
                       </article>
                     ))}
                   </div>
+                  <button type="button" className="primary-button" onClick={() => openVideoLesson(activeStudentSubject)}>
+                    Open lesson
+                  </button>
                 </section>
 
                 <section className="side-card">
@@ -2276,7 +2275,7 @@ function App() {
                   <div>
                     <p className="eyebrow">Learning notes</p>
                     <h2>{activeStudentSubject} reading book</h2>
-                    <p>{country.name} · {profile.level} · {getPlanLabel(profile.plan)}</p>
+                    <p>{getFlagEmoji(country.code)} {country.name} · {profile.level}</p>
                   </div>
                   <div className="banner-actions">
                     <button
@@ -2361,6 +2360,94 @@ function App() {
                 </section>
               </aside>
             </>
+          ) : studentView === 'video' ? (
+            <>
+              <section className="dashboard-main">
+                <section className="welcome-banner">
+                  <div>
+                    <p className="eyebrow">Video lesson</p>
+                    <h2>{learningVideo.title}</h2>
+                    <p>{getFlagEmoji(country.code)} {country.name} · {learningVideo.durationLabel}</p>
+                  </div>
+                  <div className="banner-actions">
+                    <button
+                      type="button"
+                      className="primary-button action-button-prominent"
+                      onClick={() => setStudentView('subject')}
+                    >
+                      Back to subject
+                    </button>
+                    <button type="button" className="primary-button" onClick={logout}>
+                      Sign out
+                    </button>
+                  </div>
+                </section>
+
+                <section className="setup-panel">
+                  <div className="book-cover video-lesson-hero">
+                    <div className="book-cover-mark">🎬</div>
+                    <div className="book-cover-copy">
+                      <p className="eyebrow">Lesson reel</p>
+                      <h2>{learningVideo.subtitle}</h2>
+                      <p>{learningVideo.intro}</p>
+                    </div>
+                  </div>
+                  <div className="page-chip-row">
+                    <button type="button" className="page-chip page-chip-button" onClick={() => openLearningNotes(activeStudentSubject)}>
+                      Notes
+                    </button>
+                    <button type="button" className="page-chip page-chip-button page-chip-active" onClick={() => openVideoLesson(activeStudentSubject)}>
+                      Video
+                    </button>
+                    <button type="button" className="page-chip page-chip-button" onClick={() => startQuiz(activeStudentSubject, 'quiz')}>
+                      Quiz
+                    </button>
+                    <button type="button" className="page-chip page-chip-button" onClick={() => startQuiz(activeStudentSubject, 'exam')}>
+                      Exam
+                    </button>
+                  </div>
+                  <div className="video-scene-list video-scene-list-full">
+                    {learningVideo.scenes.map((scene, index) => (
+                      <article key={`${scene.title}-${index}`} className="video-scene-card video-scene-card-full">
+                        <span className="subject-icon video-scene-icon">{scene.visual}</span>
+                        <div>
+                          <strong>{scene.title}</strong>
+                          <p>{scene.subtitle}</p>
+                          <p>{scene.narration}</p>
+                          <ul className="simple-list">
+                            {scene.bullets.map((bullet) => (
+                              <li key={bullet}>{bullet}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                </section>
+              </section>
+
+              <aside className="dashboard-side">
+                <section className="side-card">
+                  <div className="panel-heading">
+                    <p className="eyebrow">Next step</p>
+                    <h2>Keep learning</h2>
+                    <p>Open notes again or move straight into fresh practice.</p>
+                  </div>
+                  <div className="option-grid option-grid-single">
+                    <button type="button" className="subject-card" onClick={() => openLearningNotes(activeStudentSubject)}>
+                      <span className="subject-icon">📘</span>
+                      <strong>Open notes</strong>
+                      <span>Read the book version.</span>
+                    </button>
+                    <button type="button" className="subject-card" onClick={() => startQuiz(activeStudentSubject, 'quiz')}>
+                      <span className="subject-icon">📝</span>
+                      <strong>Start quiz</strong>
+                      <span>Use a short fresh set.</span>
+                    </button>
+                  </div>
+                </section>
+              </aside>
+            </>
           ) : studentView === 'review' ? (
             <>
               <section className="dashboard-main">
@@ -2440,7 +2527,7 @@ function App() {
                   <div>
                     <p className="eyebrow">Feedback survey</p>
                     <h2>Tell us how this learning page feels</h2>
-                    <p>{country.name} · {activeStudentSubject} · {profile.level}</p>
+                    <p>{getFlagEmoji(country.code)} {activeStudentSubject} · {profile.level}</p>
                   </div>
                   <div className="banner-actions">
                     <button
@@ -2525,11 +2612,11 @@ function App() {
         <main className="dashboard-layout">
           <section className="dashboard-main">
             <section className="welcome-banner">
-              <div>
-                <p className="eyebrow">Staff lounge</p>
-                <h2>{firstName}, support today&apos;s learners</h2>
-                <p>{country.name} · {profile.subject}</p>
-              </div>
+                  <div>
+                    <p className="eyebrow">Staff lounge</p>
+                    <h2>{firstName}, support today&apos;s learners</h2>
+                    <p>{getFlagEmoji(country.code)} {country.name} · {profile.subject}</p>
+                  </div>
               <div className="banner-actions">
                 <button type="button" className="primary-button action-button-prominent" onClick={logout}>
                   Sign out
@@ -2769,7 +2856,7 @@ function App() {
                 <section className="setup-panel">
                   <div className="panel-heading">
                     <p className="eyebrow">Admin pages</p>
-                    <h2>Quick pages</h2>
+                    <h2>Open a page</h2>
                   </div>
                   <AdminTabs active={adminView} onChange={openAdminView} />
                   <div className="option-grid">
@@ -2826,7 +2913,7 @@ function App() {
                   <div className="panel-heading">
                     <p className="eyebrow">AI summary</p>
                     <h2>{feedbackSummary.headline}</h2>
-                    <p>{feedbackSummary.detail}</p>
+                    <p>What learners are saying.</p>
                   </div>
                   <div className="mini-stat-list">
                     <article className="mini-stat-card">
@@ -2914,7 +3001,7 @@ function App() {
                   <div>
                     <p className="eyebrow">Admin page</p>
                     <h2>Staff</h2>
-                    <p>Team list.</p>
+                    <p>Team.</p>
                   </div>
                   <div className="banner-actions">
                     <button type="button" className="ghost-button" onClick={() => openAdminView('overview')}>

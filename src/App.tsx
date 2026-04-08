@@ -51,6 +51,35 @@ type ThemeVars = {
   '--theme-ink': string;
 };
 
+type AuthSceneBlob = {
+  top?: string;
+  left?: string;
+  right?: string;
+  bottom?: string;
+  width: string;
+  height: string;
+  background: string;
+  blur?: number;
+  opacity?: number;
+};
+
+type AuthSceneSticker = {
+  icon: string;
+  tone: 'sun' | 'sky' | 'mint' | 'coral' | 'violet';
+  size: number;
+  rotate: number;
+  top?: string;
+  left?: string;
+  right?: string;
+  bottom?: string;
+};
+
+type AuthScene = {
+  id: string;
+  blobs: AuthSceneBlob[];
+  stickers: AuthSceneSticker[];
+};
+
 type QuizState = {
   activeSubject: string;
   kind: AssessmentKind;
@@ -116,7 +145,7 @@ type GeneratedAvatarOption = {
 
 const STORAGE_KEY = 'review-buddy-state';
 const INSTALL_DISMISS_KEY = 'review-buddy-install-dismissed';
-const APP_VERSION = '1.9.2';
+const APP_VERSION = '1.9.3';
 const APP_CREATED_ON = 'March 31, 2026';
 const DEFAULT_ADMIN_USERNAME = 'Admin';
 const DEFAULT_ADMIN_PASSWORD = 'admin';
@@ -204,6 +233,126 @@ const benefitCards = [
     icon: '📈',
     title: 'Clear progress',
     detail: 'Easy scores',
+  },
+];
+
+const AUTH_SCENES: AuthScene[] = [
+  {
+    id: 'playbook',
+    blobs: [
+      {
+        top: '-8%',
+        left: '-10%',
+        width: '420px',
+        height: '420px',
+        background: 'radial-gradient(circle, rgba(251, 146, 60, 0.2) 0%, rgba(251, 146, 60, 0) 72%)',
+        blur: 10,
+        opacity: 0.9,
+      },
+      {
+        top: '14%',
+        right: '-8%',
+        width: '360px',
+        height: '360px',
+        background: 'radial-gradient(circle, rgba(56, 189, 248, 0.18) 0%, rgba(56, 189, 248, 0) 70%)',
+        blur: 12,
+        opacity: 0.85,
+      },
+      {
+        bottom: '-12%',
+        left: '12%',
+        width: '320px',
+        height: '320px',
+        background: 'radial-gradient(circle, rgba(34, 197, 94, 0.14) 0%, rgba(34, 197, 94, 0) 72%)',
+        blur: 16,
+        opacity: 0.75,
+      },
+    ],
+    stickers: [
+      { icon: '📚', tone: 'sun', size: 74, rotate: -8, top: '16%', left: '4%' },
+      { icon: '✏️', tone: 'sky', size: 70, rotate: 8, top: '22%', right: '7%' },
+      { icon: '🎒', tone: 'coral', size: 76, rotate: -6, top: '62%', left: '7%' },
+      { icon: '🧩', tone: 'mint', size: 70, rotate: 10, top: '68%', right: '8%' },
+      { icon: '🌟', tone: 'violet', size: 68, rotate: -12, bottom: '10%', left: '20%' },
+    ],
+  },
+  {
+    id: 'discovery',
+    blobs: [
+      {
+        top: '-12%',
+        right: '10%',
+        width: '420px',
+        height: '420px',
+        background: 'radial-gradient(circle, rgba(168, 85, 247, 0.18) 0%, rgba(168, 85, 247, 0) 72%)',
+        blur: 16,
+        opacity: 0.78,
+      },
+      {
+        top: '12%',
+        left: '-8%',
+        width: '340px',
+        height: '340px',
+        background: 'radial-gradient(circle, rgba(251, 113, 133, 0.16) 0%, rgba(251, 113, 133, 0) 68%)',
+        blur: 18,
+        opacity: 0.82,
+      },
+      {
+        bottom: '-10%',
+        right: '18%',
+        width: '300px',
+        height: '300px',
+        background: 'radial-gradient(circle, rgba(250, 204, 21, 0.15) 0%, rgba(250, 204, 21, 0) 72%)',
+        blur: 18,
+        opacity: 0.7,
+      },
+    ],
+    stickers: [
+      { icon: '🔬', tone: 'sky', size: 74, rotate: -10, top: '18%', left: '5%' },
+      { icon: '🧪', tone: 'mint', size: 68, rotate: 9, top: '18%', right: '11%' },
+      { icon: '🌍', tone: 'sun', size: 78, rotate: -4, top: '58%', left: '10%' },
+      { icon: '🎓', tone: 'violet', size: 72, rotate: 8, top: '64%', right: '7%' },
+      { icon: '📝', tone: 'coral', size: 68, rotate: -8, bottom: '9%', left: '30%' },
+    ],
+  },
+  {
+    id: 'creative',
+    blobs: [
+      {
+        top: '-6%',
+        left: '14%',
+        width: '360px',
+        height: '360px',
+        background: 'radial-gradient(circle, rgba(96, 165, 250, 0.18) 0%, rgba(96, 165, 250, 0) 70%)',
+        blur: 14,
+        opacity: 0.82,
+      },
+      {
+        top: '20%',
+        right: '-5%',
+        width: '380px',
+        height: '380px',
+        background: 'radial-gradient(circle, rgba(250, 204, 21, 0.14) 0%, rgba(250, 204, 21, 0) 70%)',
+        blur: 14,
+        opacity: 0.85,
+      },
+      {
+        bottom: '-12%',
+        left: '-4%',
+        width: '320px',
+        height: '320px',
+        background: 'radial-gradient(circle, rgba(244, 114, 182, 0.14) 0%, rgba(244, 114, 182, 0) 70%)',
+        blur: 18,
+        opacity: 0.75,
+      },
+    ],
+    stickers: [
+      { icon: '🎨', tone: 'coral', size: 76, rotate: -10, top: '16%', left: '7%' },
+      { icon: '📐', tone: 'sun', size: 70, rotate: 7, top: '24%', right: '6%' },
+      { icon: '💡', tone: 'mint', size: 72, rotate: -8, top: '58%', left: '8%' },
+      { icon: '🚌', tone: 'sky', size: 72, rotate: 6, top: '65%', right: '10%' },
+      { icon: '🏀', tone: 'violet', size: 66, rotate: -12, bottom: '10%', right: '24%' },
+    ],
   },
 ];
 
@@ -682,6 +831,7 @@ function App() {
   const [isRecoveryMode, setIsRecoveryMode] = useState(false);
   const [feedbackRatings, setFeedbackRatings] = useState<Record<FeedbackQuestionKey, number>>(createEmptyFeedbackRatings);
   const [feedbackComment, setFeedbackComment] = useState('');
+  const [authScene] = useState(() => AUTH_SCENES[Math.floor(Math.random() * AUTH_SCENES.length)]);
   const speechKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -1775,9 +1925,52 @@ function App() {
   const colorFill = selectedAnswer ? COLOR_MAP[selectedAnswer] : undefined;
 
   return (
-    <div className="app-shell" data-theme={themeMode} style={themeStyle}>
+    <div
+      className={`app-shell${screen === 'auth' ? ' app-shell-auth' : ''}`}
+      data-theme={themeMode}
+      data-auth-scene={screen === 'auth' ? authScene.id : undefined}
+      style={themeStyle}
+    >
       <div className="page-glow page-glow-left" />
       <div className="page-glow page-glow-right" />
+      {screen === 'auth' && (
+        <div className={`auth-scene-layer auth-scene-${authScene.id}`} aria-hidden="true">
+          {authScene.blobs.map((blob, index) => (
+            <span
+              key={`${authScene.id}-blob-${index}`}
+              className="auth-scene-blob"
+              style={{
+                top: blob.top,
+                left: blob.left,
+                right: blob.right,
+                bottom: blob.bottom,
+                width: blob.width,
+                height: blob.height,
+                background: blob.background,
+                filter: `blur(${blob.blur ?? 12}px)`,
+                opacity: blob.opacity ?? 0.8,
+              }}
+            />
+          ))}
+          {authScene.stickers.map((sticker, index) => (
+            <span
+              key={`${authScene.id}-sticker-${index}`}
+              className={`auth-scene-sticker auth-scene-sticker-${sticker.tone}`}
+              style={{
+                top: sticker.top,
+                left: sticker.left,
+                right: sticker.right,
+                bottom: sticker.bottom,
+                width: `${sticker.size}px`,
+                height: `${sticker.size}px`,
+                transform: `rotate(${sticker.rotate}deg)`,
+              }}
+            >
+              <span className="auth-scene-sticker-icon">{sticker.icon}</span>
+            </span>
+          ))}
+        </div>
+      )}
 
       {!isInstalled && showInstallPrompt && installPromptEvent && (
         <section className="install-sheet" role="dialog" aria-live="polite" aria-label="Install Review Buddy">

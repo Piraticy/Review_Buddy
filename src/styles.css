@@ -58,6 +58,67 @@ button:disabled {
     linear-gradient(180deg, #0b1120 0%, #111827 50%, #0f172a 100%);
 }
 
+.app-shell-auth {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.38) 0%, rgba(255, 255, 255, 0.5) 100%),
+    radial-gradient(circle at top left, color-mix(in srgb, var(--theme-secondary) 24%, transparent), transparent 36%),
+    radial-gradient(circle at top right, color-mix(in srgb, var(--theme-accent) 18%, transparent), transparent 32%),
+    linear-gradient(180deg, color-mix(in srgb, var(--theme-surface) 78%, white) 0%, color-mix(in srgb, var(--theme-primary) 7%, white) 100%);
+}
+
+.auth-scene-layer {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.auth-scene-blob,
+.auth-scene-sticker {
+  position: absolute;
+}
+
+.auth-scene-blob {
+  border-radius: 999px;
+}
+
+.auth-scene-sticker {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 24px;
+  border: 1px solid rgba(255, 255, 255, 0.62);
+  box-shadow: 0 20px 34px rgba(15, 23, 42, 0.08);
+  backdrop-filter: blur(14px);
+  opacity: 0.92;
+}
+
+.auth-scene-sticker-icon {
+  font-size: clamp(1.45rem, 2.2vw, 2rem);
+  filter: saturate(1.08);
+}
+
+.auth-scene-sticker-sun {
+  background: linear-gradient(135deg, rgba(254, 240, 138, 0.84), rgba(253, 224, 71, 0.56));
+}
+
+.auth-scene-sticker-sky {
+  background: linear-gradient(135deg, rgba(186, 230, 253, 0.84), rgba(125, 211, 252, 0.54));
+}
+
+.auth-scene-sticker-mint {
+  background: linear-gradient(135deg, rgba(187, 247, 208, 0.84), rgba(110, 231, 183, 0.56));
+}
+
+.auth-scene-sticker-coral {
+  background: linear-gradient(135deg, rgba(254, 205, 211, 0.86), rgba(251, 146, 60, 0.46));
+}
+
+.auth-scene-sticker-violet {
+  background: linear-gradient(135deg, rgba(233, 213, 255, 0.84), rgba(196, 181, 253, 0.54));
+}
+
 .page-glow {
   position: absolute;
   width: 280px;
@@ -271,6 +332,16 @@ button:disabled {
 .app-shell[data-theme='night'] .theme-button {
   background: rgba(30, 41, 59, 0.9);
   color: #f8fafc;
+}
+
+.app-shell[data-theme='night'] .auth-scene-sticker {
+  border-color: rgba(255, 255, 255, 0.12);
+  box-shadow: 0 16px 30px rgba(2, 6, 23, 0.3);
+  opacity: 0.74;
+}
+
+.app-shell[data-theme='night'] .auth-scene-blob {
+  opacity: 0.55 !important;
 }
 
 .theme-button-active {
@@ -1604,6 +1675,16 @@ button:disabled {
     padding: 16px 14px 30px;
   }
 
+  .auth-scene-sticker {
+    opacity: 0.72;
+  }
+
+  .auth-scene-layer > .auth-scene-sticker:nth-child(7),
+  .auth-scene-layer > .auth-scene-sticker:nth-child(8),
+  .auth-scene-layer > .auth-scene-blob:nth-child(1) {
+    display: none;
+  }
+
   .topbar {
     align-items: flex-start;
     gap: 12px;
@@ -1720,6 +1801,13 @@ button:disabled {
 }
 
 @media (max-width: 520px) {
+  .auth-scene-layer > .auth-scene-sticker:nth-child(6),
+  .auth-scene-layer > .auth-scene-sticker:nth-child(7),
+  .auth-scene-layer > .auth-scene-sticker:nth-child(8),
+  .auth-scene-layer > .auth-scene-blob {
+    display: none;
+  }
+
   .topbar {
     align-items: flex-start;
     gap: 10px;

@@ -399,7 +399,7 @@ button:disabled {
 
 .auth-card-wide {
   width: 100%;
-  max-width: 920px;
+  max-width: 860px;
   margin-inline: auto;
 }
 
@@ -407,8 +407,13 @@ button:disabled {
   margin-top: 0;
 }
 
+.auth-benefit-strip {
+  margin-top: 2px;
+}
+
 .benefit-grid-compact .info-card {
-  padding: 12px;
+  padding: 11px 12px;
+  border-radius: 18px;
 }
 
 .signin-shortcuts {
@@ -644,6 +649,35 @@ button:disabled {
 .auth-form {
   display: grid;
   gap: 10px;
+}
+
+.auth-section-card {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border-radius: 22px;
+  border: 1px solid color-mix(in srgb, var(--theme-primary) 12%, white);
+  background: color-mix(in srgb, var(--theme-surface) 96%, white 4%);
+}
+
+.field-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.auth-inline-link {
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--theme-primary);
+  font-size: 0.92rem;
+  font-weight: 800;
+}
+
+.auth-inline-link:hover {
+  text-decoration: underline;
 }
 
 .password-field {
@@ -1643,6 +1677,11 @@ button:disabled {
     border-radius: 22px;
   }
 
+  .auth-section-card {
+    padding: 12px;
+    border-radius: 20px;
+  }
+
   .certificate-top,
   .certificate-footer {
     flex-direction: column;
@@ -1714,6 +1753,11 @@ button:disabled {
 
   .field-span-2 {
     grid-column: span 1;
+  }
+
+  .field-label-row {
+    align-items: flex-start;
+    flex-direction: column;
   }
 
   .book-cover-mark {

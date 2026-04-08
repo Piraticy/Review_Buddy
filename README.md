@@ -3,7 +3,7 @@
 Review Buddy is a responsive after-school learning app for kids and teens.
 It supports country-aware onboarding, age-level learning paths, learner and admin roles, a cleaner public-facing register/sign-in flow, and a shared backend-ready data layer.
 
-Current version: `1.8.9`
+Current version: `1.9.0`
 
 Production URL: `https://review-buddy-gray.vercel.app`
 
@@ -22,7 +22,8 @@ Curriculum-aware notes are now shaped around country-specific curriculum directi
 - Live learner registration and sign-in
 - Default admin login with username `Admin` and password `admin`
 - Avatar choice with generated icons or an uploaded picture during sign-up
-- Boy/girl selection to personalise the learner profile
+- Gender selection to personalise the learner profile
+- Secure forgot-password flow with reset email support
 - More country coverage across Africa, including Kenya, Tanzania, Uganda, Rwanda, Nigeria, Ghana, South Africa, Zambia, Malawi, Ethiopia, and Botswana
 - Country-aware subject mapping, continent/capital context, and theme styling
 - Kindergarten, primary, and teen learning flows

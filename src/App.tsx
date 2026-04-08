@@ -1,4 +1,4 @@
-import { CSSProperties, FormEvent, SVGProps, useEffect, useRef, useState } from 'react';
+import { CSSProperties, ClipboardEvent, FormEvent, SVGProps, useEffect, useRef, useState } from 'react';
 import {
   COUNTRIES,
   MOTTO,
@@ -28,6 +28,7 @@ import {
   type Stage,
 } from './data';
 import { appRepository } from './lib/repository';
+import { supabase } from './lib/supabase';
 
 type AttemptRecord = {
   subject: string;
@@ -115,7 +116,7 @@ type GeneratedAvatarOption = {
 
 const STORAGE_KEY = 'review-buddy-state';
 const INSTALL_DISMISS_KEY = 'review-buddy-install-dismissed';
-const APP_VERSION = '1.8.9';
+const APP_VERSION = '1.9.0';
 const APP_CREATED_ON = 'March 31, 2026';
 const DEFAULT_ADMIN_USERNAME = 'Admin';
 const DEFAULT_ADMIN_PASSWORD = 'admin';
@@ -190,16 +191,16 @@ const themePresets: Record<Exclude<ThemeMode, 'country'>, ThemeVars> = {
 
 const benefitCards = [
   {
-    title: 'Easy to begin',
-    detail: 'Join fast and start learning.',
+    title: 'Fast start',
+    detail: 'Join and begin quickly.',
   },
   {
-    title: 'Practice feels fresh',
-    detail: 'Fresh sets keep practice new.',
+    title: 'Fresh practice',
+    detail: 'New sets stay varied.',
   },
   {
-    title: 'Progress stays clear',
-    detail: 'Scores stay easy to follow.',
+    title: 'Clear progress',
+    detail: 'Scores stay easy to read.',
   },
 ];
 
@@ -636,6 +637,10 @@ function getErrorMessage(error: unknown, fallback: string) {
   return fallback;
 }
 
+function blockPasswordTransfer(event: ClipboardEvent<HTMLInputElement>) {
+  event.preventDefault();
+}
+
 function App() {
   const [profile, setProfile] = useState<LearnerProfile>(createInitialProfile);
   const [attempts, setAttempts] = useState<AttemptRecord[]>([]);
@@ -669,9 +674,39 @@ function App() {
   });
   const [showPassword, setShowPassword] = useState(false);
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [recoveryPassword, setRecoveryPassword] = useState('');
+  const [recoveryConfirmPassword, setRecoveryConfirmPassword] = useState('');
+  const [isRecoveryMode, setIsRecoveryMode] = useState(false);
   const [feedbackRatings, setFeedbackRatings] = useState<Record<FeedbackQuestionKey, number>>(createEmptyFeedbackRatings);
   const [feedbackComment, setFeedbackComment] = useState('');
   const speechKeyRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!supabase) return;
+
+    const recoveryFromHash =
+      window.location.hash.includes('type=recovery') || window.location.search.includes('type=recovery');
+
+    if (recoveryFromHash) {
+      setAuthMode('signin');
+      setIsRecoveryMode(true);
+      setAuthNotice('Set a new password to finish resetting your account.');
+    }
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event) => {
+      if (event === 'PASSWORD_RECOVERY') {
+        setAuthMode('signin');
+        setIsRecoveryMode(true);
+        setAuthNotice('Set a new password to finish resetting your account.');
+      }
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, []);
 
   useEffect(() => {
     const raw = window.localStorage.getItem(STORAGE_KEY);
@@ -1189,6 +1224,26 @@ function App() {
     event.preventDefault();
     setAuthNotice('');
 
+    if (isRecoveryMode) {
+      if (recoveryPassword !== recoveryConfirmPassword) {
+        setAuthNotice('New passwords do not match yet.');
+        return;
+      }
+
+      try {
+        await appRepository.completePasswordReset(recoveryPassword);
+        setRecoveryPassword('');
+        setRecoveryConfirmPassword('');
+        setIsRecoveryMode(false);
+        setShowPassword(false);
+        window.history.replaceState({}, document.title, window.location.pathname);
+        setAuthNotice('Password updated. Sign in with your new password.');
+      } catch (error) {
+        setAuthNotice(getErrorMessage(error, 'We could not save the new password just now.'));
+      }
+      return;
+    }
+
     if (authMode === 'signup') {
       if (profile.password !== confirmPassword) {
         setAuthNotice('Passwords do not match yet.');
@@ -1231,6 +1286,22 @@ function App() {
     enterWorkspace(matchedUser);
   }
 
+  async function handleForgotPassword() {
+    setAuthNotice('');
+
+    try {
+      const email = await appRepository.requestPasswordReset(signinIdentifier);
+      setAuthNotice(`A reset link is on the way to ${email}.`);
+    } catch (error) {
+      setAuthNotice(
+        getErrorMessage(
+          error,
+          'We could not start password reset just now. Please check your email and try again.',
+        ),
+      );
+    }
+  }
+
   function logout() {
     if ('speechSynthesis' in window) {
       window.speechSynthesis.cancel();
@@ -1251,6 +1322,9 @@ function App() {
     setQuizState(null);
     setShowPassword(false);
     setConfirmPassword('');
+    setRecoveryPassword('');
+    setRecoveryConfirmPassword('');
+    setIsRecoveryMode(false);
   }
 
   async function handleInstallApp() {
@@ -1762,11 +1836,23 @@ function App() {
           <section className="auth-card auth-card-wide">
             <div className="panel-heading">
               <p className="eyebrow">Welcome</p>
-              <h2>{authMode === 'signin' ? 'Sign in to continue' : 'Create a new account'}</h2>
-              <p>{authMode === 'signin' ? 'Welcome back.' : 'Quick setup.'}</p>
+              <h2>
+                {isRecoveryMode
+                  ? 'Reset your password'
+                  : authMode === 'signin'
+                    ? 'Sign in to continue'
+                    : 'Create a new account'}
+              </h2>
+              <p>
+                {isRecoveryMode
+                  ? 'Choose a fresh password and get back in.'
+                  : authMode === 'signin'
+                    ? 'Welcome back.'
+                    : 'Quick setup.'}
+              </p>
             </div>
 
-            <div className="benefit-grid benefit-grid-compact">
+            <div className="benefit-grid benefit-grid-compact auth-benefit-strip">
               {benefitCards.map((card) => (
                 <article key={card.title} className="info-card">
                   <strong>{card.title}</strong>
@@ -1775,7 +1861,8 @@ function App() {
               ))}
             </div>
 
-            <div className="mode-toggle" role="tablist" aria-label="Account mode">
+            {!isRecoveryMode && (
+              <div className="mode-toggle" role="tablist" aria-label="Account mode">
               <button
                 type="button"
                 className={`mode-toggle-button${authMode === 'signin' ? ' mode-toggle-button-active' : ''}`}
@@ -1783,6 +1870,7 @@ function App() {
                   setAuthMode('signin');
                   setAuthNotice('');
                   setShowPassword(false);
+                  setIsRecoveryMode(false);
                   updateProfile('password', '');
                 }}
               >
@@ -1795,6 +1883,7 @@ function App() {
                   setAuthMode('signup');
                   setAuthNotice('');
                   setShowPassword(false);
+                  setIsRecoveryMode(false);
                   setProfile((current) =>
                     normalizeLearnerProfile({
                       ...current,
@@ -1806,11 +1895,66 @@ function App() {
               >
                 Register
               </button>
-            </div>
+              </div>
+            )}
 
             <form className="auth-form" onSubmit={handleAuthSubmit}>
+              {isRecoveryMode && (
+                <div className="auth-section-card">
+                  <div className="panel-heading">
+                    <p className="eyebrow">Secure reset</p>
+                    <h2>Choose a new password</h2>
+                    <p>Use a password you can remember easily.</p>
+                  </div>
+                  <div className="field-grid auth-field-grid">
+                    <label>
+                      New password
+                      <div className="password-field">
+                        <input
+                          type={showPassword ? 'text' : 'password'}
+                          value={recoveryPassword}
+                          onChange={(event) => setRecoveryPassword(event.target.value)}
+                          onCopy={blockPasswordTransfer}
+                          onCut={blockPasswordTransfer}
+                          onPaste={blockPasswordTransfer}
+                          placeholder="Create new password"
+                          autoComplete="new-password"
+                          required
+                        />
+                        <button
+                          type="button"
+                          className="password-toggle"
+                          onClick={() => setShowPassword((current) => !current)}
+                          aria-label={showPassword ? 'Hide password' : 'Show password'}
+                        >
+                          {showPassword ? 'Hide' : 'Show'}
+                        </button>
+                      </div>
+                    </label>
+
+                    <label>
+                      Confirm password
+                      <div className="password-field">
+                        <input
+                          type={showPassword ? 'text' : 'password'}
+                          value={recoveryConfirmPassword}
+                          onChange={(event) => setRecoveryConfirmPassword(event.target.value)}
+                          onCopy={blockPasswordTransfer}
+                          onCut={blockPasswordTransfer}
+                          onPaste={blockPasswordTransfer}
+                          placeholder="Repeat new password"
+                          autoComplete="new-password"
+                          required
+                        />
+                      </div>
+                    </label>
+                  </div>
+                </div>
+              )}
+
               {authMode === 'signup' && (
-                <div className="field-grid auth-field-grid">
+                <div className="auth-section-card">
+                  <div className="field-grid auth-field-grid">
                   <label className="field-span-2">
                     Full name
                     <input
@@ -1839,7 +1983,11 @@ function App() {
                         type={showPassword ? 'text' : 'password'}
                         value={profile.password}
                         onChange={(event) => updateProfile('password', event.target.value)}
+                        onCopy={blockPasswordTransfer}
+                        onCut={blockPasswordTransfer}
+                        onPaste={blockPasswordTransfer}
                         placeholder="Create password"
+                        autoComplete="new-password"
                         required
                       />
                       <button
@@ -1860,15 +2008,20 @@ function App() {
                         type={showPassword ? 'text' : 'password'}
                         value={confirmPassword}
                         onChange={(event) => setConfirmPassword(event.target.value)}
+                        onCopy={blockPasswordTransfer}
+                        onCut={blockPasswordTransfer}
+                        onPaste={blockPasswordTransfer}
                         placeholder="Repeat password"
+                        autoComplete="new-password"
                         required
                       />
                     </div>
                   </label>
+                  </div>
                 </div>
               )}
 
-              {authMode === 'signin' && (
+              {authMode === 'signin' && !isRecoveryMode && (
                 <>
                   <label>
                     Email or username
@@ -1882,13 +2035,22 @@ function App() {
                   </label>
 
                   <label>
-                    Password
+                    <span className="field-label-row">
+                      <span>Password</span>
+                      <button type="button" className="auth-inline-link" onClick={handleForgotPassword}>
+                        Forgot password?
+                      </button>
+                    </span>
                     <div className="password-field">
                       <input
                         type={showPassword ? 'text' : 'password'}
                         value={profile.password}
                         onChange={(event) => updateProfile('password', event.target.value)}
+                        onCopy={blockPasswordTransfer}
+                        onCut={blockPasswordTransfer}
+                        onPaste={blockPasswordTransfer}
                         placeholder="Enter password"
+                        autoComplete="current-password"
                         required
                       />
                       <button
@@ -1907,7 +2069,7 @@ function App() {
               {authMode === 'signup' && (
                 <div className="field-grid">
                   <label>
-                    Boy or girl
+                    Gender
                     <select
                       value={profile.gender}
                       onChange={(event) => updateGender(event.target.value as LearnerGender)}
@@ -2019,7 +2181,7 @@ function App() {
               {authNotice && <p className="auth-notice">{authNotice}</p>}
 
               <button className="primary-button" type="submit">
-                {authMode === 'signin' ? 'Continue' : 'Create account'}
+                {isRecoveryMode ? 'Save new password' : authMode === 'signin' ? 'Continue' : 'Create account'}
               </button>
             </form>
           </section>

@@ -311,6 +311,63 @@ async function resendRegistrationCode(email: string) {
   return normalizedEmail;
 }
 
+async function requestPasswordReset(identifier: string) {
+  if (!supabase) {
+    throw new Error('Password reset is not available right now.');
+  }
+
+  let email = identifier.trim().toLowerCase();
+
+  if (!email) {
+    throw new Error('Enter your email first.');
+  }
+
+  if (email === 'admin') {
+    email = DEFAULT_ADMIN_EMAIL;
+  } else if (email === 'staff') {
+    email = DEFAULT_STAFF_EMAIL;
+  }
+
+  if (!email.includes('@')) {
+    const { data: usernameRow } = await supabase
+      .from('learner_profiles')
+      .select('email')
+      .eq('username', email)
+      .limit(1)
+      .maybeSingle();
+
+    if (usernameRow?.email) {
+      email = String(usernameRow.email).toLowerCase();
+    }
+  }
+
+  if (!email.includes('@')) {
+    throw new Error('Use your email address to reset the password.');
+  }
+
+  const redirectTo = typeof window !== 'undefined' ? window.location.origin : undefined;
+  const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo });
+
+  if (error) {
+    throw error;
+  }
+
+  return email;
+}
+
+async function completePasswordReset(password: string) {
+  if (!supabase) {
+    throw new Error('Password reset is not available right now.');
+  }
+
+  const { error } = await supabase.auth.updateUser({ password });
+  if (error) {
+    throw error;
+  }
+
+  await supabase.auth.signOut();
+}
+
 async function signIn(identifier: string, password: string) {
   const normalizedIdentifier = identifier.trim();
 
@@ -636,6 +693,8 @@ export const appRepository = {
   sendRegistrationCode,
   verifyRegistrationCode,
   resendRegistrationCode,
+  requestPasswordReset,
+  completePasswordReset,
   signIn,
   syncLearnerProfile,
   listRegisteredUsers,

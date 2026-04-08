@@ -409,11 +409,33 @@ button:disabled {
 
 .auth-benefit-strip {
   margin-top: 2px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
 }
 
 .benefit-grid-compact .info-card {
-  padding: 11px 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
   border-radius: 18px;
+}
+
+.info-card-icon {
+  width: 34px;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--theme-secondary) 16%, white);
+  font-size: 1rem;
+  flex: 0 0 auto;
+}
+
+.info-card-copy {
+  display: grid;
+  gap: 2px;
 }
 
 .signin-shortcuts {
@@ -1675,6 +1697,10 @@ button:disabled {
   .hero-card {
     padding: 14px;
     border-radius: 22px;
+  }
+
+  .auth-benefit-strip {
+    grid-template-columns: 1fr;
   }
 
   .auth-section-card {

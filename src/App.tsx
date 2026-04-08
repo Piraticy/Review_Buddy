@@ -116,7 +116,7 @@ type GeneratedAvatarOption = {
 
 const STORAGE_KEY = 'review-buddy-state';
 const INSTALL_DISMISS_KEY = 'review-buddy-install-dismissed';
-const APP_VERSION = '1.9.1';
+const APP_VERSION = '1.9.2';
 const APP_CREATED_ON = 'March 31, 2026';
 const DEFAULT_ADMIN_USERNAME = 'Admin';
 const DEFAULT_ADMIN_PASSWORD = 'admin';
@@ -191,16 +191,19 @@ const themePresets: Record<Exclude<ThemeMode, 'country'>, ThemeVars> = {
 
 const benefitCards = [
   {
+    icon: '⚡',
     title: 'Fast start',
-    detail: 'Join and begin quickly.',
+    detail: 'Join quickly',
   },
   {
+    icon: '🧠',
     title: 'Fresh practice',
-    detail: 'New sets stay varied.',
+    detail: 'New sets',
   },
   {
+    icon: '📈',
     title: 'Clear progress',
-    detail: 'Scores stay easy to read.',
+    detail: 'Easy scores',
   },
 ];
 
@@ -1855,8 +1858,11 @@ function App() {
             <div className="benefit-grid benefit-grid-compact auth-benefit-strip">
               {benefitCards.map((card) => (
                 <article key={card.title} className="info-card">
-                  <strong>{card.title}</strong>
-                  <p>{card.detail}</p>
+                  <span className="info-card-icon" aria-hidden="true">{card.icon}</span>
+                  <div className="info-card-copy">
+                    <strong>{card.title}</strong>
+                    <p>{card.detail}</p>
+                  </div>
                 </article>
               ))}
             </div>

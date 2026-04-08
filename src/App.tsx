@@ -116,7 +116,7 @@ type GeneratedAvatarOption = {
 
 const STORAGE_KEY = 'review-buddy-state';
 const INSTALL_DISMISS_KEY = 'review-buddy-install-dismissed';
-const APP_VERSION = '1.9.0';
+const APP_VERSION = '1.9.1';
 const APP_CREATED_ON = 'March 31, 2026';
 const DEFAULT_ADMIN_USERNAME = 'Admin';
 const DEFAULT_ADMIN_PASSWORD = 'admin';
@@ -2017,6 +2017,17 @@ function App() {
                       />
                     </div>
                   </label>
+
+                  <label>
+                    Gender
+                    <select
+                      value={profile.gender}
+                      onChange={(event) => updateGender(event.target.value as LearnerGender)}
+                    >
+                      <option value="boy">Boy</option>
+                      <option value="girl">Girl</option>
+                    </select>
+                  </label>
                   </div>
                 </div>
               )}
@@ -2068,17 +2079,6 @@ function App() {
 
               {authMode === 'signup' && (
                 <div className="field-grid">
-                  <label>
-                    Gender
-                    <select
-                      value={profile.gender}
-                      onChange={(event) => updateGender(event.target.value as LearnerGender)}
-                    >
-                      <option value="boy">Boy</option>
-                      <option value="girl">Girl</option>
-                    </select>
-                  </label>
-
                   <label>
                     Country
                     <select

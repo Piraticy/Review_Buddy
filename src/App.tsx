@@ -25,6 +25,8 @@ import {
   type QuestionArt,
   type QuizResult,
   type RegisteredUser,
+  type StaffMaterial,
+  type StaffMaterialCategory,
   type Stage,
 } from './data';
 import { appRepository } from './lib/repository';
@@ -111,6 +113,16 @@ type FeedbackEntry = {
 };
 
 type FeedbackQuestionKey = 'ease' | 'clarity' | 'look' | 'speed' | 'confidence';
+type StaffMaterialDraft = {
+  title: string;
+  summary: string;
+  body: string;
+  countryCode: string;
+  stage: Stage;
+  level: string;
+  subject: string;
+  category: StaffMaterialCategory;
+};
 
 type StoredState = {
   appVersion?: string;
@@ -126,6 +138,7 @@ type StoredState = {
   selectedSubject?: string | null;
   reviewSnapshot?: ReviewSnapshot | null;
   staffMembers?: AdminStaffMember[];
+  staffMaterials?: StaffMaterial[];
   adminActivityByCountry?: AdminActivityMap;
   followUpsByCountry?: AdminFollowUpMap;
   feedbackEntries?: FeedbackEntry[];
@@ -145,7 +158,7 @@ type GeneratedAvatarOption = {
 
 const STORAGE_KEY = 'review-buddy-state';
 const INSTALL_DISMISS_KEY = 'review-buddy-install-dismissed';
-const APP_VERSION = '1.9.3';
+const APP_VERSION = '1.10.0';
 const APP_CREATED_ON = 'March 31, 2026';
 const DEFAULT_ADMIN_USERNAME = 'Admin';
 const DEFAULT_ADMIN_PASSWORD = 'admin';
@@ -375,6 +388,20 @@ function createInitialProfile(): LearnerProfile {
     level: getLevelOptions(stage)[0],
     mode: 'solo',
     subject,
+  };
+}
+
+function createInitialMaterialDraft(countryCode = inferCountryCode()): StaffMaterialDraft {
+  const stage: Stage = 'primary';
+  return {
+    title: '',
+    summary: '',
+    body: '',
+    countryCode,
+    stage,
+    level: getLevelOptions(stage)[0],
+    subject: getAvailableSubjects(countryCode, stage, 'free')[0],
+    category: 'reading',
   };
 }
 
@@ -815,6 +842,7 @@ function App() {
   const [isInstalled, setIsInstalled] = useState(false);
   const [adminFocusCode, setAdminFocusCode] = useState(() => createInitialProfile().countryCode);
   const [staffMembers, setStaffMembers] = useState<AdminStaffMember[]>([]);
+  const [staffMaterials, setStaffMaterials] = useState<StaffMaterial[]>([]);
   const [adminActivityByCountry, setAdminActivityByCountry] = useState<AdminActivityMap>({});
   const [followUpsByCountry, setFollowUpsByCountry] = useState<AdminFollowUpMap>({});
   const [feedbackEntries, setFeedbackEntries] = useState<FeedbackEntry[]>([]);
@@ -824,6 +852,9 @@ function App() {
     role: '',
     focus: '',
   });
+  const [staffMaterialDraft, setStaffMaterialDraft] = useState<StaffMaterialDraft>(() =>
+    createInitialMaterialDraft(createInitialProfile().countryCode),
+  );
   const [showPassword, setShowPassword] = useState(false);
   const [confirmPassword, setConfirmPassword] = useState('');
   const [recoveryPassword, setRecoveryPassword] = useState('');
@@ -890,6 +921,7 @@ function App() {
       if (saved.reviewSnapshot) setReviewSnapshot(saved.reviewSnapshot);
       if (saved.quizState) setQuizState(saved.quizState);
       if (saved.staffMembers) setStaffMembers(saved.staffMembers);
+      if (saved.staffMaterials) setStaffMaterials(saved.staffMaterials);
       if (saved.adminActivityByCountry) setAdminActivityByCountry(saved.adminActivityByCountry);
       if (saved.followUpsByCountry) setFollowUpsByCountry(saved.followUpsByCountry);
       if (saved.feedbackEntries) setFeedbackEntries(saved.feedbackEntries);
@@ -943,9 +975,10 @@ function App() {
     let cancelled = false;
 
     async function hydrateSharedData() {
-      const [repoUsers, repoStaff] = await Promise.all([
+      const [repoUsers, repoStaff, repoMaterials] = await Promise.all([
         appRepository.listRegisteredUsers(),
         appRepository.listStaffMembers(),
+        appRepository.listStaffMaterials(),
       ]);
 
       if (cancelled) return;
@@ -956,6 +989,10 @@ function App() {
 
       if (repoStaff.length > 0) {
         setStaffMembers(repoStaff);
+      }
+
+      if (repoMaterials.length > 0) {
+        setStaffMaterials(repoMaterials);
       }
     }
 
@@ -985,6 +1022,7 @@ function App() {
         reviewSnapshot,
         quizState,
         staffMembers,
+        staffMaterials,
         adminActivityByCountry,
         followUpsByCountry,
         feedbackEntries,
@@ -1004,6 +1042,7 @@ function App() {
     screen,
     selectedSubject,
     staffMembers,
+    staffMaterials,
     studentView,
     themeMode,
     feedbackEntries,
@@ -1036,6 +1075,25 @@ function App() {
       setAdminFocusCode(profile.countryCode);
     }
   }, [profile.countryCode, screen]);
+
+  useEffect(() => {
+    setStaffMaterialDraft((current) => {
+      const levelOptions = getLevelOptions(current.stage);
+      const nextLevel = levelOptions.includes(current.level) ? current.level : levelOptions[0];
+      const subjectOptions = getAvailableSubjects(current.countryCode, current.stage, 'elite');
+      const nextSubject = subjectOptions.includes(current.subject) ? current.subject : subjectOptions[0];
+
+      if (nextLevel === current.level && nextSubject === current.subject) {
+        return current;
+      }
+
+      return {
+        ...current,
+        level: nextLevel,
+        subject: nextSubject,
+      };
+    });
+  }, [staffMaterialDraft.countryCode, staffMaterialDraft.stage]);
 
   const country = getCountryByCode(profile.countryCode);
   const availableSubjects = getAvailableSubjects(profile.countryCode, profile.stage, profile.plan);
@@ -1199,6 +1257,19 @@ function App() {
   );
   const generatedAvatarOptions = getGeneratedAvatarOptions(profile.gender);
   const chosenAvatarOption = generatedAvatarOptions.find((option) => option.emoji === profile.avatarEmoji);
+  const matchingStaffMaterials = staffMaterials.filter(
+    (material) =>
+      material.countryCode === profile.countryCode &&
+      material.stage === profile.stage &&
+      material.level === profile.level &&
+      material.subject === activeStudentSubject,
+  );
+  const readingMaterials = matchingStaffMaterials.filter((material) => material.category === 'reading');
+  const quizMaterials = matchingStaffMaterials.filter((material) => material.category === 'quiz');
+  const examMaterials = matchingStaffMaterials.filter((material) => material.category === 'exam');
+  const staffFocusMaterials = staffMaterials.filter(
+    (material) => material.countryCode === staffMaterialDraft.countryCode,
+  );
 
   useEffect(() => {
     if ('speechSynthesis' in window) {
@@ -1528,6 +1599,61 @@ function App() {
       focus: '',
     });
     setAdminNotice(`A new staff profile was added for ${focusCountry.name}.`);
+  }
+
+  function updateStaffMaterialDraft<Key extends keyof StaffMaterialDraft>(key: Key, value: StaffMaterialDraft[Key]) {
+    setStaffMaterialDraft((current) => {
+      const next = {
+        ...current,
+        [key]: value,
+      };
+
+      if (key === 'stage' || key === 'countryCode') {
+        const nextStage = key === 'stage' ? (value as Stage) : next.stage;
+        const nextCountryCode = key === 'countryCode' ? (value as string) : next.countryCode;
+        const levelOptions = getLevelOptions(nextStage);
+        const subjectOptions = getAvailableSubjects(nextCountryCode, nextStage, 'elite');
+
+        next.level = levelOptions.includes(next.level) ? next.level : levelOptions[0];
+        next.subject = subjectOptions.includes(next.subject) ? next.subject : subjectOptions[0];
+      }
+
+      return next;
+    });
+  }
+
+  async function addStaffMaterial() {
+    if (!staffMaterialDraft.title.trim() || !staffMaterialDraft.summary.trim() || !staffMaterialDraft.body.trim()) {
+      setAdminNotice('Add a title, short summary, and the learning material before assigning it.');
+      return;
+    }
+
+    const savedMaterial = await appRepository.addStaffMaterial({
+      id: `material-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+      title: staffMaterialDraft.title.trim(),
+      summary: staffMaterialDraft.summary.trim(),
+      body: staffMaterialDraft.body.trim(),
+      countryCode: staffMaterialDraft.countryCode,
+      stage: staffMaterialDraft.stage,
+      level: staffMaterialDraft.level,
+      subject: staffMaterialDraft.subject,
+      category: staffMaterialDraft.category,
+      uploadedBy: profile.fullName.trim() || DEFAULT_STAFF_USERNAME,
+      createdAt: new Date().toISOString(),
+    });
+
+    setStaffMaterials((current) => [savedMaterial, ...current]);
+    setStaffMaterialDraft(createInitialMaterialDraft(profile.countryCode));
+    setAdminNotice(
+      `${savedMaterial.title} was assigned to ${getFlagEmoji(savedMaterial.countryCode)} ${getCountryByCode(savedMaterial.countryCode).name}, ${savedMaterial.level}, ${savedMaterial.subject}.`,
+    );
+  }
+
+  async function removeStaffMaterial(materialId: string) {
+    const material = staffMaterials.find((entry) => entry.id === materialId);
+    await appRepository.removeStaffMaterial(materialId);
+    setStaffMaterials((current) => current.filter((entry) => entry.id !== materialId));
+    setAdminNotice(`${material?.title ?? 'That material'} was removed from staff materials.`);
   }
 
   async function removeStaffMember(memberIdOrName: string) {
@@ -2603,6 +2729,20 @@ function App() {
                       <span>Longer test run.</span>
                     </button>
                   </div>
+                  {matchingStaffMaterials.length > 0 && (
+                    <div className="staff-material-summary">
+                      <div className="panel-heading">
+                        <p className="eyebrow">Teacher picks</p>
+                        <h2>Assigned for this class</h2>
+                        <p>{getFlagEmoji(country.code)} {country.name} · {profile.level}</p>
+                      </div>
+                      <div className="material-pill-row">
+                        <span className="mini-badge">📘 {readingMaterials.length} notes</span>
+                        <span className="mini-badge">📝 {quizMaterials.length} quiz guides</span>
+                        <span className="mini-badge">🎓 {examMaterials.length} exam guides</span>
+                      </div>
+                    </div>
+                  )}
                 </section>
               </section>
 
@@ -2702,6 +2842,32 @@ function App() {
                     <strong>{learningMaterial.intro}</strong>
                     <p>{learningMaterial.activityHint}</p>
                   </article>
+                  {readingMaterials.length > 0 && (
+                    <section className="teacher-materials-panel">
+                      <div className="panel-heading">
+                        <p className="eyebrow">Teacher materials</p>
+                        <h2>Assigned reading</h2>
+                        <p>These notes were added for this country, level, and subject.</p>
+                      </div>
+                      <div className="teacher-material-grid">
+                        {readingMaterials.map((material) => (
+                          <article key={material.id} className="teacher-material-card">
+                            <div className="teacher-material-head">
+                              <strong>{material.title}</strong>
+                              <span className="mini-badge">{getFlagEmoji(material.countryCode)} {material.level}</span>
+                            </div>
+                            <p>{material.summary}</p>
+                            <div className="teacher-material-body">
+                              {material.body.split('\n').filter(Boolean).map((line, index) => (
+                                <p key={`${material.id}-${index}`}>{line}</p>
+                              ))}
+                            </div>
+                            <span className="teacher-material-meta">Added by {material.uploadedBy}</span>
+                          </article>
+                        ))}
+                      </div>
+                    </section>
+                  )}
                   <div className="chapter-list">
                     {learningMaterial.chapters.map((chapter, index) => (
                       <article key={`${chapter.title}-${index}`} className="chapter-card">
@@ -3072,6 +3238,129 @@ function App() {
                 )}
               </div>
             </section>
+
+            <section className="setup-panel">
+              <div className="panel-heading">
+                <p className="eyebrow">Upload material</p>
+                <h2>Assign to learners</h2>
+                <p>Choose the right country, class, subject, and material type before sending it out.</p>
+              </div>
+              <div className="field-grid">
+                <label>
+                  Country
+                  <select
+                    value={staffMaterialDraft.countryCode}
+                    onChange={(event) => updateStaffMaterialDraft('countryCode', event.target.value)}
+                  >
+                    {COUNTRIES.map((entry) => (
+                      <option key={entry.code} value={entry.code}>
+                        {getFlagEmoji(entry.code)} {entry.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Learner group
+                  <select
+                    value={staffMaterialDraft.stage}
+                    onChange={(event) => updateStaffMaterialDraft('stage', event.target.value as Stage)}
+                  >
+                    <option value="kindergarten">Kindergarten</option>
+                    <option value="primary">Primary</option>
+                    <option value="teen">Teen</option>
+                  </select>
+                </label>
+                <label>
+                  Level
+                  <select
+                    value={staffMaterialDraft.level}
+                    onChange={(event) => updateStaffMaterialDraft('level', event.target.value)}
+                  >
+                    {getLevelOptions(staffMaterialDraft.stage).map((entry) => (
+                      <option key={entry} value={entry}>{entry}</option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Subject
+                  <select
+                    value={staffMaterialDraft.subject}
+                    onChange={(event) => updateStaffMaterialDraft('subject', event.target.value)}
+                  >
+                    {getAvailableSubjects(staffMaterialDraft.countryCode, staffMaterialDraft.stage, 'elite').map((entry) => (
+                      <option key={entry} value={entry}>{entry}</option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Category
+                  <select
+                    value={staffMaterialDraft.category}
+                    onChange={(event) => updateStaffMaterialDraft('category', event.target.value as StaffMaterialCategory)}
+                  >
+                    <option value="reading">Reading material</option>
+                    <option value="quiz">Quiz guide</option>
+                    <option value="exam">Exam guide</option>
+                  </select>
+                </label>
+                <label className="field-span-2">
+                  Title
+                  <input
+                    value={staffMaterialDraft.title}
+                    onChange={(event) => updateStaffMaterialDraft('title', event.target.value)}
+                    placeholder="Material title"
+                  />
+                </label>
+                <label className="field-span-2">
+                  Summary
+                  <input
+                    value={staffMaterialDraft.summary}
+                    onChange={(event) => updateStaffMaterialDraft('summary', event.target.value)}
+                    placeholder="Short line learners will see first"
+                  />
+                </label>
+                <label className="field-span-2">
+                  Material
+                  <textarea
+                    value={staffMaterialDraft.body}
+                    onChange={(event) => updateStaffMaterialDraft('body', event.target.value)}
+                    placeholder="Paste the reading material, quiz guide, or exam support notes here."
+                    rows={6}
+                  />
+                </label>
+              </div>
+              <div className="banner-actions">
+                <button type="button" className="primary-button" onClick={addStaffMaterial}>
+                  Assign material
+                </button>
+              </div>
+              <div className="teacher-material-grid">
+                {staffFocusMaterials.length > 0 ? staffFocusMaterials.slice(0, 6).map((material) => (
+                  <article key={material.id} className="teacher-material-card">
+                    <div className="teacher-material-head">
+                      <strong>{material.title}</strong>
+                      <span className="mini-badge">{material.category}</span>
+                    </div>
+                    <p>{material.summary}</p>
+                    <span className="teacher-material-meta">
+                      {getFlagEmoji(material.countryCode)} {getCountryByCode(material.countryCode).name} · {material.subject} · {material.level}
+                    </span>
+                    <div className="row-actions">
+                      <strong>{material.uploadedBy}</strong>
+                      <button
+                        type="button"
+                        className="ghost-button ghost-button-small"
+                        onClick={() => removeStaffMaterial(material.id)}
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  </article>
+                )) : (
+                  <p className="empty-state">Assigned materials will appear here after staff upload them.</p>
+                )}
+              </div>
+            </section>
           </section>
 
           <aside className="dashboard-side">
@@ -3095,6 +3384,18 @@ function App() {
                 )) : (
                   <p className="empty-state">Survey replies will show here after learners send feedback.</p>
                 )}
+              </div>
+            </section>
+            <section className="side-card">
+              <div className="panel-heading">
+                <p className="eyebrow">Assignments</p>
+                <h2>Ready for learners</h2>
+                <p>Materials go to matching countries, classes, and subjects.</p>
+              </div>
+              <div className="material-pill-row">
+                <span className="mini-badge">📘 {staffMaterials.filter((material) => material.category === 'reading').length}</span>
+                <span className="mini-badge">📝 {staffMaterials.filter((material) => material.category === 'quiz').length}</span>
+                <span className="mini-badge">🎓 {staffMaterials.filter((material) => material.category === 'exam').length}</span>
               </div>
             </section>
           </aside>

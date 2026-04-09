@@ -969,6 +969,59 @@ button:disabled {
   border: 1px solid color-mix(in srgb, var(--theme-primary) 14%, white);
 }
 
+.staff-material-summary,
+.teacher-materials-panel {
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+  border-radius: 24px;
+  background: color-mix(in srgb, var(--theme-secondary) 8%, var(--theme-surface));
+  border: 1px solid color-mix(in srgb, var(--theme-primary) 14%, white);
+}
+
+.material-pill-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.teacher-material-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 14px;
+}
+
+.teacher-material-card {
+  display: grid;
+  gap: 10px;
+  padding: 16px;
+  border-radius: 22px;
+  border: 1px solid color-mix(in srgb, var(--theme-primary) 16%, white);
+  background: color-mix(in srgb, var(--theme-surface) 95%, white 5%);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--theme-primary) 7%, white);
+}
+
+.teacher-material-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.teacher-material-body {
+  display: grid;
+  gap: 8px;
+}
+
+.teacher-material-body p {
+  margin: 0;
+}
+
+.teacher-material-meta {
+  color: color-mix(in srgb, var(--theme-ink) 70%, #64748b);
+  font-size: 0.9rem;
+}
+
 .chapter-list {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -1048,7 +1101,10 @@ button:disabled {
 
 .app-shell[data-theme='night'] .country-button,
 .app-shell[data-theme='night'] .certificate-card,
-.app-shell[data-theme='night'] .country-group-card {
+.app-shell[data-theme='night'] .country-group-card,
+.app-shell[data-theme='night'] .staff-material-summary,
+.app-shell[data-theme='night'] .teacher-materials-panel,
+.app-shell[data-theme='night'] .teacher-material-card {
   border-color: rgba(148, 163, 184, 0.24);
   background: rgba(15, 23, 42, 0.9);
 }

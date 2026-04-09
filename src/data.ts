@@ -126,6 +126,22 @@ export type AdminStaffMember = {
   countryCode?: string;
 };
 
+export type StaffMaterialCategory = 'reading' | 'quiz' | 'exam';
+
+export type StaffMaterial = {
+  id: string;
+  title: string;
+  summary: string;
+  body: string;
+  countryCode: string;
+  stage: Stage;
+  level: string;
+  subject: string;
+  category: StaffMaterialCategory;
+  uploadedBy: string;
+  createdAt: string;
+};
+
 export type SubjectMeta = {
   icon: string;
   title: string;

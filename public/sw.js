@@ -1,4 +1,4 @@
-const CACHE_NAME = 'review-buddy-v1-9-3';
+const CACHE_NAME = 'review-buddy-v1-10-0';
 const APP_SHELL = [
   './',
   './manifest.webmanifest',

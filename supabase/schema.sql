@@ -30,8 +30,23 @@ create table if not exists public.staff_members (
   created_at timestamptz not null default now()
 );
 
+create table if not exists public.staff_materials (
+  id text primary key,
+  title text not null,
+  summary text not null,
+  body text not null,
+  country_code text not null,
+  stage text not null,
+  level text not null,
+  subject text not null,
+  category text not null,
+  uploaded_by text not null,
+  created_at timestamptz not null default now()
+);
+
 alter table public.learner_profiles enable row level security;
 alter table public.staff_members enable row level security;
+alter table public.staff_materials enable row level security;
 
 drop policy if exists "Public can read learner usernames" on public.learner_profiles;
 create policy "Public can read learner usernames"
@@ -61,6 +76,24 @@ with check (auth.role() = 'authenticated');
 drop policy if exists "Authenticated users can delete staff" on public.staff_members;
 create policy "Authenticated users can delete staff"
 on public.staff_members
+for delete
+using (auth.role() = 'authenticated');
+
+drop policy if exists "Authenticated users can read staff materials" on public.staff_materials;
+create policy "Authenticated users can read staff materials"
+on public.staff_materials
+for select
+using (auth.role() = 'authenticated');
+
+drop policy if exists "Authenticated users can add staff materials" on public.staff_materials;
+create policy "Authenticated users can add staff materials"
+on public.staff_materials
+for insert
+with check (auth.role() = 'authenticated');
+
+drop policy if exists "Authenticated users can delete staff materials" on public.staff_materials;
+create policy "Authenticated users can delete staff materials"
+on public.staff_materials
 for delete
 using (auth.role() = 'authenticated');
 

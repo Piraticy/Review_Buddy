@@ -1,4 +1,4 @@
-import type { AdminStaffMember, LearnerProfile, RegisteredUser } from '../data';
+import type { AdminStaffMember, LearnerProfile, RegisteredUser, StaffMaterial } from '../data';
 import { getCountryByCode } from '../data';
 import { supabase } from './supabase';
 
@@ -11,6 +11,7 @@ const DEFAULT_STAFF_PASSWORD = 'staff';
 type StoredState = {
   registeredUsers?: RegisteredUser[];
   staffMembers?: AdminStaffMember[];
+  staffMaterials?: StaffMaterial[];
 };
 
 type VerificationRequest = {
@@ -158,6 +159,22 @@ function mapStaffRow(row: Record<string, unknown>): AdminStaffMember {
     focus: String(row.focus ?? ''),
     status: String(row.status ?? 'Online'),
     countryCode: row.country_code ? String(row.country_code) : undefined,
+  };
+}
+
+function mapStaffMaterialRow(row: Record<string, unknown>): StaffMaterial {
+  return {
+    id: String(row.id ?? ''),
+    title: String(row.title ?? ''),
+    summary: String(row.summary ?? ''),
+    body: String(row.body ?? ''),
+    countryCode: String(row.country_code ?? 'KE'),
+    stage: (row.stage as StaffMaterial['stage']) ?? 'primary',
+    level: String(row.level ?? 'Grade 1'),
+    subject: String(row.subject ?? 'Mathematics'),
+    category: (row.category as StaffMaterial['category']) ?? 'reading',
+    uploadedBy: String(row.uploaded_by ?? 'Staff'),
+    createdAt: String(row.created_at ?? new Date().toISOString()),
   };
 }
 
@@ -516,6 +533,31 @@ async function listStaffMembers() {
   return mergedStaff;
 }
 
+async function listStaffMaterials() {
+  const localMaterials = readStoredState().staffMaterials ?? [];
+
+  if (!supabase) {
+    return localMaterials;
+  }
+
+  const { data, error } = await supabase
+    .from('staff_materials')
+    .select('*')
+    .order('created_at', { ascending: false });
+
+  if (error || !data) {
+    return localMaterials;
+  }
+
+  const remoteMaterials = data.map((row) => mapStaffMaterialRow(row));
+  return [
+    ...remoteMaterials,
+    ...localMaterials.filter(
+      (localMaterial) => !remoteMaterials.some((remoteMaterial) => remoteMaterial.id === localMaterial.id),
+    ),
+  ];
+}
+
 async function addStaffMember(member: AdminStaffMember) {
   if (!supabase) {
     const localStaff = readStoredState().staffMembers ?? [];
@@ -549,6 +591,38 @@ async function addStaffMember(member: AdminStaffMember) {
   return mapStaffRow(data);
 }
 
+async function addStaffMaterial(material: StaffMaterial) {
+  const localMaterials = readStoredState().staffMaterials ?? [];
+
+  if (!supabase) {
+    mergeStoredState({ staffMaterials: [material, ...localMaterials] });
+    return material;
+  }
+
+  const insertRow = {
+    id: material.id,
+    title: material.title,
+    summary: material.summary,
+    body: material.body,
+    country_code: material.countryCode,
+    stage: material.stage,
+    level: material.level,
+    subject: material.subject,
+    category: material.category,
+    uploaded_by: material.uploadedBy,
+    created_at: material.createdAt,
+  };
+
+  const { data, error } = await supabase.from('staff_materials').insert(insertRow).select('*').single();
+
+  if (error || !data) {
+    mergeStoredState({ staffMaterials: [material, ...localMaterials] });
+    return material;
+  }
+
+  return mapStaffMaterialRow(data);
+}
+
 async function removeStaffMember(memberIdOrName: string) {
   if (!supabase) {
     const localStaff = readStoredState().staffMembers ?? [];
@@ -573,6 +647,24 @@ async function removeStaffMember(memberIdOrName: string) {
   const localStaff = readStoredState().staffMembers ?? [];
   mergeStoredState({
     staffMembers: localStaff.filter((member) => member.id !== memberIdOrName && member.name !== memberIdOrName),
+  });
+}
+
+async function removeStaffMaterial(materialId: string) {
+  const localMaterials = readStoredState().staffMaterials ?? [];
+
+  if (!supabase) {
+    mergeStoredState({
+      staffMaterials: localMaterials.filter((material) => material.id !== materialId),
+    });
+    return;
+  }
+
+  const { error } = await supabase.from('staff_materials').delete().eq('id', materialId);
+  if (!error) return;
+
+  mergeStoredState({
+    staffMaterials: localMaterials.filter((material) => material.id !== materialId),
   });
 }
 
@@ -699,8 +791,11 @@ export const appRepository = {
   syncLearnerProfile,
   listRegisteredUsers,
   listStaffMembers,
+  listStaffMaterials,
   addStaffMember,
+  addStaffMaterial,
   removeStaffMember,
+  removeStaffMaterial,
   removeRegisteredLearner,
   listCountryRegistrations,
 };

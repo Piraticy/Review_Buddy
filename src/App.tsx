@@ -166,7 +166,7 @@ type GeneratedAvatarOption = {
 
 const STORAGE_KEY = 'review-buddy-state';
 const INSTALL_DISMISS_KEY = 'review-buddy-install-dismissed';
-const APP_VERSION = '1.10.2';
+const APP_VERSION = '1.10.3';
 const APP_CREATED_ON = 'March 31, 2026';
 const DEFAULT_ADMIN_USERNAME = 'Admin';
 const DEFAULT_ADMIN_PASSWORD = 'admin';
@@ -299,12 +299,10 @@ const AUTH_SCENES: AuthScene[] = [
       },
     ],
     stickers: [
-      { icon: '📚', tone: 'sun', size: 82, rotate: -8, top: '14%', left: '4%' },
-      { icon: '✏️', tone: 'sky', size: 74, rotate: 8, top: '18%', right: '8%' },
-      { icon: '🎒', tone: 'coral', size: 80, rotate: -6, top: '58%', left: '7%' },
-      { icon: '🧩', tone: 'mint', size: 74, rotate: 10, top: '66%', right: '9%' },
-      { icon: '🌟', tone: 'violet', size: 70, rotate: -12, bottom: '10%', left: '20%' },
-      { icon: '📝', tone: 'sun', size: 64, rotate: 10, bottom: '14%', right: '28%' },
+      { icon: '📚', tone: 'sun', size: 78, rotate: -8, top: '16%', left: '5%' },
+      { icon: '✏️', tone: 'sky', size: 68, rotate: 8, top: '18%', right: '10%' },
+      { icon: '🎒', tone: 'coral', size: 74, rotate: -6, bottom: '18%', left: '9%' },
+      { icon: '🧩', tone: 'mint', size: 68, rotate: 10, bottom: '16%', right: '11%' },
     ],
   },
   {
@@ -339,12 +337,10 @@ const AUTH_SCENES: AuthScene[] = [
       },
     ],
     stickers: [
-      { icon: '🔬', tone: 'sky', size: 78, rotate: -10, top: '16%', left: '5%' },
-      { icon: '🧪', tone: 'mint', size: 72, rotate: 9, top: '17%', right: '11%' },
-      { icon: '🌍', tone: 'sun', size: 82, rotate: -4, top: '56%', left: '10%' },
-      { icon: '🎓', tone: 'violet', size: 76, rotate: 8, top: '63%', right: '8%' },
-      { icon: '📝', tone: 'coral', size: 70, rotate: -8, bottom: '9%', left: '30%' },
-      { icon: '💡', tone: 'sun', size: 62, rotate: 7, bottom: '16%', right: '22%' },
+      { icon: '🔬', tone: 'sky', size: 72, rotate: -10, top: '18%', left: '6%' },
+      { icon: '🧪', tone: 'mint', size: 68, rotate: 9, top: '18%', right: '11%' },
+      { icon: '🌍', tone: 'sun', size: 76, rotate: -4, bottom: '18%', left: '10%' },
+      { icon: '🎓', tone: 'violet', size: 70, rotate: 8, bottom: '16%', right: '10%' },
     ],
   },
   {
@@ -379,12 +375,10 @@ const AUTH_SCENES: AuthScene[] = [
       },
     ],
     stickers: [
-      { icon: '🎨', tone: 'coral', size: 80, rotate: -10, top: '16%', left: '7%' },
-      { icon: '📐', tone: 'sun', size: 72, rotate: 7, top: '22%', right: '7%' },
-      { icon: '💡', tone: 'mint', size: 74, rotate: -8, top: '56%', left: '8%' },
-      { icon: '🚌', tone: 'sky', size: 74, rotate: 6, top: '63%', right: '10%' },
-      { icon: '🏀', tone: 'violet', size: 68, rotate: -12, bottom: '10%', right: '24%' },
-      { icon: '🎵', tone: 'mint', size: 60, rotate: -6, bottom: '18%', left: '26%' },
+      { icon: '🎨', tone: 'coral', size: 76, rotate: -10, top: '18%', left: '7%' },
+      { icon: '📐', tone: 'sun', size: 68, rotate: 7, top: '20%', right: '9%' },
+      { icon: '💡', tone: 'mint', size: 68, rotate: -8, bottom: '18%', left: '9%' },
+      { icon: '🚌', tone: 'sky', size: 70, rotate: 6, bottom: '15%', right: '10%' },
     ],
   },
   {
@@ -419,11 +413,10 @@ const AUTH_SCENES: AuthScene[] = [
       },
     ],
     stickers: [
-      { icon: '🏫', tone: 'sky', size: 84, rotate: -7, top: '15%', left: '5%' },
-      { icon: '🧠', tone: 'violet', size: 68, rotate: 9, top: '18%', right: '10%' },
-      { icon: '📖', tone: 'sun', size: 72, rotate: -8, top: '58%', left: '9%' },
-      { icon: '🧮', tone: 'mint', size: 74, rotate: 7, top: '62%', right: '9%' },
-      { icon: '🎯', tone: 'coral', size: 64, rotate: -10, bottom: '11%', left: '28%' },
+      { icon: '🏫', tone: 'sky', size: 78, rotate: -7, top: '16%', left: '6%' },
+      { icon: '🧠', tone: 'violet', size: 64, rotate: 9, top: '18%', right: '11%' },
+      { icon: '📖', tone: 'sun', size: 68, rotate: -8, bottom: '18%', left: '10%' },
+      { icon: '🧮', tone: 'mint', size: 70, rotate: 7, bottom: '15%', right: '10%' },
     ],
   },
 ];
@@ -2527,75 +2520,87 @@ function App() {
 
       {screen === 'auth' ? (
         <main className="auth-layout auth-layout-single">
-          <section className="auth-card auth-card-wide">
-            <div className="panel-heading">
-              <p className="eyebrow">Welcome</p>
-              <h2>
-                {isRecoveryMode
-                  ? 'Reset your password'
-                  : authMode === 'signin'
-                    ? 'Sign in to continue'
-                    : 'Create a new account'}
-              </h2>
-              <p>
-                {isRecoveryMode
-                  ? 'Choose a fresh password and get back in.'
-                  : authMode === 'signin'
-                    ? 'Welcome back.'
-                    : 'Quick setup.'}
-              </p>
-            </div>
+          <section className="auth-card auth-card-wide auth-shell-card">
+            <div className="auth-shell-grid">
+              <div className="auth-copy-stack">
+                <div className="panel-heading auth-copy-heading">
+                  <p className="eyebrow">Welcome</p>
+                  <h2>
+                    {isRecoveryMode
+                      ? 'Reset your password'
+                      : authMode === 'signin'
+                        ? 'Sign in to continue'
+                        : 'Create a new account'}
+                  </h2>
+                  <p>
+                    {isRecoveryMode
+                      ? 'Choose a fresh password and get back in.'
+                      : authMode === 'signin'
+                        ? 'Use your email, learner account, or staff login.'
+                        : 'Create your learning space in a few quick steps.'}
+                  </p>
+                </div>
 
-            <div className="benefit-grid benefit-grid-compact auth-benefit-strip">
-              {benefitCards.map((card) => (
-                <article key={card.title} className="info-card">
-                  <span className="info-card-icon" aria-hidden="true">{card.icon}</span>
-                  <div className="info-card-copy">
-                    <strong>{card.title}</strong>
-                    <p>{card.detail}</p>
+                <div className="benefit-grid benefit-grid-compact auth-benefit-strip auth-benefit-column">
+                  {benefitCards.map((card) => (
+                    <article key={card.title} className="info-card">
+                      <span className="info-card-icon" aria-hidden="true">{card.icon}</span>
+                      <div className="info-card-copy">
+                        <strong>{card.title}</strong>
+                        <p>{card.detail}</p>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+
+                <div className="auth-support-card">
+                  <span className="auth-support-mark" aria-hidden="true">📚</span>
+                  <div>
+                    <strong>Ready on every device</strong>
+                    <p>Clear steps, country-matched learning, and a calmer start for children and teens.</p>
                   </div>
-                </article>
-              ))}
-            </div>
-
-            {!isRecoveryMode && (
-              <div className="mode-toggle" role="tablist" aria-label="Account mode">
-              <button
-                type="button"
-                className={`mode-toggle-button${authMode === 'signin' ? ' mode-toggle-button-active' : ''}`}
-                onClick={() => {
-                  setAuthMode('signin');
-                  setAuthNotice('');
-                  setShowPassword(false);
-                  setIsRecoveryMode(false);
-                  updateProfile('password', '');
-                }}
-              >
-                Sign in
-              </button>
-              <button
-                type="button"
-                className={`mode-toggle-button${authMode === 'signup' ? ' mode-toggle-button-active' : ''}`}
-                onClick={() => {
-                  setAuthMode('signup');
-                  setAuthNotice('');
-                  setShowPassword(false);
-                  setIsRecoveryMode(false);
-                  setProfile((current) =>
-                    normalizeLearnerProfile({
-                      ...current,
-                      role: 'student',
-                      password: '',
-                    }),
-                  );
-                }}
-              >
-                Register
-              </button>
+                </div>
               </div>
-            )}
 
-            <form className="auth-form" onSubmit={handleAuthSubmit}>
+              <div className="auth-form-panel">
+                {!isRecoveryMode && (
+                  <div className="mode-toggle mode-toggle-prominent" role="tablist" aria-label="Account mode">
+                    <button
+                      type="button"
+                      className={`mode-toggle-button${authMode === 'signin' ? ' mode-toggle-button-active' : ''}`}
+                      onClick={() => {
+                        setAuthMode('signin');
+                        setAuthNotice('');
+                        setShowPassword(false);
+                        setIsRecoveryMode(false);
+                        updateProfile('password', '');
+                      }}
+                    >
+                      Sign in
+                    </button>
+                    <button
+                      type="button"
+                      className={`mode-toggle-button${authMode === 'signup' ? ' mode-toggle-button-active' : ''}`}
+                      onClick={() => {
+                        setAuthMode('signup');
+                        setAuthNotice('');
+                        setShowPassword(false);
+                        setIsRecoveryMode(false);
+                        setProfile((current) =>
+                          normalizeLearnerProfile({
+                            ...current,
+                            role: 'student',
+                            password: '',
+                          }),
+                        );
+                      }}
+                    >
+                      Register
+                    </button>
+                  </div>
+                )}
+
+                <form className="auth-form" onSubmit={handleAuthSubmit}>
               {isRecoveryMode && (
                 <div className="auth-section-card">
                   <div className="panel-heading">
@@ -2880,7 +2885,9 @@ function App() {
               <button className="primary-button" type="submit">
                 {isRecoveryMode ? 'Save new password' : authMode === 'signin' ? 'Continue' : 'Create account'}
               </button>
-            </form>
+                </form>
+              </div>
+            </div>
           </section>
         </main>
       ) : screen === 'student' ? (

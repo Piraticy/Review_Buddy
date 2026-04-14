@@ -60,10 +60,10 @@ button:disabled {
 
 .app-shell-auth {
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.38) 0%, rgba(255, 255, 255, 0.5) 100%),
-    radial-gradient(circle at top left, color-mix(in srgb, var(--theme-secondary) 24%, transparent), transparent 36%),
-    radial-gradient(circle at top right, color-mix(in srgb, var(--theme-accent) 18%, transparent), transparent 32%),
-    linear-gradient(180deg, color-mix(in srgb, var(--theme-surface) 78%, white) 0%, color-mix(in srgb, var(--theme-primary) 7%, white) 100%);
+    linear-gradient(180deg, rgba(255, 255, 255, 0.3) 0%, rgba(255, 255, 255, 0.46) 100%),
+    radial-gradient(circle at 10% 10%, color-mix(in srgb, var(--theme-secondary) 22%, transparent), transparent 34%),
+    radial-gradient(circle at 88% 14%, color-mix(in srgb, var(--theme-accent) 18%, transparent), transparent 28%),
+    linear-gradient(160deg, color-mix(in srgb, var(--theme-surface) 82%, white) 0%, color-mix(in srgb, var(--theme-primary) 8%, white) 56%, color-mix(in srgb, var(--theme-secondary) 5%, white) 100%);
 }
 
 .auth-scene-layer {
@@ -82,23 +82,23 @@ button:disabled {
 }
 
 .auth-scene-layer::before {
-  inset: auto auto 5% 4%;
-  width: min(46vw, 560px);
-  height: min(44vh, 420px);
-  border-radius: 48px;
-  border: 1px solid rgba(255, 255, 255, 0.42);
+  inset: auto auto 8% 4%;
+  width: min(40vw, 500px);
+  height: min(34vh, 320px);
+  border-radius: 44px;
+  border: 1px solid rgba(255, 255, 255, 0.34);
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.5),
-    0 24px 54px rgba(15, 23, 42, 0.08);
-  opacity: 0.9;
+    inset 0 1px 0 rgba(255, 255, 255, 0.42),
+    0 20px 42px rgba(15, 23, 42, 0.06);
+  opacity: 0.72;
 }
 
 .auth-scene-layer::after {
-  inset: 10% 6% auto auto;
-  width: min(34vw, 360px);
-  height: min(34vw, 360px);
-  border-radius: 40px;
-  opacity: 0.34;
+  inset: 14% 8% auto auto;
+  width: min(28vw, 300px);
+  height: min(28vw, 300px);
+  border-radius: 36px;
+  opacity: 0.24;
 }
 
 .auth-scene-playbook::before {
@@ -200,12 +200,12 @@ button:disabled {
   align-items: center;
   justify-content: center;
   border-radius: 28px;
-  border: 1px solid rgba(255, 255, 255, 0.62);
+  border: 1px solid rgba(255, 255, 255, 0.56);
   box-shadow:
-    0 20px 34px rgba(15, 23, 42, 0.08),
-    inset 0 1px 0 rgba(255, 255, 255, 0.5);
+    0 14px 26px rgba(15, 23, 42, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.44);
   backdrop-filter: blur(16px);
-  opacity: 0.94;
+  opacity: 0.82;
 }
 
 .auth-scene-sticker-icon {
@@ -440,7 +440,7 @@ button:disabled {
   border-radius: 999px;
   background: color-mix(in srgb, var(--theme-surface) 80%, white);
   color: var(--theme-ink);
-  box-shadow: 0 12px 24px rgba(15, 23, 42, 0.06);
+  box-shadow: 0 12px 24px rgba(15, 23, 42, 0.08);
 }
 
 .app-shell[data-theme='night'] .theme-button {
@@ -465,6 +465,9 @@ button:disabled {
 
 .theme-button-active {
   outline: 2px solid color-mix(in srgb, var(--theme-accent) 45%, white);
+  box-shadow:
+    0 0 0 5px color-mix(in srgb, var(--theme-accent) 16%, transparent),
+    0 14px 28px rgba(15, 23, 42, 0.12);
 }
 
 .theme-icon {
@@ -480,7 +483,7 @@ button:disabled {
 }
 
 .auth-layout-single {
-  grid-template-columns: minmax(0, 920px);
+  grid-template-columns: minmax(0, 1080px);
   justify-content: center;
 }
 
@@ -589,9 +592,83 @@ button:disabled {
 
 .auth-card-wide {
   width: 100%;
-  max-width: 860px;
+  max-width: 1080px;
   margin-inline: auto;
-  backdrop-filter: blur(6px);
+  backdrop-filter: blur(10px);
+}
+
+.auth-shell-card {
+  padding: 18px;
+}
+
+.auth-shell-grid {
+  display: grid;
+  grid-template-columns: minmax(260px, 0.78fr) minmax(420px, 1.12fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.auth-copy-stack,
+.auth-form-panel {
+  display: grid;
+  gap: 14px;
+}
+
+.auth-copy-stack {
+  align-content: start;
+}
+
+.auth-copy-heading {
+  gap: 8px;
+}
+
+.auth-copy-heading h2 {
+  font-size: clamp(2rem, 3vw, 3rem);
+}
+
+.auth-copy-heading p:last-child {
+  max-width: 30ch;
+  color: color-mix(in srgb, var(--theme-ink) 74%, #64748b);
+}
+
+.auth-support-card {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+  padding: 16px;
+  border-radius: 20px;
+  border: 1px solid color-mix(in srgb, var(--theme-primary) 14%, white);
+  background: linear-gradient(135deg, color-mix(in srgb, var(--theme-secondary) 10%, white), color-mix(in srgb, var(--theme-surface) 94%, white));
+}
+
+.auth-support-mark {
+  width: 48px;
+  height: 48px;
+  display: grid;
+  place-items: center;
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--theme-secondary) 18%, white);
+  font-size: 1.4rem;
+}
+
+.auth-support-card strong {
+  display: block;
+  margin-bottom: 4px;
+}
+
+.auth-support-card p {
+  color: color-mix(in srgb, var(--theme-ink) 74%, #64748b);
+}
+
+.auth-form-panel {
+  padding: 18px;
+  border-radius: 24px;
+  border: 1px solid color-mix(in srgb, var(--theme-primary) 16%, white);
+  background: color-mix(in srgb, var(--theme-surface) 94%, white 6%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.48),
+    0 16px 30px rgba(15, 23, 42, 0.06);
 }
 
 .benefit-grid-compact {
@@ -600,8 +677,12 @@ button:disabled {
 
 .auth-benefit-strip {
   margin-top: 2px;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: 1fr;
   gap: 10px;
+}
+
+.auth-benefit-column .info-card {
+  min-height: 74px;
 }
 
 .benefit-grid-compact .info-card {
@@ -659,6 +740,13 @@ button:disabled {
   gap: 10px;
 }
 
+.mode-toggle-prominent {
+  padding: 6px;
+  border-radius: 20px;
+  background: color-mix(in srgb, var(--theme-primary) 8%, var(--theme-surface));
+  border: 1px solid color-mix(in srgb, var(--theme-primary) 12%, white);
+}
+
 .mode-toggle-button,
 .role-pill,
 .sample-button,
@@ -673,8 +761,10 @@ button:disabled {
 }
 
 .mode-toggle-button {
-  background: color-mix(in srgb, var(--theme-surface) 80%, white);
-  color: var(--theme-ink);
+  min-height: 54px;
+  background: color-mix(in srgb, var(--theme-surface) 88%, white);
+  color: color-mix(in srgb, var(--theme-ink) 78%, #64748b);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--theme-primary) 10%, white);
 }
 
 .mode-toggle-button-active,
@@ -682,6 +772,12 @@ button:disabled {
   background: linear-gradient(135deg, var(--theme-primary), color-mix(in srgb, var(--theme-accent) 74%, white));
   color: white;
   box-shadow: 0 18px 30px color-mix(in srgb, var(--theme-primary) 18%, transparent);
+}
+
+.mode-toggle-button-active {
+  box-shadow:
+    0 18px 30px color-mix(in srgb, var(--theme-primary) 18%, transparent),
+    0 0 0 4px color-mix(in srgb, var(--theme-accent) 10%, transparent);
 }
 
 .auth-notice {
@@ -837,6 +933,35 @@ button:disabled {
 .app-shell[data-theme='night'] .subject-card {
   background: rgba(30, 41, 59, 0.9);
   color: #f8fafc;
+}
+
+.app-shell[data-theme='night'] .auth-form-panel {
+  background: rgba(17, 24, 39, 0.9);
+  border-color: rgba(148, 163, 184, 0.22);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    0 20px 42px rgba(2, 6, 23, 0.34);
+}
+
+.app-shell[data-theme='night'] .auth-support-card {
+  background: rgba(15, 23, 42, 0.74);
+  border-color: rgba(148, 163, 184, 0.18);
+}
+
+.app-shell[data-theme='night'] .mode-toggle-prominent {
+  background: rgba(15, 23, 42, 0.82);
+  border-color: rgba(148, 163, 184, 0.2);
+}
+
+.app-shell[data-theme='night'] .mode-toggle-button {
+  color: rgba(248, 250, 252, 0.76);
+  box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.12);
+}
+
+.app-shell[data-theme='night'] .mode-toggle-button-active,
+.app-shell[data-theme='night'] .primary-button {
+  background: linear-gradient(135deg, #2563eb, #38bdf8);
+  color: white;
 }
 
 .app-shell[data-theme='night'] .password-toggle,
@@ -2026,8 +2151,12 @@ button:disabled {
     border-radius: 22px;
   }
 
-  .auth-benefit-strip {
+  .auth-shell-grid {
     grid-template-columns: 1fr;
+  }
+
+  .auth-form-panel {
+    padding: 14px;
   }
 
   .auth-section-card {
@@ -2124,6 +2253,18 @@ button:disabled {
   .field-label-row {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .auth-card-wide {
+    max-width: 100%;
+  }
+
+  .auth-form-panel {
+    padding: 12px;
+  }
+
+  .auth-support-card {
+    grid-template-columns: 1fr;
   }
 
   .book-cover-mark {

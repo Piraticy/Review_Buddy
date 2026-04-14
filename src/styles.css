@@ -1111,6 +1111,53 @@ button:disabled {
   gap: 14px;
 }
 
+.question-bank-builder {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  border-radius: 24px;
+  background: color-mix(in srgb, var(--theme-surface) 94%, white 6%);
+  border: 1px solid color-mix(in srgb, var(--theme-primary) 14%, white);
+}
+
+.inline-warning-card {
+  display: grid;
+  gap: 10px;
+  padding: 14px 16px;
+  border-radius: 20px;
+  background: color-mix(in srgb, var(--theme-accent) 10%, var(--theme-surface));
+  border: 1px solid color-mix(in srgb, var(--theme-accent) 24%, white);
+}
+
+.inline-warning-card p {
+  margin: 0;
+  color: color-mix(in srgb, var(--theme-ink) 74%, #64748b);
+}
+
+.compact-heading {
+  gap: 6px;
+}
+
+.question-builder-list {
+  display: grid;
+  gap: 14px;
+}
+
+.question-builder-card {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border-radius: 22px;
+  background: color-mix(in srgb, var(--theme-surface) 90%, white 10%);
+  border: 1px solid color-mix(in srgb, var(--theme-primary) 14%, white);
+}
+
+.choice-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
 .teacher-material-card {
   display: grid;
   gap: 10px;
@@ -1140,6 +1187,11 @@ button:disabled {
 .teacher-material-meta {
   color: color-mix(in srgb, var(--theme-ink) 70%, #64748b);
   font-size: 0.9rem;
+}
+
+.inline-link-button {
+  width: fit-content;
+  text-decoration: none;
 }
 
 .chapter-list {
@@ -1726,6 +1778,10 @@ button:disabled {
 .table-list {
   display: grid;
   gap: 10px;
+}
+
+.history-row .ghost-button-small {
+  align-self: start;
 }
 
 .leaderboard-row,

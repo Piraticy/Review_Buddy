@@ -127,6 +127,15 @@ export type AdminStaffMember = {
 };
 
 export type StaffMaterialCategory = 'reading' | 'quiz' | 'exam';
+export type StaffMaterialResourceType = 'text' | 'document' | 'video' | 'question-bank';
+
+export type StaffQuestionItem = {
+  id: string;
+  prompt: string;
+  choices: [string, string, string, string];
+  answerIndex: number;
+  explanation: string;
+};
 
 export type StaffMaterial = {
   id: string;
@@ -138,7 +147,29 @@ export type StaffMaterial = {
   level: string;
   subject: string;
   category: StaffMaterialCategory;
+  resourceType: StaffMaterialResourceType;
+  attachmentName?: string;
+  attachmentData?: string;
+  videoUrl?: string;
+  questionLimit?: number;
+  questions?: StaffQuestionItem[];
   uploadedBy: string;
+  createdAt: string;
+  updatedAt?: string;
+};
+
+export type FeedbackQuestionKey = 'ease' | 'clarity' | 'look' | 'speed' | 'confidence';
+
+export type FeedbackEntry = {
+  id: string;
+  userName: string;
+  userKey: string;
+  role: Role;
+  countryCode: string;
+  rating: number;
+  choice: string;
+  ratings: Record<FeedbackQuestionKey, number>;
+  comment: string;
   createdAt: string;
 };
 

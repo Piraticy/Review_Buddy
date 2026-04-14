@@ -18,6 +18,8 @@ import {
   type AdminAlert,
   type AdminSession,
   type AdminStaffMember,
+  type FeedbackEntry,
+  type FeedbackQuestionKey,
   type LearnerGender,
   type LearnerProfile,
   type Plan,
@@ -27,6 +29,7 @@ import {
   type RegisteredUser,
   type StaffMaterial,
   type StaffMaterialCategory,
+  type StaffMaterialResourceType,
   type Stage,
 } from './data';
 import { appRepository } from './lib/repository';
@@ -44,6 +47,7 @@ type ThemeMode = 'country' | 'sunny' | 'ocean' | 'night';
 type Screen = 'auth' | 'student' | 'admin' | 'staff' | 'quiz';
 type StudentView = 'home' | 'subject' | 'notes' | 'video' | 'review' | 'feedback';
 type AdminView = 'overview' | 'countries' | 'staff' | 'learners' | 'followups' | 'reports';
+type StaffView = 'lounge' | 'feedback';
 type AssessmentKind = 'quiz' | 'exam';
 type ThemeVars = {
   '--theme-primary': string;
@@ -100,20 +104,16 @@ type ReviewSnapshot = {
   date: string;
 };
 
-type FeedbackEntry = {
+type StaffQuestionDraft = {
   id: string;
-  userName: string;
-  role: LearnerProfile['role'];
-  countryCode: string;
-  rating: number;
-  choice: string;
-  ratings: Record<FeedbackQuestionKey, number>;
-  comment: string;
-  createdAt: string;
+  prompt: string;
+  choices: [string, string, string, string];
+  answerIndex: number;
+  explanation: string;
 };
 
-type FeedbackQuestionKey = 'ease' | 'clarity' | 'look' | 'speed' | 'confidence';
 type StaffMaterialDraft = {
+  editingId?: string;
   title: string;
   summary: string;
   body: string;
@@ -122,6 +122,12 @@ type StaffMaterialDraft = {
   level: string;
   subject: string;
   category: StaffMaterialCategory;
+  resourceType: StaffMaterialResourceType;
+  attachmentName: string;
+  attachmentData: string;
+  videoUrl: string;
+  questionLimit: number;
+  questions: StaffQuestionDraft[];
 };
 
 type StoredState = {
@@ -135,6 +141,7 @@ type StoredState = {
   quizState?: QuizState | null;
   studentView?: StudentView;
   adminView?: AdminView;
+  staffView?: StaffView;
   selectedSubject?: string | null;
   reviewSnapshot?: ReviewSnapshot | null;
   staffMembers?: AdminStaffMember[];
@@ -142,6 +149,7 @@ type StoredState = {
   adminActivityByCountry?: AdminActivityMap;
   followUpsByCountry?: AdminFollowUpMap;
   feedbackEntries?: FeedbackEntry[];
+  submittedFeedbackKeys?: string[];
 };
 
 type BeforeInstallPromptEvent = Event & {
@@ -158,7 +166,7 @@ type GeneratedAvatarOption = {
 
 const STORAGE_KEY = 'review-buddy-state';
 const INSTALL_DISMISS_KEY = 'review-buddy-install-dismissed';
-const APP_VERSION = '1.10.1';
+const APP_VERSION = '1.10.2';
 const APP_CREATED_ON = 'March 31, 2026';
 const DEFAULT_ADMIN_USERNAME = 'Admin';
 const DEFAULT_ADMIN_PASSWORD = 'admin';
@@ -445,6 +453,7 @@ function createInitialProfile(): LearnerProfile {
 function createInitialMaterialDraft(countryCode = inferCountryCode()): StaffMaterialDraft {
   const stage: Stage = 'primary';
   return {
+    editingId: undefined,
     title: '',
     summary: '',
     body: '',
@@ -453,7 +462,36 @@ function createInitialMaterialDraft(countryCode = inferCountryCode()): StaffMate
     level: getLevelOptions(stage)[0],
     subject: getAvailableSubjects(countryCode, stage, 'free')[0],
     category: 'reading',
+    resourceType: 'text',
+    attachmentName: '',
+    attachmentData: '',
+    videoUrl: '',
+    questionLimit: 5,
+    questions: [],
   };
+}
+
+function createQuestionDraft(): StaffQuestionDraft {
+  return {
+    id: `question-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`,
+    prompt: '',
+    choices: ['', '', '', ''],
+    answerIndex: 0,
+    explanation: '',
+  };
+}
+
+function normalizePrompt(text: string) {
+  return text.trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+function shuffleList<T>(items: T[]) {
+  const next = [...items];
+  for (let index = next.length - 1; index > 0; index -= 1) {
+    const swapIndex = Math.floor(Math.random() * (index + 1));
+    [next[index], next[swapIndex]] = [next[swapIndex], next[index]];
+  }
+  return next;
 }
 
 function createDefaultAdminUser(): RegisteredUser {
@@ -880,6 +918,7 @@ function App() {
   const [screen, setScreen] = useState<Screen>('auth');
   const [studentView, setStudentView] = useState<StudentView>('home');
   const [adminView, setAdminView] = useState<AdminView>('overview');
+  const [staffView, setStaffView] = useState<StaffView>('lounge');
   const [selectedSubject, setSelectedSubject] = useState<string | null>(null);
   const [reviewSnapshot, setReviewSnapshot] = useState<ReviewSnapshot | null>(null);
   const [quizState, setQuizState] = useState<QuizState | null>(null);
@@ -897,6 +936,7 @@ function App() {
   const [adminActivityByCountry, setAdminActivityByCountry] = useState<AdminActivityMap>({});
   const [followUpsByCountry, setFollowUpsByCountry] = useState<AdminFollowUpMap>({});
   const [feedbackEntries, setFeedbackEntries] = useState<FeedbackEntry[]>([]);
+  const [submittedFeedbackKeys, setSubmittedFeedbackKeys] = useState<string[]>([]);
   const [adminNotice, setAdminNotice] = useState('Choose a tool to manage staff, countries, or reports.');
   const [staffDraft, setStaffDraft] = useState({
     name: '',
@@ -968,6 +1008,7 @@ function App() {
       if (saved.screen) setScreen(saved.screen);
       if (saved.studentView) setStudentView(saved.studentView);
       if (saved.adminView) setAdminView(saved.adminView);
+      if (saved.staffView) setStaffView(saved.staffView);
       if (saved.selectedSubject) setSelectedSubject(saved.selectedSubject);
       if (saved.reviewSnapshot) setReviewSnapshot(saved.reviewSnapshot);
       if (saved.quizState) setQuizState(saved.quizState);
@@ -976,6 +1017,7 @@ function App() {
       if (saved.adminActivityByCountry) setAdminActivityByCountry(saved.adminActivityByCountry);
       if (saved.followUpsByCountry) setFollowUpsByCountry(saved.followUpsByCountry);
       if (saved.feedbackEntries) setFeedbackEntries(saved.feedbackEntries);
+      if (saved.submittedFeedbackKeys) setSubmittedFeedbackKeys(saved.submittedFeedbackKeys);
     } catch {
       window.localStorage.removeItem(STORAGE_KEY);
     } finally {
@@ -1026,10 +1068,11 @@ function App() {
     let cancelled = false;
 
     async function hydrateSharedData() {
-      const [repoUsers, repoStaff, repoMaterials] = await Promise.all([
+      const [repoUsers, repoStaff, repoMaterials, repoFeedback] = await Promise.all([
         appRepository.listRegisteredUsers(),
         appRepository.listStaffMembers(),
         appRepository.listStaffMaterials(),
+        appRepository.listFeedbackEntries(),
       ]);
 
       if (cancelled) return;
@@ -1044,6 +1087,10 @@ function App() {
 
       if (repoMaterials.length > 0) {
         setStaffMaterials(repoMaterials);
+      }
+
+      if (repoFeedback.length > 0) {
+        setFeedbackEntries(repoFeedback);
       }
     }
 
@@ -1069,6 +1116,7 @@ function App() {
         screen,
         studentView,
         adminView,
+        staffView,
         selectedSubject,
         reviewSnapshot,
         quizState,
@@ -1077,6 +1125,7 @@ function App() {
         adminActivityByCountry,
         followUpsByCountry,
         feedbackEntries,
+        submittedFeedbackKeys,
       } satisfies StoredState),
     );
   }, [
@@ -1094,7 +1143,9 @@ function App() {
     selectedSubject,
     staffMembers,
     staffMaterials,
+    staffView,
     studentView,
+    submittedFeedbackKeys,
     themeMode,
     feedbackEntries,
   ]);
@@ -1318,9 +1369,19 @@ function App() {
   const readingMaterials = matchingStaffMaterials.filter((material) => material.category === 'reading');
   const quizMaterials = matchingStaffMaterials.filter((material) => material.category === 'quiz');
   const examMaterials = matchingStaffMaterials.filter((material) => material.category === 'exam');
-  const staffFocusMaterials = staffMaterials.filter(
-    (material) => material.countryCode === staffMaterialDraft.countryCode,
-  );
+  const staffFocusMaterials = [...staffMaterials]
+    .filter((material) => material.countryCode === staffMaterialDraft.countryCode)
+    .sort((left, right) => new Date(right.updatedAt ?? right.createdAt).getTime() - new Date(left.updatedAt ?? left.createdAt).getTime());
+  const archiveTypeCounts = {
+    reading: staffFocusMaterials.filter((material) => material.category === 'reading').length,
+    quiz: staffFocusMaterials.filter((material) => material.category === 'quiz').length,
+    exam: staffFocusMaterials.filter((material) => material.category === 'exam').length,
+  };
+  const duplicateQuestionPrompts = staffMaterialDraft.resourceType === 'question-bank' ? findDuplicateQuestionPrompts() : [];
+  const feedbackUserKey = `${profile.role}:${(profile.email || profile.fullName || firstName).trim().toLowerCase()}`;
+  const hasSubmittedFeedback =
+    submittedFeedbackKeys.includes(feedbackUserKey) ||
+    feedbackEntries.some((entry) => entry.userKey === feedbackUserKey);
 
   useEffect(() => {
     if ('speechSynthesis' in window) {
@@ -1475,6 +1536,7 @@ function App() {
     setSelectedSubject(normalized.subject);
     setStudentView('home');
     setAdminView('overview');
+    setStaffView('lounge');
     setScreen(normalized.role === 'admin' ? 'admin' : normalized.role === 'staff' ? 'staff' : 'student');
 
     if (normalized.role === 'student') {
@@ -1592,6 +1654,7 @@ function App() {
     setScreen('auth');
     setStudentView('home');
     setAdminView('overview');
+    setStaffView('lounge');
     setSelectedSubject(null);
     setReviewSnapshot(null);
     setQuizState(null);
@@ -1669,34 +1732,246 @@ function App() {
         next.subject = subjectOptions.includes(next.subject) ? next.subject : subjectOptions[0];
       }
 
+      if (key === 'category') {
+        const nextCategory = value as StaffMaterialCategory;
+        if (nextCategory === 'reading') {
+          next.resourceType = next.resourceType === 'question-bank' ? 'text' : next.resourceType;
+        } else {
+          next.resourceType = 'question-bank';
+          next.questionLimit = Math.max(next.questionLimit || 5, 1);
+          next.questions = next.questions.length > 0 ? next.questions : [createQuestionDraft()];
+        }
+      }
+
+      if (key === 'resourceType') {
+        const nextType = value as StaffMaterialResourceType;
+        if (nextType === 'question-bank') {
+          next.questions = next.questions.length > 0 ? next.questions : [createQuestionDraft()];
+          next.videoUrl = '';
+          next.attachmentName = '';
+          next.attachmentData = '';
+        } else if (nextType === 'video') {
+          next.attachmentName = '';
+          next.attachmentData = '';
+        } else if (nextType === 'document') {
+          next.videoUrl = '';
+        } else {
+          next.videoUrl = '';
+          next.attachmentName = '';
+          next.attachmentData = '';
+        }
+      }
+
       return next;
     });
   }
 
+  function updateQuestionDraft(
+    questionId: string,
+    key: keyof StaffQuestionDraft,
+    value: StaffQuestionDraft[keyof StaffQuestionDraft],
+  ) {
+    setStaffMaterialDraft((current) => ({
+      ...current,
+      questions: current.questions.map((question) =>
+        question.id === questionId ? { ...question, [key]: value } : question,
+      ),
+    }));
+  }
+
+  function updateQuestionChoice(questionId: string, choiceIndex: number, value: string) {
+    setStaffMaterialDraft((current) => ({
+      ...current,
+      questions: current.questions.map((question) => {
+        if (question.id !== questionId) return question;
+        const nextChoices = [...question.choices] as [string, string, string, string];
+        nextChoices[choiceIndex] = value;
+        return {
+          ...question,
+          choices: nextChoices,
+        };
+      }),
+    }));
+  }
+
+  function addQuestionDraft() {
+    setStaffMaterialDraft((current) => ({
+      ...current,
+      questions: [...current.questions, createQuestionDraft()],
+    }));
+  }
+
+  function removeQuestionDraft(questionId: string) {
+    setStaffMaterialDraft((current) => ({
+      ...current,
+      questions: current.questions.length > 1
+        ? current.questions.filter((question) => question.id !== questionId)
+        : current.questions,
+    }));
+  }
+
+  function beginEditStaffMaterial(material: StaffMaterial) {
+    setStaffMaterialDraft({
+      editingId: material.id,
+      title: material.title,
+      summary: material.summary,
+      body: material.body,
+      countryCode: material.countryCode,
+      stage: material.stage,
+      level: material.level,
+      subject: material.subject,
+      category: material.category,
+      resourceType: material.resourceType ?? (material.category === 'reading' ? 'text' : 'question-bank'),
+      attachmentName: material.attachmentName ?? '',
+      attachmentData: material.attachmentData ?? '',
+      videoUrl: material.videoUrl ?? '',
+      questionLimit: material.questionLimit ?? Math.max(material.questions?.length ?? 0, 5),
+      questions:
+        material.questions?.map((question) => ({
+          ...question,
+          choices: [...question.choices] as [string, string, string, string],
+        })) ?? [],
+    });
+    setAdminNotice(`Editing ${material.title}. Update the class, country, or content, then save again.`);
+  }
+
+  function handleStaffAttachment(file: File | null) {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = typeof reader.result === 'string' ? reader.result : '';
+      if (!result) return;
+      setStaffMaterialDraft((current) => ({
+        ...current,
+        attachmentName: file.name,
+        attachmentData: result,
+        resourceType: 'document',
+      }));
+    };
+    reader.readAsDataURL(file);
+  }
+
+  function findDuplicateQuestionPrompts() {
+    const draftPrompts = staffMaterialDraft.questions.map((question) => normalizePrompt(question.prompt)).filter(Boolean);
+    const repeatedDraftPrompt = draftPrompts.find(
+      (prompt, index) => draftPrompts.indexOf(prompt) !== index,
+    );
+    const scopedExistingQuestions = staffMaterials
+      .filter(
+        (material) =>
+          material.id !== staffMaterialDraft.editingId &&
+          material.countryCode === staffMaterialDraft.countryCode &&
+          material.stage === staffMaterialDraft.stage &&
+          material.level === staffMaterialDraft.level &&
+          material.subject === staffMaterialDraft.subject &&
+          material.category === staffMaterialDraft.category,
+      )
+      .flatMap((material) => material.questions ?? [])
+      .map((question) => normalizePrompt(question.prompt));
+
+    return [
+      ...(repeatedDraftPrompt ? [repeatedDraftPrompt] : []),
+      ...staffMaterialDraft.questions
+        .map((question) => normalizePrompt(question.prompt))
+        .filter((prompt) => prompt && scopedExistingQuestions.includes(prompt)),
+    ];
+  }
+
   async function addStaffMaterial() {
-    if (!staffMaterialDraft.title.trim() || !staffMaterialDraft.summary.trim() || !staffMaterialDraft.body.trim()) {
-      setAdminNotice('Add a title, short summary, and the learning material before assigning it.');
+    if (!staffMaterialDraft.title.trim() || !staffMaterialDraft.summary.trim()) {
+      setAdminNotice('Add a title and a short summary before saving this item.');
       return;
     }
 
-    const savedMaterial = await appRepository.addStaffMaterial({
-      id: `material-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+    if (staffMaterialDraft.resourceType === 'text' && !staffMaterialDraft.body.trim()) {
+      setAdminNotice('Add the reading text before assigning this material.');
+      return;
+    }
+
+    if (staffMaterialDraft.resourceType === 'document' && !staffMaterialDraft.attachmentData) {
+      setAdminNotice('Upload a document file first so learners can open it.');
+      return;
+    }
+
+    if (staffMaterialDraft.resourceType === 'video' && !staffMaterialDraft.videoUrl.trim()) {
+      setAdminNotice('Paste a video link before saving this lesson.');
+      return;
+    }
+
+    if (staffMaterialDraft.resourceType === 'question-bank') {
+      const duplicatePrompts = findDuplicateQuestionPrompts();
+      if (duplicatePrompts.length > 0) {
+        setAdminNotice('One or more questions already exist for that class, subject, and country. Update the prompt before saving.');
+        return;
+      }
+
+      const invalidQuestion = staffMaterialDraft.questions.find(
+        (question) =>
+          !question.prompt.trim() ||
+          question.choices.some((choice) => !choice.trim()) ||
+          question.answerIndex < 0 ||
+          question.answerIndex > 3,
+      );
+      if (invalidQuestion) {
+        setAdminNotice('Complete every question, all four choices, and the correct answer before saving.');
+        return;
+      }
+    }
+
+    const materialPayload: StaffMaterial = {
+      id:
+        staffMaterialDraft.editingId ??
+        `material-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
       title: staffMaterialDraft.title.trim(),
       summary: staffMaterialDraft.summary.trim(),
-      body: staffMaterialDraft.body.trim(),
+      body:
+        staffMaterialDraft.resourceType === 'question-bank'
+          ? 'Staff-authored question bank'
+          : staffMaterialDraft.body.trim(),
       countryCode: staffMaterialDraft.countryCode,
       stage: staffMaterialDraft.stage,
       level: staffMaterialDraft.level,
       subject: staffMaterialDraft.subject,
       category: staffMaterialDraft.category,
+      resourceType: staffMaterialDraft.resourceType,
+      attachmentName: staffMaterialDraft.attachmentName || undefined,
+      attachmentData: staffMaterialDraft.attachmentData || undefined,
+      videoUrl: staffMaterialDraft.videoUrl.trim() || undefined,
+      questionLimit:
+        staffMaterialDraft.resourceType === 'question-bank'
+          ? Math.max(1, staffMaterialDraft.questionLimit)
+          : undefined,
+      questions:
+        staffMaterialDraft.resourceType === 'question-bank'
+          ? staffMaterialDraft.questions.map((question) => ({
+              id: question.id,
+              prompt: question.prompt.trim(),
+              choices: question.choices.map((choice) => choice.trim()) as [string, string, string, string],
+              answerIndex: question.answerIndex,
+              explanation: question.explanation.trim(),
+            }))
+          : [],
       uploadedBy: profile.fullName.trim() || DEFAULT_STAFF_USERNAME,
-      createdAt: new Date().toISOString(),
-    });
+      createdAt:
+        staffMaterials.find((material) => material.id === staffMaterialDraft.editingId)?.createdAt ??
+        new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
 
-    setStaffMaterials((current) => [savedMaterial, ...current]);
+    const savedMaterial = staffMaterialDraft.editingId
+      ? await appRepository.updateStaffMaterial(materialPayload)
+      : await appRepository.addStaffMaterial(materialPayload);
+
+    setStaffMaterials((current) =>
+      [savedMaterial, ...current.filter((entry) => entry.id !== savedMaterial.id)].sort(
+        (left, right) =>
+          new Date(right.updatedAt ?? right.createdAt).getTime() -
+          new Date(left.updatedAt ?? left.createdAt).getTime(),
+      ),
+    );
     setStaffMaterialDraft(createInitialMaterialDraft(profile.countryCode));
     setAdminNotice(
-      `${savedMaterial.title} was assigned to ${getFlagEmoji(savedMaterial.countryCode)} ${getCountryByCode(savedMaterial.countryCode).name}, ${savedMaterial.level}, ${savedMaterial.subject}.`,
+      `${savedMaterial.title} is ready for ${getFlagEmoji(savedMaterial.countryCode)} ${getCountryByCode(savedMaterial.countryCode).name}, ${savedMaterial.level}, ${savedMaterial.subject}.`,
     );
   }
 
@@ -1798,10 +2073,19 @@ function App() {
 
   function openFeedbackPage() {
     setAuthNotice('');
+    if (profile.role === 'staff') {
+      setStaffView('feedback');
+      return;
+    }
     setStudentView('feedback');
   }
 
-  function submitFeedback() {
+  async function submitFeedback() {
+    if (hasSubmittedFeedback) {
+      setAuthNotice('You already shared feedback. Thank you.');
+      return;
+    }
+
     const ratingsList = FEEDBACK_QUESTIONS.map((question) => feedbackRatings[question.key]);
 
     if (ratingsList.some((rating) => !rating)) {
@@ -1817,6 +2101,7 @@ function App() {
     const nextEntry: FeedbackEntry = {
       id: `feedback-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`,
       userName: profile.fullName || firstName,
+      userKey: feedbackUserKey,
       role: profile.role,
       countryCode: profile.countryCode,
       rating: averageRating,
@@ -1826,17 +2111,53 @@ function App() {
       createdAt: new Date().toISOString(),
     };
 
-    setFeedbackEntries((current) => [nextEntry, ...current].slice(0, 60));
+    try {
+      const savedEntry = await appRepository.addFeedbackEntry(nextEntry);
+      setFeedbackEntries((current) =>
+        [savedEntry, ...current.filter((entry) => entry.id !== savedEntry.id)].slice(0, 60),
+      );
+    } catch (error) {
+      setAuthNotice(getErrorMessage(error, 'We could not save your feedback just now.'));
+      return;
+    }
+
+    setSubmittedFeedbackKeys((current) => [...new Set([...current, feedbackUserKey])]);
     setFeedbackRatings(createEmptyFeedbackRatings());
     setFeedbackComment('');
     setAuthNotice('');
     setAdminNotice('New feedback was added for admin review.');
+    if (profile.role === 'staff') {
+      setStaffView('lounge');
+      return;
+    }
     setStudentView('home');
   }
 
   function startQuiz(subject: string, kind: AssessmentKind = 'quiz') {
     const nextProfile = { ...profile, subject };
-    const questions = generateQuestions(nextProfile, { kind });
+    const generatedQuestions = generateQuestions(nextProfile, { kind });
+    const authoredQuestions = shuffleList(
+      matchingStaffMaterials
+        .filter((material) => material.category === kind && material.questions && material.questions.length > 0)
+        .flatMap((material) =>
+          (material.questions ?? [])
+            .slice(0, material.questionLimit ?? material.questions?.length ?? 0)
+            .map<Question>((question) => ({
+              id: `${material.id}-${question.id}`,
+              prompt: question.prompt,
+              choices: [...question.choices],
+              answer: question.choices[question.answerIndex],
+              explanation: question.explanation || `Assigned by ${material.uploadedBy}`,
+              skill: `${material.subject} · Staff pick`,
+              helperText: `${getFlagEmoji(material.countryCode)} ${material.level}`,
+            })),
+        ),
+    );
+    const combinedQuestions = [...authoredQuestions, ...generatedQuestions].filter(
+      (question, index, list) =>
+        list.findIndex((entry) => normalizePrompt(entry.prompt) === normalizePrompt(question.prompt)) === index,
+    );
+    const questions = combinedQuestions.slice(0, generatedQuestions.length);
     setProfile(nextProfile);
     if (nextProfile.role === 'student') {
       void appRepository.syncLearnerProfile({
@@ -2766,8 +3087,8 @@ function App() {
                     </button>
                     <button type="button" className="subject-card" onClick={openFeedbackPage}>
                       <span className="subject-icon">💡</span>
-                      <strong>Feedback survey</strong>
-                      <span>Quick rating and comment.</span>
+                      <strong>{hasSubmittedFeedback ? 'Feedback sent' : 'Feedback survey'}</strong>
+                      <span>{hasSubmittedFeedback ? 'Thanks for sharing your review.' : 'Quick rating and comment.'}</span>
                     </button>
                     <button type="button" className="subject-card" onClick={() => startQuiz(activeStudentSubject, 'quiz')}>
                       <span className="subject-icon">📝</span>
@@ -2909,9 +3230,20 @@ function App() {
                             </div>
                             <p>{material.summary}</p>
                             <div className="teacher-material-body">
-                              {material.body.split('\n').filter(Boolean).map((line, index) => (
-                                <p key={`${material.id}-${index}`}>{line}</p>
-                              ))}
+                              {material.resourceType === 'text' &&
+                                material.body.split('\n').filter(Boolean).map((line, index) => (
+                                  <p key={`${material.id}-${index}`}>{line}</p>
+                                ))}
+                              {material.resourceType === 'document' && material.attachmentData && (
+                                <a className="ghost-button ghost-button-small inline-link-button" href={material.attachmentData} download={material.attachmentName ?? `${material.title}.file`}>
+                                  Open {material.attachmentName ?? 'document'}
+                                </a>
+                              )}
+                              {material.resourceType === 'video' && material.videoUrl && (
+                                <a className="ghost-button ghost-button-small inline-link-button" href={material.videoUrl} target="_blank" rel="noreferrer">
+                                  Watch video lesson
+                                </a>
+                              )}
                             </div>
                             <span className="teacher-material-meta">Added by {material.uploadedBy}</span>
                           </article>
@@ -3124,7 +3456,7 @@ function App() {
                 <section className="welcome-banner">
                   <div>
                     <p className="eyebrow">Feedback survey</p>
-                    <h2>Tell us how this learning page feels</h2>
+                    <h2>Tell us how this page feels</h2>
                     <p>{getFlagEmoji(country.code)} {activeStudentSubject} · {profile.level}</p>
                   </div>
                   <div className="banner-actions">
@@ -3144,45 +3476,57 @@ function App() {
                 <section className="setup-panel feedback-panel">
                   <div className="panel-heading">
                     <p className="eyebrow">Quick survey</p>
-                    <h2>Rate this page</h2>
-                    <p>Five quick ratings and one optional comment.</p>
+                    <h2>{hasSubmittedFeedback ? 'Thanks for your review' : 'Rate this page'}</h2>
+                    <p>{hasSubmittedFeedback ? 'Your review is already saved for this account.' : 'Five quick ratings and one optional comment.'}</p>
                   </div>
-                  <article className="feedback-card">
-                    <div className="feedback-question-list">
-                      {FEEDBACK_QUESTIONS.map((question) => (
-                        <div key={question.key} className="feedback-row">
-                          <strong>{question.label}</strong>
-                          <FeedbackStars
-                            rating={feedbackRatings[question.key]}
-                            onChange={(next) =>
-                              setFeedbackRatings((current) => ({
-                                ...current,
-                                [question.key]: next,
-                              }))
-                            }
-                          />
-                        </div>
-                      ))}
-                    </div>
-                    <label>
-                      Optional comment
-                      <textarea
-                        rows={3}
-                        value={feedbackComment}
-                        onChange={(event) => setFeedbackComment(event.target.value)}
-                        placeholder="Add one short note if you want."
-                      />
-                    </label>
-                    {authNotice && <p className="auth-notice auth-notice-inline">{authNotice}</p>}
-                    <div className="sample-buttons">
-                      <button type="button" className="primary-button" onClick={submitFeedback}>
-                        Send feedback
-                      </button>
-                      <button type="button" className="ghost-button" onClick={() => setStudentView('subject')}>
-                        Not now
-                      </button>
-                    </div>
-                  </article>
+                  {hasSubmittedFeedback ? (
+                    <article className="feedback-card">
+                      <strong>Review received.</strong>
+                      <p>This temporary survey stays hidden after one submission so the same account does not send it twice.</p>
+                      <div className="sample-buttons">
+                        <button type="button" className="primary-button" onClick={() => setStudentView('subject')}>
+                          Back to subject
+                        </button>
+                      </div>
+                    </article>
+                  ) : (
+                    <article className="feedback-card">
+                      <div className="feedback-question-list">
+                        {FEEDBACK_QUESTIONS.map((question) => (
+                          <div key={question.key} className="feedback-row">
+                            <strong>{question.label}</strong>
+                            <FeedbackStars
+                              rating={feedbackRatings[question.key]}
+                              onChange={(next) =>
+                                setFeedbackRatings((current) => ({
+                                  ...current,
+                                  [question.key]: next,
+                                }))
+                              }
+                            />
+                          </div>
+                        ))}
+                      </div>
+                      <label>
+                        Optional comment
+                        <textarea
+                          rows={3}
+                          value={feedbackComment}
+                          onChange={(event) => setFeedbackComment(event.target.value)}
+                          placeholder="Add one short note if you want."
+                        />
+                      </label>
+                      {authNotice && <p className="auth-notice auth-notice-inline">{authNotice}</p>}
+                      <div className="sample-buttons">
+                        <button type="button" className="primary-button" onClick={submitFeedback}>
+                          Send feedback
+                        </button>
+                        <button type="button" className="ghost-button" onClick={() => setStudentView('subject')}>
+                          Not now
+                        </button>
+                      </div>
+                    </article>
+                  )}
                 </section>
               </section>
 
@@ -3233,6 +3577,105 @@ function App() {
           )}
         </main>
       ) : screen === 'staff' ? (
+        staffView === 'feedback' ? (
+        <main className="dashboard-layout">
+          <section className="dashboard-main">
+            <section className="welcome-banner">
+              <div>
+                <p className="eyebrow">Staff review</p>
+                <h2>Tell us how the staff lounge feels</h2>
+                <p>{getFlagEmoji(country.code)} {country.name} · {profile.subject}</p>
+              </div>
+              <div className="banner-actions">
+                <button type="button" className="primary-button action-button-prominent" onClick={() => setStaffView('lounge')}>
+                  Back to lounge
+                </button>
+                <button type="button" className="primary-button" onClick={logout}>
+                  Sign out
+                </button>
+              </div>
+            </section>
+
+            <section className="setup-panel feedback-panel">
+              <div className="panel-heading">
+                <p className="eyebrow">Quick survey</p>
+                <h2>Staff and learner review</h2>
+                <p>Five short ratings and one optional comment. One review per account.</p>
+              </div>
+              {hasSubmittedFeedback ? (
+                <article className="feedback-card">
+                  <strong>Thanks for sharing.</strong>
+                  <p>Your review is already saved, so this survey now stays closed for your account.</p>
+                  <div className="sample-buttons">
+                    <button type="button" className="primary-button" onClick={() => setStaffView('lounge')}>
+                      Back to lounge
+                    </button>
+                  </div>
+                </article>
+              ) : (
+                <article className="feedback-card">
+                  <div className="feedback-question-list">
+                    {FEEDBACK_QUESTIONS.map((question) => (
+                      <div key={question.key} className="feedback-row">
+                        <strong>{question.label}</strong>
+                        <FeedbackStars
+                          rating={feedbackRatings[question.key]}
+                          onChange={(next) =>
+                            setFeedbackRatings((current) => ({
+                              ...current,
+                              [question.key]: next,
+                            }))
+                          }
+                        />
+                      </div>
+                    ))}
+                  </div>
+                  <label>
+                    Optional comment
+                    <textarea
+                      rows={3}
+                      value={feedbackComment}
+                      onChange={(event) => setFeedbackComment(event.target.value)}
+                      placeholder="Tell us what should improve next."
+                    />
+                  </label>
+                  {authNotice && <p className="auth-notice auth-notice-inline">{authNotice}</p>}
+                  <div className="sample-buttons">
+                    <button type="button" className="primary-button" onClick={submitFeedback}>
+                      Send review
+                    </button>
+                    <button type="button" className="ghost-button" onClick={() => setStaffView('lounge')}>
+                      Not now
+                    </button>
+                  </div>
+                </article>
+              )}
+            </section>
+          </section>
+
+          <aside className="dashboard-side">
+            <section className="side-card accent-side-card">
+              <div className="panel-heading">
+                <p className="eyebrow">AI summary</p>
+                <h2>{feedbackSummary.headline}</h2>
+                <p>{feedbackSummary.detail}</p>
+              </div>
+              <div className="history-list">
+                {recentFeedback.length > 0 ? recentFeedback.map((entry) => (
+                  <article key={entry.id} className="history-row">
+                    <div>
+                      <strong>{'⭐'.repeat(Math.round(entry.rating))}</strong>
+                      <span>{entry.role === 'staff' ? 'Staff' : 'Learner'} · {getFlagEmoji(entry.countryCode)} {entry.choice}</span>
+                    </div>
+                  </article>
+                )) : (
+                  <p className="empty-state">Reviews from staff and learners will appear here after the first submission.</p>
+                )}
+              </div>
+            </section>
+          </aside>
+        </main>
+        ) : (
         <main className="dashboard-layout">
           <section className="dashboard-main">
             <section className="welcome-banner">
@@ -3242,6 +3685,9 @@ function App() {
                     <p>{getFlagEmoji(country.code)} {country.name} · {profile.subject}</p>
                   </div>
               <div className="banner-actions">
+                <button type="button" className="ghost-button" onClick={openFeedbackPage}>
+                  Review lounge
+                </button>
                 <button type="button" className="primary-button action-button-prominent" onClick={logout}>
                   Sign out
                 </button>
@@ -3271,7 +3717,7 @@ function App() {
               <div className="panel-heading">
                 <p className="eyebrow">Today</p>
                 <h2>Assigned lounge</h2>
-                <p>Keep an eye on recent learners, low ratings, and where support is needed next.</p>
+                <p>Keep an eye on recent learners, fresh reviews, and where support is needed next.</p>
               </div>
               <div className="history-list">
                 {recentLearnerActivity.length > 0 ? recentLearnerActivity.slice(0, 5).map((entry) => (
@@ -3292,9 +3738,9 @@ function App() {
 
             <section className="setup-panel">
               <div className="panel-heading">
-                <p className="eyebrow">Upload material</p>
-                <h2>Assign to learners</h2>
-                <p>Choose the right country, class, subject, and material type before sending it out.</p>
+                <p className="eyebrow">Staff archive</p>
+                <h2>{staffMaterialDraft.editingId ? 'Edit learner material' : 'Assign to learners'}</h2>
+                <p>Choose the right country, class, subject, and content type before sending it out.</p>
               </div>
               <div className="field-grid">
                 <label>
@@ -3350,10 +3796,23 @@ function App() {
                     onChange={(event) => updateStaffMaterialDraft('category', event.target.value as StaffMaterialCategory)}
                   >
                     <option value="reading">Reading material</option>
-                    <option value="quiz">Quiz guide</option>
-                    <option value="exam">Exam guide</option>
+                    <option value="quiz">Quiz</option>
+                    <option value="exam">Exam</option>
                   </select>
                 </label>
+                {staffMaterialDraft.category === 'reading' && (
+                  <label>
+                    Format
+                    <select
+                      value={staffMaterialDraft.resourceType}
+                      onChange={(event) => updateStaffMaterialDraft('resourceType', event.target.value as StaffMaterialResourceType)}
+                    >
+                      <option value="text">Reading text</option>
+                      <option value="document">PDF / DOCX file</option>
+                      <option value="video">Video link</option>
+                    </select>
+                  </label>
+                )}
                 <label className="field-span-2">
                   Title
                   <input
@@ -3370,20 +3829,145 @@ function App() {
                     placeholder="Short line learners will see first"
                   />
                 </label>
-                <label className="field-span-2">
-                  Material
-                  <textarea
-                    value={staffMaterialDraft.body}
-                    onChange={(event) => updateStaffMaterialDraft('body', event.target.value)}
-                    placeholder="Paste the reading material, quiz guide, or exam support notes here."
-                    rows={6}
-                  />
-                </label>
+                {staffMaterialDraft.resourceType === 'text' && (
+                  <label className="field-span-2">
+                    Material
+                    <textarea
+                      value={staffMaterialDraft.body}
+                      onChange={(event) => updateStaffMaterialDraft('body', event.target.value)}
+                      placeholder="Paste the reading material learners will open."
+                      rows={6}
+                    />
+                  </label>
+                )}
+                {staffMaterialDraft.resourceType === 'document' && (
+                  <label className="field-span-2">
+                    Upload document
+                    <input
+                      type="file"
+                      accept=".pdf,.doc,.docx,.ppt,.pptx,.txt"
+                      onChange={(event) => handleStaffAttachment(event.target.files?.[0] ?? null)}
+                    />
+                  </label>
+                )}
+                {staffMaterialDraft.resourceType === 'video' && (
+                  <label className="field-span-2">
+                    Video link
+                    <input
+                      value={staffMaterialDraft.videoUrl}
+                      onChange={(event) => updateStaffMaterialDraft('videoUrl', event.target.value)}
+                      placeholder="https://..."
+                    />
+                  </label>
+                )}
+                {staffMaterialDraft.resourceType === 'question-bank' && (
+                  <>
+                    <label>
+                      Active question count
+                      <input
+                        type="number"
+                        min={1}
+                        max={20}
+                        value={staffMaterialDraft.questionLimit}
+                        onChange={(event) => updateStaffMaterialDraft('questionLimit', Math.max(1, Number(event.target.value) || 1))}
+                      />
+                    </label>
+                    <div className="field-span-2 question-bank-builder">
+                      <div className="panel-heading compact-heading">
+                        <p className="eyebrow">Question bank</p>
+                        <h2>{staffMaterialDraft.category === 'quiz' ? 'Quiz questions' : 'Exam questions'}</h2>
+                        <p>Write multiple-choice questions and mark the correct answer before saving.</p>
+                      </div>
+                      {duplicateQuestionPrompts.length > 0 && (
+                        <article className="inline-warning-card">
+                          <strong>Some questions already exist</strong>
+                          <p>Update these prompts before saving so learners do not get repeated staff-authored items.</p>
+                          <div className="material-pill-row">
+                            {duplicateQuestionPrompts.slice(0, 3).map((prompt) => (
+                              <span key={prompt} className="mini-badge">{prompt}</span>
+                            ))}
+                          </div>
+                        </article>
+                      )}
+                      <div className="question-builder-list">
+                        {staffMaterialDraft.questions.map((question, questionIndex) => (
+                          <article key={question.id} className="question-builder-card">
+                            <div className="teacher-material-head">
+                              <strong>Question {questionIndex + 1}</strong>
+                              {staffMaterialDraft.questions.length > 1 && (
+                                <button
+                                  type="button"
+                                  className="ghost-button ghost-button-small"
+                                  onClick={() => removeQuestionDraft(question.id)}
+                                >
+                                  Remove
+                                </button>
+                              )}
+                            </div>
+                            <label>
+                              Prompt
+                              <textarea
+                                rows={2}
+                                value={question.prompt}
+                                onChange={(event) => updateQuestionDraft(question.id, 'prompt', event.target.value)}
+                                placeholder="Type the learner question here."
+                              />
+                            </label>
+                            <div className="choice-grid">
+                              {question.choices.map((choice, choiceIndex) => (
+                                <label key={`${question.id}-${choiceIndex}`}>
+                                  Choice {choiceIndex + 1}
+                                  <input
+                                    value={choice}
+                                    onChange={(event) => updateQuestionChoice(question.id, choiceIndex, event.target.value)}
+                                    placeholder={`Answer ${choiceIndex + 1}`}
+                                  />
+                                </label>
+                              ))}
+                            </div>
+                            <label>
+                              Correct answer
+                              <select
+                                value={question.answerIndex}
+                                onChange={(event) => updateQuestionDraft(question.id, 'answerIndex', Number(event.target.value))}
+                              >
+                                <option value={0}>Choice 1</option>
+                                <option value={1}>Choice 2</option>
+                                <option value={2}>Choice 3</option>
+                                <option value={3}>Choice 4</option>
+                              </select>
+                            </label>
+                            <label>
+                              Explanation
+                              <input
+                                value={question.explanation}
+                                onChange={(event) => updateQuestionDraft(question.id, 'explanation', event.target.value)}
+                                placeholder="One short reason or answer note."
+                              />
+                            </label>
+                          </article>
+                        ))}
+                      </div>
+                      <button type="button" className="ghost-button" onClick={addQuestionDraft}>
+                        Add another question
+                      </button>
+                    </div>
+                  </>
+                )}
               </div>
               <div className="banner-actions">
                 <button type="button" className="primary-button" onClick={addStaffMaterial}>
-                  Assign material
+                  {staffMaterialDraft.editingId ? 'Save changes' : 'Assign material'}
                 </button>
+                {staffMaterialDraft.editingId && (
+                  <button
+                    type="button"
+                    className="ghost-button"
+                    onClick={() => setStaffMaterialDraft(createInitialMaterialDraft(profile.countryCode))}
+                  >
+                    Cancel edit
+                  </button>
+                )}
               </div>
               <div className="teacher-material-grid">
                 {staffFocusMaterials.length > 0 ? staffFocusMaterials.slice(0, 6).map((material) => (
@@ -3396,15 +3980,28 @@ function App() {
                     <span className="teacher-material-meta">
                       {getFlagEmoji(material.countryCode)} {getCountryByCode(material.countryCode).name} · {material.subject} · {material.level}
                     </span>
+                    <div className="material-pill-row">
+                      <span className="mini-badge">{material.resourceType === 'document' ? '📄 File' : material.resourceType === 'video' ? '🎬 Video' : material.resourceType === 'question-bank' ? '🧠 Questions' : '📘 Notes'}</span>
+                      {material.questionLimit ? <span className="mini-badge">#{material.questionLimit}</span> : null}
+                    </div>
                     <div className="row-actions">
                       <strong>{material.uploadedBy}</strong>
-                      <button
-                        type="button"
-                        className="ghost-button ghost-button-small"
-                        onClick={() => removeStaffMaterial(material.id)}
-                      >
-                        Remove
-                      </button>
+                      <div className="row-actions">
+                        <button
+                          type="button"
+                          className="ghost-button ghost-button-small"
+                          onClick={() => beginEditStaffMaterial(material)}
+                        >
+                          Edit
+                        </button>
+                        <button
+                          type="button"
+                          className="ghost-button ghost-button-small"
+                          onClick={() => removeStaffMaterial(material.id)}
+                        >
+                          Remove
+                        </button>
+                      </div>
                     </div>
                   </article>
                 )) : (
@@ -3421,36 +4018,64 @@ function App() {
                 <h2>{feedbackSummary.headline}</h2>
                 <p>{feedbackSummary.detail}</p>
               </div>
+              <button type="button" className="ghost-button" onClick={openFeedbackPage}>
+                {hasSubmittedFeedback ? 'Review sent' : 'Leave a review'}
+              </button>
               <div className="history-list">
                 {recentFeedback.length > 0 ? recentFeedback.map((entry) => (
                   <article key={entry.id} className="history-row">
                     <div>
                       <strong>{'⭐'.repeat(entry.rating)}</strong>
                       <span>
-                        {getFlagEmoji(entry.countryCode)} {entry.choice}
+                        {entry.role === 'staff' ? 'Staff' : 'Learner'} · {getFlagEmoji(entry.countryCode)} {entry.choice}
                       </span>
                       {entry.comment && <span>{entry.comment}</span>}
                     </div>
                   </article>
                 )) : (
-                  <p className="empty-state">Survey replies will show here after learners send feedback.</p>
+                  <p className="empty-state">Survey replies from staff and learners will show here after people send feedback.</p>
                 )}
               </div>
             </section>
             <section className="side-card">
               <div className="panel-heading">
-                <p className="eyebrow">Assignments</p>
-                <h2>Ready for learners</h2>
-                <p>Materials go to matching countries, classes, and subjects.</p>
+                <p className="eyebrow">Staff archive</p>
+                <h2>Recent uploads</h2>
+                <p>Latest materials ready to edit, reassign, or replace.</p>
               </div>
-              <div className="material-pill-row">
-                <span className="mini-badge">📘 {staffMaterials.filter((material) => material.category === 'reading').length}</span>
-                <span className="mini-badge">📝 {staffMaterials.filter((material) => material.category === 'quiz').length}</span>
-                <span className="mini-badge">🎓 {staffMaterials.filter((material) => material.category === 'exam').length}</span>
+              <div className="mini-stat-list">
+                <article className="mini-stat-card">
+                  <span>📘</span>
+                  <strong>{archiveTypeCounts.reading}</strong>
+                </article>
+                <article className="mini-stat-card">
+                  <span>🧠</span>
+                  <strong>{archiveTypeCounts.quiz}</strong>
+                </article>
+                <article className="mini-stat-card">
+                  <span>🎓</span>
+                  <strong>{archiveTypeCounts.exam}</strong>
+                </article>
+              </div>
+              <div className="history-list">
+                {staffFocusMaterials.slice(0, 4).map((material) => (
+                  <article key={material.id} className="history-row">
+                    <div>
+                      <strong>{material.title}</strong>
+                      <span>{getFlagEmoji(material.countryCode)} {material.subject} · {material.level}</span>
+                      <span>{material.category} · {new Date(material.updatedAt ?? material.createdAt).toLocaleDateString()}</span>
+                    </div>
+                    <button type="button" className="ghost-button ghost-button-small" onClick={() => beginEditStaffMaterial(material)}>
+                      Open
+                    </button>
+                  </article>
+                ))}
+                {staffFocusMaterials.length === 0 && <p className="empty-state">New uploads will appear here after staff add materials, quizzes, or exams.</p>}
               </div>
             </section>
           </aside>
         </main>
+        )
       ) : screen === 'quiz' && quizState && currentQuestion ? (
         <main className="quiz-page">
           <div className="quiz-shell">

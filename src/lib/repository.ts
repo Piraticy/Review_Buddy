@@ -1,4 +1,11 @@
-import type { AdminStaffMember, LearnerProfile, RegisteredUser, StaffMaterial } from '../data';
+import type {
+  AdminStaffMember,
+  FeedbackEntry,
+  LearnerProfile,
+  RegisteredUser,
+  StaffMaterial,
+  StaffQuestionItem,
+} from '../data';
 import { getCountryByCode } from '../data';
 import { supabase } from './supabase';
 
@@ -12,6 +19,7 @@ type StoredState = {
   registeredUsers?: RegisteredUser[];
   staffMembers?: AdminStaffMember[];
   staffMaterials?: StaffMaterial[];
+  feedbackEntries?: FeedbackEntry[];
 };
 
 type VerificationRequest = {
@@ -163,6 +171,8 @@ function mapStaffRow(row: Record<string, unknown>): AdminStaffMember {
 }
 
 function mapStaffMaterialRow(row: Record<string, unknown>): StaffMaterial {
+  const questions = Array.isArray(row.questions) ? (row.questions as StaffQuestionItem[]) : undefined;
+
   return {
     id: String(row.id ?? ''),
     title: String(row.title ?? ''),
@@ -173,7 +183,35 @@ function mapStaffMaterialRow(row: Record<string, unknown>): StaffMaterial {
     level: String(row.level ?? 'Grade 1'),
     subject: String(row.subject ?? 'Mathematics'),
     category: (row.category as StaffMaterial['category']) ?? 'reading',
+    resourceType: (row.resource_type as StaffMaterial['resourceType']) ?? 'text',
+    attachmentName: row.attachment_name ? String(row.attachment_name) : undefined,
+    attachmentData: row.attachment_data ? String(row.attachment_data) : undefined,
+    videoUrl: row.video_url ? String(row.video_url) : undefined,
+    questionLimit: row.question_limit ? Number(row.question_limit) : undefined,
+    questions,
     uploadedBy: String(row.uploaded_by ?? 'Staff'),
+    createdAt: String(row.created_at ?? new Date().toISOString()),
+    updatedAt: row.updated_at ? String(row.updated_at) : undefined,
+  };
+}
+
+function mapFeedbackRow(row: Record<string, unknown>): FeedbackEntry {
+  return {
+    id: String(row.id ?? ''),
+    userName: String(row.user_name ?? ''),
+    userKey: String(row.user_key ?? ''),
+    role: (row.role as FeedbackEntry['role']) ?? 'student',
+    countryCode: String(row.country_code ?? 'KE'),
+    rating: Number(row.rating ?? 0),
+    choice: String(row.choice ?? ''),
+    ratings: (row.ratings as FeedbackEntry['ratings']) ?? {
+      ease: 0,
+      clarity: 0,
+      look: 0,
+      speed: 0,
+      confidence: 0,
+    },
+    comment: String(row.comment ?? ''),
     createdAt: String(row.created_at ?? new Date().toISOString()),
   };
 }
@@ -558,6 +596,31 @@ async function listStaffMaterials() {
   ];
 }
 
+async function listFeedbackEntries() {
+  const localFeedback = readStoredState().feedbackEntries ?? [];
+
+  if (!supabase) {
+    return localFeedback;
+  }
+
+  const { data, error } = await supabase
+    .from('feedback_entries')
+    .select('*')
+    .order('created_at', { ascending: false });
+
+  if (error || !data) {
+    return localFeedback;
+  }
+
+  const remoteFeedback = data.map((row) => mapFeedbackRow(row));
+  return [
+    ...remoteFeedback,
+    ...localFeedback.filter(
+      (localEntry) => !remoteFeedback.some((remoteEntry) => remoteEntry.id === localEntry.id),
+    ),
+  ];
+}
+
 async function addStaffMember(member: AdminStaffMember) {
   if (!supabase) {
     const localStaff = readStoredState().staffMembers ?? [];
@@ -609,14 +672,102 @@ async function addStaffMaterial(material: StaffMaterial) {
     level: material.level,
     subject: material.subject,
     category: material.category,
+    resource_type: material.resourceType,
+    attachment_name: material.attachmentName ?? null,
+    attachment_data: material.attachmentData ?? null,
+    video_url: material.videoUrl ?? null,
+    question_limit: material.questionLimit ?? null,
+    questions: material.questions ?? [],
     uploaded_by: material.uploadedBy,
     created_at: material.createdAt,
+    updated_at: material.updatedAt ?? material.createdAt,
   };
 
   const { data, error } = await supabase.from('staff_materials').insert(insertRow).select('*').single();
 
   if (error || !data) {
     mergeStoredState({ staffMaterials: [material, ...localMaterials] });
+    return material;
+  }
+
+  return mapStaffMaterialRow(data);
+}
+
+async function addFeedbackEntry(entry: FeedbackEntry) {
+  const localFeedback = readStoredState().feedbackEntries ?? [];
+
+  if (!supabase) {
+    mergeStoredState({ feedbackEntries: [entry, ...localFeedback].slice(0, 120) });
+    return entry;
+  }
+
+  const insertRow = {
+    id: entry.id,
+    user_name: entry.userName,
+    user_key: entry.userKey,
+    role: entry.role,
+    country_code: entry.countryCode,
+    rating: entry.rating,
+    choice: entry.choice,
+    ratings: entry.ratings,
+    comment: entry.comment,
+    created_at: entry.createdAt,
+  };
+
+  const { data, error } = await supabase
+    .from('feedback_entries')
+    .insert(insertRow)
+    .select('*')
+    .single();
+
+  if (error || !data) {
+    mergeStoredState({ feedbackEntries: [entry, ...localFeedback].slice(0, 120) });
+    return entry;
+  }
+
+  return mapFeedbackRow(data);
+}
+
+async function updateStaffMaterial(material: StaffMaterial) {
+  const localMaterials = readStoredState().staffMaterials ?? [];
+
+  if (!supabase) {
+    mergeStoredState({
+      staffMaterials: [material, ...localMaterials.filter((entry) => entry.id !== material.id)],
+    });
+    return material;
+  }
+
+  const updateRow = {
+    title: material.title,
+    summary: material.summary,
+    body: material.body,
+    country_code: material.countryCode,
+    stage: material.stage,
+    level: material.level,
+    subject: material.subject,
+    category: material.category,
+    resource_type: material.resourceType,
+    attachment_name: material.attachmentName ?? null,
+    attachment_data: material.attachmentData ?? null,
+    video_url: material.videoUrl ?? null,
+    question_limit: material.questionLimit ?? null,
+    questions: material.questions ?? [],
+    uploaded_by: material.uploadedBy,
+    updated_at: material.updatedAt ?? new Date().toISOString(),
+  };
+
+  const { data, error } = await supabase
+    .from('staff_materials')
+    .update(updateRow)
+    .eq('id', material.id)
+    .select('*')
+    .single();
+
+  if (error || !data) {
+    mergeStoredState({
+      staffMaterials: [material, ...localMaterials.filter((entry) => entry.id !== material.id)],
+    });
     return material;
   }
 
@@ -792,8 +943,11 @@ export const appRepository = {
   listRegisteredUsers,
   listStaffMembers,
   listStaffMaterials,
+  listFeedbackEntries,
   addStaffMember,
   addStaffMaterial,
+  addFeedbackEntry,
+  updateStaffMaterial,
   removeStaffMember,
   removeStaffMaterial,
   removeRegisteredLearner,

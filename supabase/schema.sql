@@ -155,6 +155,19 @@ on public.feedback_entries
 for insert
 with check (auth.role() = 'authenticated');
 
+drop policy if exists "Admins can delete feedback entries" on public.feedback_entries;
+create policy "Admins can delete feedback entries"
+on public.feedback_entries
+for delete
+using (
+  exists (
+    select 1
+    from public.learner_profiles
+    where learner_profiles.id = auth.uid()
+      and learner_profiles.role = 'admin'
+  )
+);
+
 insert into public.learner_profiles (
   id,
   username,

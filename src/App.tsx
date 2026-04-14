@@ -166,7 +166,7 @@ type GeneratedAvatarOption = {
 
 const STORAGE_KEY = 'review-buddy-state';
 const INSTALL_DISMISS_KEY = 'review-buddy-install-dismissed';
-const APP_VERSION = '1.10.3';
+const APP_VERSION = '1.10.4';
 const APP_CREATED_ON = 'March 31, 2026';
 const DEFAULT_ADMIN_USERNAME = 'Admin';
 const DEFAULT_ADMIN_PASSWORD = 'admin';
@@ -691,12 +691,22 @@ const FEEDBACK_CHOICES = [
   'Helps me learn',
 ];
 
-const FEEDBACK_QUESTIONS: { key: FeedbackQuestionKey; label: string }[] = [
+const FEEDBACK_SUMMARY_QUESTIONS: { key: FeedbackQuestionKey; label: string }[] = [
   { key: 'ease', label: 'How easy was this page?' },
   { key: 'clarity', label: 'How clear were the lessons?' },
   { key: 'look', label: 'How does the page look?' },
   { key: 'speed', label: 'How fast did it feel?' },
+  { key: 'confidence', label: 'How well did it support the goal?' },
+];
+
+const LEARNER_FEEDBACK_QUESTIONS: { key: FeedbackQuestionKey; label: string }[] = [
+  ...FEEDBACK_SUMMARY_QUESTIONS.slice(0, 4),
   { key: 'confidence', label: 'How much did it help you learn?' },
+];
+
+const STAFF_FEEDBACK_QUESTIONS: { key: FeedbackQuestionKey; label: string }[] = [
+  ...FEEDBACK_SUMMARY_QUESTIONS.slice(0, 4),
+  { key: 'confidence', label: 'How much did it help you support learners?' },
 ];
 
 function AdminTabs({
@@ -761,7 +771,7 @@ function buildFeedbackSummary(entries: FeedbackEntry[]) {
 
   const average = Math.round((entries.reduce((sum, entry) => sum + entry.rating, 0) / entries.length) * 10) / 10;
   const lowCount = entries.filter((entry) => entry.rating < 3).length;
-  const questionAverages = FEEDBACK_QUESTIONS.map((question) => ({
+  const questionAverages = FEEDBACK_SUMMARY_QUESTIONS.map((question) => ({
     label: question.label,
     average:
       entries.reduce((sum, entry) => sum + (entry.ratings?.[question.key] ?? entry.rating), 0) / entries.length,
@@ -1240,6 +1250,7 @@ function App() {
   const recentFeedback = [...feedbackEntries]
     .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())
     .slice(0, 5);
+  const activeFeedbackQuestions = profile.role === 'staff' ? STAFF_FEEDBACK_QUESTIONS : LEARNER_FEEDBACK_QUESTIONS;
   const onlineStaffMembers = focusedStaffMembers.filter(
     (member) => !member.status.toLowerCase().includes('offline') && !member.status.toLowerCase().includes('away'),
   );
@@ -2079,7 +2090,7 @@ function App() {
       return;
     }
 
-    const ratingsList = FEEDBACK_QUESTIONS.map((question) => feedbackRatings[question.key]);
+    const ratingsList = activeFeedbackQuestions.map((question) => feedbackRatings[question.key]);
 
     if (ratingsList.some((rating) => !rating)) {
       setAuthNotice('Rate each question with stars first.');
@@ -2087,7 +2098,7 @@ function App() {
     }
 
     const averageRating = Math.round((ratingsList.reduce((sum, rating) => sum + rating, 0) / ratingsList.length) * 10) / 10;
-    const lowestQuestion = FEEDBACK_QUESTIONS
+    const lowestQuestion = activeFeedbackQuestions
       .map((question) => ({ ...question, rating: feedbackRatings[question.key] }))
       .sort((left, right) => left.rating - right.rating)[0];
 
@@ -2124,6 +2135,16 @@ function App() {
       return;
     }
     setStudentView('home');
+  }
+
+  async function deleteFeedback(feedbackId: string) {
+    try {
+      await appRepository.deleteFeedbackEntry(feedbackId);
+      setFeedbackEntries((current) => current.filter((entry) => entry.id !== feedbackId));
+      setAdminNotice('That feedback entry was removed.');
+    } catch (error) {
+      setAdminNotice(getErrorMessage(error, 'We could not remove that feedback just now.'));
+    }
   }
 
   function startQuiz(subject: string, kind: AssessmentKind = 'quiz') {
@@ -3499,7 +3520,7 @@ function App() {
                   ) : (
                     <article className="feedback-card">
                       <div className="feedback-question-list">
-                        {FEEDBACK_QUESTIONS.map((question) => (
+                        {activeFeedbackQuestions.map((question) => (
                           <div key={question.key} className="feedback-row">
                             <strong>{question.label}</strong>
                             <FeedbackStars
@@ -3555,7 +3576,7 @@ function App() {
                     </article>
                   </div>
                   <div className="history-list">
-                    {FEEDBACK_QUESTIONS.map((question) => {
+                    {FEEDBACK_SUMMARY_QUESTIONS.map((question) => {
                       const avg =
                         feedbackEntries.length > 0
                           ? Math.round(
@@ -3622,7 +3643,7 @@ function App() {
               ) : (
                 <article className="feedback-card">
                   <div className="feedback-question-list">
-                    {FEEDBACK_QUESTIONS.map((question) => (
+                    {activeFeedbackQuestions.map((question) => (
                       <div key={question.key} className="feedback-row">
                         <strong>{question.label}</strong>
                         <FeedbackStars
@@ -4038,6 +4059,13 @@ function App() {
                       </span>
                       {entry.comment && <span>{entry.comment}</span>}
                     </div>
+                    <button
+                      type="button"
+                      className="ghost-button ghost-button-small feedback-delete-button"
+                      onClick={() => void deleteFeedback(entry.id)}
+                    >
+                      Delete
+                    </button>
                   </article>
                 )) : (
                   <p className="empty-state">Survey replies from staff and learners will show here after people send feedback.</p>
@@ -4782,6 +4810,13 @@ function App() {
                           </span>
                           {entry.comment && <span>{entry.comment}</span>}
                         </div>
+                        <button
+                          type="button"
+                          className="ghost-button ghost-button-small feedback-delete-button"
+                          onClick={() => void deleteFeedback(entry.id)}
+                        >
+                          Delete
+                        </button>
                       </article>
                     )) : (
                       <p className="empty-state">Survey replies will show here after learners send feedback.</p>

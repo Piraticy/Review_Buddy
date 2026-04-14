@@ -728,6 +728,24 @@ async function addFeedbackEntry(entry: FeedbackEntry) {
   return mapFeedbackRow(data);
 }
 
+async function deleteFeedbackEntry(feedbackId: string) {
+  const localFeedback = readStoredState().feedbackEntries ?? [];
+
+  if (!supabase) {
+    mergeStoredState({
+      feedbackEntries: localFeedback.filter((entry) => entry.id !== feedbackId),
+    });
+    return;
+  }
+
+  const { error } = await supabase.from('feedback_entries').delete().eq('id', feedbackId);
+  if (!error) return;
+
+  mergeStoredState({
+    feedbackEntries: localFeedback.filter((entry) => entry.id !== feedbackId),
+  });
+}
+
 async function updateStaffMaterial(material: StaffMaterial) {
   const localMaterials = readStoredState().staffMaterials ?? [];
 
@@ -947,6 +965,7 @@ export const appRepository = {
   addStaffMember,
   addStaffMaterial,
   addFeedbackEntry,
+  deleteFeedbackEntry,
   updateStaffMaterial,
   removeStaffMember,
   removeStaffMaterial,

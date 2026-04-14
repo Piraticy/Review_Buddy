@@ -1909,6 +1909,15 @@ button:disabled {
   align-self: start;
 }
 
+.feedback-delete-button {
+  color: color-mix(in srgb, #ef4444 74%, var(--theme-ink) 26%);
+  border-color: color-mix(in srgb, #ef4444 22%, var(--theme-primary) 12%);
+}
+
+.feedback-delete-button:hover {
+  background: color-mix(in srgb, #ef4444 10%, var(--theme-surface) 90%);
+}
+
 .leaderboard-row,
 .history-row,
 .table-row {

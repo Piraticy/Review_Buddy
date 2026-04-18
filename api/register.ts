@@ -1,4 +1,12 @@
-import { createClient } from '@supabase/supabase-js';
+import {
+  createSupabaseAdminClient,
+  listAuthUsersByEmail,
+  parseJsonBody,
+  setCorsHeaders,
+  toSafeUsername,
+  type VercelRequest,
+  type VercelResponse,
+} from './_supabase';
 
 type RegisteredUserPayload = {
   id: string;
@@ -21,34 +29,32 @@ type RegisteredUserPayload = {
   lastLoginAt?: string;
 };
 
-type VercelRequest = {
-  method?: string;
-  body?: string | RegisteredUserPayload;
-};
+async function makeUniqueUsername(supabaseAdmin: NonNullable<ReturnType<typeof createSupabaseAdminClient>>, proposed: string) {
+  const base = toSafeUsername(proposed);
+  const { data, error } = await supabaseAdmin
+    .from('learner_profiles')
+    .select('username')
+    .ilike('username', `${base}%`);
 
-type VercelResponse = {
-  status: (code: number) => VercelResponse;
-  json: (body: unknown) => void;
-  setHeader: (name: string, value: string) => void;
-};
+  if (error || !data || data.length === 0) {
+    return base;
+  }
 
-function parseBody(body: VercelRequest['body']): RegisteredUserPayload | null {
-  if (!body) return null;
-  if (typeof body === 'string') {
-    try {
-      return JSON.parse(body) as RegisteredUserPayload;
-    } catch {
-      return null;
+  const taken = new Set(data.map((row) => String(row.username).toLowerCase()));
+  if (!taken.has(base)) return base;
+
+  for (let index = 2; index < 1000; index += 1) {
+    const candidate = `${base}.${index}`;
+    if (!taken.has(candidate)) {
+      return candidate;
     }
   }
 
-  return body;
+  return `${base}.${Date.now().toString(36).slice(-4)}`;
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'POST,OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  setCorsHeaders(res);
 
   if (req.method === 'OPTIONS') {
     res.status(200).json({ ok: true });
@@ -60,10 +66,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return;
   }
 
-  const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-  if (!supabaseUrl || !serviceRoleKey) {
+  const supabaseAdmin = createSupabaseAdminClient();
+  if (!supabaseAdmin) {
     res.status(500).json({
       error:
         'Registration backend is not configured yet. Add SUPABASE_SERVICE_ROLE_KEY in Vercel so public signup can work.',
@@ -71,7 +75,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return;
   }
 
-  const payload = parseBody(req.body);
+  const payload = parseJsonBody<RegisteredUserPayload>(req.body);
   if (!payload) {
     res.status(400).json({ error: 'Invalid registration payload.' });
     return;
@@ -85,39 +89,76 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return;
   }
 
-  const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
-    auth: {
-      autoRefreshToken: false,
-      persistSession: false,
-    },
-  });
+  const userMetadata = {
+    full_name: payload.fullName,
+    username: payload.username,
+    role: payload.role,
+    country_code: payload.countryCode,
+  };
+
+  let createdUserId: string | null = null;
+  let reusedExistingAuthUser = false;
 
   const { data: createdUser, error: createError } = await supabaseAdmin.auth.admin.createUser({
     email,
     password,
     email_confirm: true,
-    user_metadata: {
-      full_name: payload.fullName,
-      username: payload.username,
-      role: payload.role,
-      country_code: payload.countryCode,
-    },
+    user_metadata: userMetadata,
   });
 
   if (createError || !createdUser.user?.id) {
-    const message =
+    const alreadyExists =
       createError?.message?.toLowerCase().includes('already') ||
-      createError?.message?.toLowerCase().includes('exists')
-        ? 'That email is already registered. Please sign in instead.'
-        : createError?.message ?? 'We could not create the learner account just now.';
+      createError?.message?.toLowerCase().includes('exists');
 
-    res.status(400).json({ error: message });
+    if (!alreadyExists) {
+      res.status(400).json({ error: createError?.message ?? 'We could not create the learner account just now.' });
+      return;
+    }
+
+    const existingAuthUsers = await listAuthUsersByEmail(supabaseAdmin, email);
+    const reusableAuthUser = existingAuthUsers[0];
+
+    if (!reusableAuthUser?.id) {
+      res.status(400).json({ error: 'That email is already registered. Please sign in instead.' });
+      return;
+    }
+
+    reusedExistingAuthUser = true;
+    createdUserId = reusableAuthUser.id;
+
+    const { error: updateExistingError } = await supabaseAdmin.auth.admin.updateUserById(reusableAuthUser.id, {
+      password,
+      email_confirm: true,
+      user_metadata: userMetadata,
+    });
+
+    if (updateExistingError) {
+      res.status(400).json({
+        error: updateExistingError.message ?? 'That account exists already, but we could not refresh it just now.',
+      });
+      return;
+    }
+  } else {
+    createdUserId = createdUser.user.id;
+  }
+
+  if (!createdUserId) {
+    res.status(400).json({ error: 'We could not create the learner account just now.' });
     return;
   }
 
+  const nextUsername = await makeUniqueUsername(supabaseAdmin, payload.username || payload.fullName || email.split('@')[0]);
+
+  await supabaseAdmin
+    .from('learner_profiles')
+    .delete()
+    .eq('email', email)
+    .neq('id', createdUserId);
+
   const profileRow = {
-    id: createdUser.user.id,
-    username: payload.username,
+    id: createdUserId,
+    username: nextUsername,
     full_name: payload.fullName,
     email,
     role: payload.role,
@@ -138,7 +179,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const { error: upsertError } = await supabaseAdmin.from('learner_profiles').upsert(profileRow);
 
   if (upsertError) {
-    await supabaseAdmin.auth.admin.deleteUser(createdUser.user.id);
+    if (!reusedExistingAuthUser) {
+      await supabaseAdmin.auth.admin.deleteUser(createdUserId);
+    }
     res.status(400).json({
       error: upsertError.message ?? 'The learner account was created, but the profile could not be saved.',
     });
@@ -148,7 +191,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.status(200).json({
     user: {
       ...payload,
-      id: createdUser.user.id,
+      id: createdUserId,
+      username: nextUsername,
       email,
       lastLoginAt: profileRow.last_login_at,
     },

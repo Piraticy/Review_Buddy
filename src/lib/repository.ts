@@ -59,6 +59,14 @@ function saveLocalUsers(users: RegisteredUser[]) {
   mergeStoredState({ registeredUsers: users });
 }
 
+async function getAccessToken() {
+  if (!supabase) return null;
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  return session?.access_token ?? null;
+}
+
 function findLocalUser(identifier: string, password: string) {
   const normalizedIdentifier = identifier.trim().toLowerCase();
   const localUsers = getLocalUsers();
@@ -400,7 +408,8 @@ async function requestPasswordReset(identifier: string) {
     throw new Error('Use your email address to reset the password.');
   }
 
-  const redirectTo = typeof window !== 'undefined' ? window.location.origin : undefined;
+  const redirectTo =
+    typeof window !== 'undefined' ? `${window.location.origin}/?type=recovery` : undefined;
   const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo });
 
   if (error) {
@@ -485,6 +494,67 @@ async function signIn(identifier: string, password: string) {
       .maybeSingle();
 
     resolvedProfileRow = emailRow ?? null;
+  }
+
+  if (!resolvedProfileRow && !profileError) {
+    const metadata = data.user.user_metadata ?? {};
+    const inferredRole =
+      email === DEFAULT_ADMIN_EMAIL
+        ? 'admin'
+        : email === DEFAULT_STAFF_EMAIL
+          ? 'staff'
+          : String(metadata.role ?? 'student');
+    const repairedProfile = {
+      id: data.user.id,
+      username: String(metadata.username ?? email.split('@')[0]),
+      full_name: String(metadata.full_name ?? email.split('@')[0]),
+      email,
+      role: inferredRole,
+      gender: 'boy',
+      avatar_mode: 'generated',
+      avatar_emoji: '🙂',
+      avatar_image: null,
+      country_code: String(metadata.country_code ?? 'KE'),
+      plan: 'free',
+      stage: 'primary',
+      level: 'Grade 1',
+      mode: 'solo',
+      subject: 'Mathematics',
+      created_at: new Date().toISOString(),
+      last_login_at: new Date().toISOString(),
+    };
+
+    const { data: repairedRow } = await supabase
+      .from('learner_profiles')
+      .upsert(repairedProfile)
+      .select('*')
+      .single();
+
+    resolvedProfileRow = repairedRow ?? null;
+  }
+
+  if (
+    resolvedProfileRow &&
+    (isAdminShortcut || isStaffShortcut) &&
+    resolvedProfileRow.role !== (isAdminShortcut ? 'admin' : 'staff')
+  ) {
+    const role = isAdminShortcut ? 'admin' : 'staff';
+    const avatarEmoji = role === 'admin' ? '🛡️' : '🧑🏽‍🏫';
+    const { data: repairedRow } = await supabase
+      .from('learner_profiles')
+      .upsert({
+        ...resolvedProfileRow,
+        id: data.user.id,
+        email,
+        role,
+        avatar_emoji: avatarEmoji,
+        avatar_mode: resolvedProfileRow.avatar_mode ?? 'generated',
+        full_name: resolvedProfileRow.full_name ?? (role === 'admin' ? 'Review Buddy Admin' : 'Review Buddy Staff'),
+      })
+      .select('*')
+      .single();
+
+    resolvedProfileRow = repairedRow ?? resolvedProfileRow;
   }
 
   if (profileError || !resolvedProfileRow) {
@@ -662,6 +732,35 @@ async function addStaffMaterial(material: StaffMaterial) {
     return material;
   }
 
+  if (material.resourceType === 'document' && material.attachmentData?.startsWith('data:')) {
+    const token = await getAccessToken();
+    if (!token) {
+      throw new Error('Sign in again before uploading a document.');
+    }
+
+    const response = await fetch('/api/upsert-material', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(material),
+    });
+
+    const payload = (await response.json().catch(() => null)) as
+      | {
+          error?: string;
+          material?: Record<string, unknown>;
+        }
+      | null;
+
+    if (!response.ok || !payload?.material) {
+      throw new Error(payload?.error ?? 'We could not upload that document just now.');
+    }
+
+    return mapStaffMaterialRow(payload.material);
+  }
+
   const insertRow = {
     id: material.id,
     title: material.title,
@@ -756,6 +855,35 @@ async function updateStaffMaterial(material: StaffMaterial) {
     return material;
   }
 
+  if (material.resourceType === 'document' && material.attachmentData?.startsWith('data:')) {
+    const token = await getAccessToken();
+    if (!token) {
+      throw new Error('Sign in again before updating that document.');
+    }
+
+    const response = await fetch('/api/upsert-material', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(material),
+    });
+
+    const payload = (await response.json().catch(() => null)) as
+      | {
+          error?: string;
+          material?: Record<string, unknown>;
+        }
+      | null;
+
+    if (!response.ok || !payload?.material) {
+      throw new Error(payload?.error ?? 'We could not update that document just now.');
+    }
+
+    return mapStaffMaterialRow(payload.material);
+  }
+
   const updateRow = {
     title: material.title,
     summary: material.summary,
@@ -846,8 +974,24 @@ async function removeRegisteredLearner(userId: string) {
     return;
   }
 
-  const { error } = await supabase.from('learner_profiles').delete().eq('id', userId);
-  if (!error) return;
+  const token = await getAccessToken();
+  if (token) {
+    const response = await fetch('/api/delete-learner', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ learnerId: userId }),
+    });
+
+    if (response.ok) {
+      return;
+    }
+
+    const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+    throw new Error(payload?.error ?? 'We could not remove that learner just now.');
+  }
 
   const localUsers = getLocalUsers();
   saveLocalUsers(localUsers.filter((entry) => entry.id !== userId));

@@ -4,7 +4,7 @@ import {
   setCorsHeaders,
   type VercelRequest,
   type VercelResponse,
-} from './_supabase';
+} from './_supabase.js';
 
 type DeleteLearnerPayload = {
   learnerId?: string;

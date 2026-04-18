@@ -4,7 +4,7 @@ import {
   setCorsHeaders,
   type VercelRequest,
   type VercelResponse,
-} from './_supabase';
+} from './_supabase.js';
 
 type MaterialPayload = {
   id: string;
@@ -146,4 +146,3 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   res.status(200).json({ material: data });
 }
-

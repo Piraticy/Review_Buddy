@@ -6,7 +6,7 @@ import {
   toSafeUsername,
   type VercelRequest,
   type VercelResponse,
-} from './_supabase.js';
+} from './supabase-server.js';
 
 type RegisteredUserPayload = {
   id: string;

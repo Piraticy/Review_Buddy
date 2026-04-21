@@ -1,10 +1,12 @@
 import type {
   AdminStaffMember,
+  Announcement,
   FeedbackEntry,
   LearnerProfile,
   RegisteredUser,
   StaffMaterial,
   StaffQuestionItem,
+  SupportRequest,
 } from '../data';
 import { getCountryByCode } from '../data';
 import { supabase } from './supabase';
@@ -20,6 +22,8 @@ type StoredState = {
   staffMembers?: AdminStaffMember[];
   staffMaterials?: StaffMaterial[];
   feedbackEntries?: FeedbackEntry[];
+  supportRequests?: SupportRequest[];
+  announcements?: Announcement[];
 };
 
 type VerificationRequest = {
@@ -100,6 +104,21 @@ function saveLocalUser(user: RegisteredUser) {
   saveLocalUsers(nextUsers);
 }
 
+function updateLocalUserByEmail(
+  email: string,
+  updater: (user: RegisteredUser) => RegisteredUser,
+) {
+  const normalizedEmail = email.trim().toLowerCase();
+  if (!normalizedEmail) return;
+
+  const localUsers = getLocalUsers();
+  saveLocalUsers(
+    localUsers.map((entry) =>
+      entry.email.toLowerCase() === normalizedEmail ? updater(entry) : entry,
+    ),
+  );
+}
+
 function createAdminFallbackUser(): RegisteredUser {
   return {
     id: 'default-admin',
@@ -164,6 +183,15 @@ function mapProfileRow(row: Record<string, unknown>): RegisteredUser {
     subject: String(row.subject ?? 'Mathematics'),
     createdAt: String(row.created_at ?? new Date().toISOString()),
     lastLoginAt: row.last_login_at ? String(row.last_login_at) : undefined,
+    birthDay: row.birth_day ? Number(row.birth_day) : undefined,
+    birthMonth: row.birth_month ? Number(row.birth_month) : undefined,
+    birthYear: row.birth_year ? Number(row.birth_year) : undefined,
+    streakCount: row.streak_count ? Number(row.streak_count) : undefined,
+    lastActiveOn: row.last_active_on ? String(row.last_active_on) : undefined,
+    tutorialSeen: typeof row.tutorial_seen === 'boolean' ? Boolean(row.tutorial_seen) : undefined,
+    qualifications: row.qualifications ? String(row.qualifications) : undefined,
+    eligibility: row.eligibility ? String(row.eligibility) : undefined,
+    supportFocus: row.support_focus ? String(row.support_focus) : undefined,
   };
 }
 
@@ -175,6 +203,12 @@ function mapStaffRow(row: Record<string, unknown>): AdminStaffMember {
     focus: String(row.focus ?? ''),
     status: String(row.status ?? 'Online'),
     countryCode: row.country_code ? String(row.country_code) : undefined,
+    email: row.email ? String(row.email) : undefined,
+    username: row.username ? String(row.username) : undefined,
+    password: row.password ? String(row.password) : undefined,
+    qualifications: row.qualifications ? String(row.qualifications) : undefined,
+    eligibility: row.eligibility ? String(row.eligibility) : undefined,
+    createdAt: row.created_at ? String(row.created_at) : undefined,
   };
 }
 
@@ -198,8 +232,14 @@ function mapStaffMaterialRow(row: Record<string, unknown>): StaffMaterial {
     questionLimit: row.question_limit ? Number(row.question_limit) : undefined,
     questions,
     uploadedBy: String(row.uploaded_by ?? 'Staff'),
+    uploadedByEmail: row.uploaded_by_email ? String(row.uploaded_by_email) : undefined,
     createdAt: String(row.created_at ?? new Date().toISOString()),
     updatedAt: row.updated_at ? String(row.updated_at) : undefined,
+    approvalStatus: row.approval_status ? (String(row.approval_status) as StaffMaterial['approvalStatus']) : undefined,
+    aiReviewSummary: row.ai_review_summary ? String(row.ai_review_summary) : undefined,
+    adminReviewNote: row.admin_review_note ? String(row.admin_review_note) : undefined,
+    reviewedAt: row.reviewed_at ? String(row.reviewed_at) : undefined,
+    reviewedBy: row.reviewed_by ? String(row.reviewed_by) : undefined,
   };
 }
 
@@ -220,6 +260,31 @@ function mapFeedbackRow(row: Record<string, unknown>): FeedbackEntry {
       confidence: 0,
     },
     comment: String(row.comment ?? ''),
+    createdAt: String(row.created_at ?? new Date().toISOString()),
+  };
+}
+
+function mapSupportRequestRow(row: Record<string, unknown>): SupportRequest {
+  return {
+    id: String(row.id ?? ''),
+    createdAt: String(row.created_at ?? new Date().toISOString()),
+    createdBy: String(row.created_by ?? ''),
+    createdByRole: (row.created_by_role as SupportRequest['createdByRole']) ?? 'student',
+    countryCode: String(row.country_code ?? 'KE'),
+    title: String(row.title ?? ''),
+    detail: String(row.detail ?? ''),
+    category: (row.category as SupportRequest['category']) ?? 'general',
+    status: (row.status as SupportRequest['status']) ?? 'new',
+    relatedMaterialId: row.related_material_id ? String(row.related_material_id) : undefined,
+  };
+}
+
+function mapAnnouncementRow(row: Record<string, unknown>): Announcement {
+  return {
+    id: String(row.id ?? ''),
+    title: String(row.title ?? ''),
+    message: String(row.message ?? ''),
+    audience: (row.audience as Announcement['audience']) ?? 'all',
     createdAt: String(row.created_at ?? new Date().toISOString()),
   };
 }
@@ -582,16 +647,15 @@ async function signIn(identifier: string, password: string) {
 
 async function listRegisteredUsers() {
   if (!supabase) {
-    return getLocalUsers().filter((user) => user.role === 'student');
+    return getLocalUsers();
   }
 
   const { data, error } = await supabase
     .from('learner_profiles')
     .select('*')
-    .eq('role', 'student')
     .order('created_at', { ascending: false });
 
-  const localUsers = getLocalUsers().filter((user) => user.role === 'student');
+  const localUsers = getLocalUsers();
 
   if (error || !data) {
     return localUsers;
@@ -691,6 +755,56 @@ async function listFeedbackEntries() {
   ];
 }
 
+async function listSupportRequests() {
+  const localRequests = readStoredState().supportRequests ?? [];
+
+  if (!supabase) {
+    return localRequests;
+  }
+
+  const { data, error } = await supabase
+    .from('support_requests')
+    .select('*')
+    .order('created_at', { ascending: false });
+
+  if (error || !data) {
+    return localRequests;
+  }
+
+  const remoteRequests = data.map((row) => mapSupportRequestRow(row));
+  return [
+    ...remoteRequests,
+    ...localRequests.filter(
+      (localRequest) => !remoteRequests.some((remoteRequest) => remoteRequest.id === localRequest.id),
+    ),
+  ];
+}
+
+async function listAnnouncements() {
+  const localAnnouncements = readStoredState().announcements ?? [];
+
+  if (!supabase) {
+    return localAnnouncements;
+  }
+
+  const { data, error } = await supabase
+    .from('announcements')
+    .select('*')
+    .order('created_at', { ascending: false });
+
+  if (error || !data) {
+    return localAnnouncements;
+  }
+
+  const remoteAnnouncements = data.map((row) => mapAnnouncementRow(row));
+  return [
+    ...remoteAnnouncements,
+    ...localAnnouncements.filter(
+      (localAnnouncement) => !remoteAnnouncements.some((remoteAnnouncement) => remoteAnnouncement.id === localAnnouncement.id),
+    ),
+  ];
+}
+
 async function addStaffMember(member: AdminStaffMember) {
   if (!supabase) {
     const localStaff = readStoredState().staffMembers ?? [];
@@ -702,16 +816,8 @@ async function addStaffMember(member: AdminStaffMember) {
     return nextMember;
   }
 
-  const insertRow = {
-    name: member.name,
-    role: member.role,
-    focus: member.focus,
-    status: member.status,
-    country_code: member.countryCode ?? null,
-  };
-
-  const { data, error } = await supabase.from('staff_members').insert(insertRow).select('*').single();
-  if (error || !data) {
+  const token = await getAccessToken();
+  if (!token) {
     const nextMember = {
       ...member,
       id: member.id ?? `staff-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
@@ -721,7 +827,27 @@ async function addStaffMember(member: AdminStaffMember) {
     return nextMember;
   }
 
-  return mapStaffRow(data);
+  const response = await fetch('/api/create-staff', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(member),
+  });
+
+  const payload = (await response.json().catch(() => null)) as
+    | {
+        error?: string;
+        staffMember?: Record<string, unknown>;
+      }
+    | null;
+
+  if (!response.ok || !payload?.staffMember) {
+    throw new Error(payload?.error ?? 'We could not create that staff account just now.');
+  }
+
+  return mapStaffRow(payload.staffMember);
 }
 
 async function addStaffMaterial(material: StaffMaterial) {
@@ -778,8 +904,14 @@ async function addStaffMaterial(material: StaffMaterial) {
     question_limit: material.questionLimit ?? null,
     questions: material.questions ?? [],
     uploaded_by: material.uploadedBy,
+    uploaded_by_email: material.uploadedByEmail ?? null,
     created_at: material.createdAt,
     updated_at: material.updatedAt ?? material.createdAt,
+    approval_status: material.approvalStatus ?? 'approved',
+    ai_review_summary: material.aiReviewSummary ?? null,
+    admin_review_note: material.adminReviewNote ?? null,
+    reviewed_at: material.reviewedAt ?? null,
+    reviewed_by: material.reviewedBy ?? null,
   };
 
   const { data, error } = await supabase.from('staff_materials').insert(insertRow).select('*').single();
@@ -827,6 +959,106 @@ async function addFeedbackEntry(entry: FeedbackEntry) {
   return mapFeedbackRow(data);
 }
 
+async function addSupportRequest(request: SupportRequest) {
+  const localRequests = readStoredState().supportRequests ?? [];
+
+  if (!supabase) {
+    mergeStoredState({ supportRequests: [request, ...localRequests] });
+    return request;
+  }
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  const createdByEmail = user?.email?.trim().toLowerCase() ?? request.createdBy.trim().toLowerCase();
+
+  const insertRow = {
+    id: request.id,
+    created_at: request.createdAt,
+    created_by: request.createdBy,
+    created_by_role: request.createdByRole,
+    created_by_email: createdByEmail,
+    country_code: request.countryCode,
+    title: request.title,
+    detail: request.detail,
+    category: request.category,
+    status: request.status,
+    related_material_id: request.relatedMaterialId ?? null,
+  };
+
+  const { data, error } = await supabase
+    .from('support_requests')
+    .insert(insertRow)
+    .select('*')
+    .single();
+
+  if (error || !data) {
+    mergeStoredState({ supportRequests: [request, ...localRequests] });
+    return request;
+  }
+
+  return mapSupportRequestRow(data);
+}
+
+async function updateSupportRequestStatus(requestId: string, status: SupportRequest['status']) {
+  const localRequests = readStoredState().supportRequests ?? [];
+
+  if (!supabase) {
+    mergeStoredState({
+      supportRequests: localRequests.map((entry) => (entry.id === requestId ? { ...entry, status } : entry)),
+    });
+    return;
+  }
+
+  const { error } = await supabase
+    .from('support_requests')
+    .update({ status })
+    .eq('id', requestId);
+
+  if (!error) {
+    return;
+  }
+
+  mergeStoredState({
+    supportRequests: localRequests.map((entry) => (entry.id === requestId ? { ...entry, status } : entry)),
+  });
+}
+
+async function addAnnouncement(announcement: Announcement) {
+  const localAnnouncements = readStoredState().announcements ?? [];
+
+  if (!supabase) {
+    mergeStoredState({ announcements: [announcement, ...localAnnouncements] });
+    return announcement;
+  }
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  const insertRow = {
+    id: announcement.id,
+    title: announcement.title,
+    message: announcement.message,
+    audience: announcement.audience,
+    published_by_email: user?.email?.trim().toLowerCase() ?? '',
+    created_at: announcement.createdAt,
+  };
+
+  const { data, error } = await supabase
+    .from('announcements')
+    .insert(insertRow)
+    .select('*')
+    .single();
+
+  if (error || !data) {
+    mergeStoredState({ announcements: [announcement, ...localAnnouncements] });
+    return announcement;
+  }
+
+  return mapAnnouncementRow(data);
+}
+
 async function deleteFeedbackEntry(feedbackId: string) {
   const localFeedback = readStoredState().feedbackEntries ?? [];
 
@@ -837,8 +1069,24 @@ async function deleteFeedbackEntry(feedbackId: string) {
     return;
   }
 
-  const { error } = await supabase.from('feedback_entries').delete().eq('id', feedbackId);
-  if (!error) return;
+  const token = await getAccessToken();
+  if (!token) {
+    throw new Error('Sign in again before removing feedback.');
+  }
+
+  const response = await fetch('/api/delete-feedback', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ feedbackId }),
+  });
+
+  if (!response.ok) {
+    const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+    throw new Error(payload?.error ?? 'We could not remove that feedback just now.');
+  }
 
   mergeStoredState({
     feedbackEntries: localFeedback.filter((entry) => entry.id !== feedbackId),
@@ -900,7 +1148,13 @@ async function updateStaffMaterial(material: StaffMaterial) {
     question_limit: material.questionLimit ?? null,
     questions: material.questions ?? [],
     uploaded_by: material.uploadedBy,
+    uploaded_by_email: material.uploadedByEmail ?? null,
     updated_at: material.updatedAt ?? new Date().toISOString(),
+    approval_status: material.approvalStatus ?? 'approved',
+    ai_review_summary: material.aiReviewSummary ?? null,
+    admin_review_note: material.adminReviewNote ?? null,
+    reviewed_at: material.reviewedAt ?? null,
+    reviewed_by: material.reviewedBy ?? null,
   };
 
   const { data, error } = await supabase
@@ -929,22 +1183,28 @@ async function removeStaffMember(memberIdOrName: string) {
     return;
   }
 
-  const { data } = await supabase
-    .from('staff_members')
-    .select('id')
-    .or(`id.eq.${memberIdOrName},name.eq.${memberIdOrName}`)
-    .limit(1)
-    .maybeSingle();
+  const token = await getAccessToken();
+  if (!token) {
+    const localStaff = readStoredState().staffMembers ?? [];
+    mergeStoredState({
+      staffMembers: localStaff.filter((member) => member.id !== memberIdOrName && member.name !== memberIdOrName),
+    });
+    return;
+  }
 
-  if (!data?.id) return;
-
-  const { error } = await supabase.from('staff_members').delete().eq('id', data.id);
-  if (!error) return;
-
-  const localStaff = readStoredState().staffMembers ?? [];
-  mergeStoredState({
-    staffMembers: localStaff.filter((member) => member.id !== memberIdOrName && member.name !== memberIdOrName),
+  const response = await fetch('/api/delete-staff', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ staffId: memberIdOrName }),
   });
+
+  if (!response.ok) {
+    const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+    throw new Error(payload?.error ?? 'We could not remove that staff account just now.');
+  }
 }
 
 async function removeStaffMaterial(materialId: string) {
@@ -997,7 +1257,10 @@ async function removeRegisteredLearner(userId: string) {
   saveLocalUsers(localUsers.filter((entry) => entry.id !== userId));
 }
 
-async function syncLearnerProfile(user: Pick<LearnerProfile, 'email' | 'countryCode' | 'plan' | 'stage' | 'level' | 'mode' | 'subject'>) {
+async function syncLearnerProfile(
+  user: Pick<LearnerProfile, 'email' | 'countryCode' | 'plan' | 'stage' | 'level' | 'mode' | 'subject'>
+    & Partial<Pick<LearnerProfile, 'birthDay' | 'birthMonth' | 'birthYear' | 'streakCount' | 'lastActiveOn' | 'tutorialSeen'>>,
+) {
   const normalizedEmail = user.email.trim().toLowerCase();
 
   if (!normalizedEmail) {
@@ -1005,23 +1268,22 @@ async function syncLearnerProfile(user: Pick<LearnerProfile, 'email' | 'countryC
   }
 
   if (!supabase) {
-    const localUsers = getLocalUsers();
-    saveLocalUsers(
-      localUsers.map((entry) =>
-        entry.email.toLowerCase() === normalizedEmail
-          ? {
-              ...entry,
-              countryCode: user.countryCode,
-              plan: user.plan,
-              stage: user.stage,
-              level: user.level,
-              mode: user.mode,
-              subject: user.subject,
-              lastLoginAt: new Date().toISOString(),
-            }
-          : entry,
-      ),
-    );
+    updateLocalUserByEmail(normalizedEmail, (entry) => ({
+      ...entry,
+      countryCode: user.countryCode,
+      plan: user.plan,
+      stage: user.stage,
+      level: user.level,
+      mode: user.mode,
+      subject: user.subject,
+      birthDay: user.birthDay,
+      birthMonth: user.birthMonth,
+      birthYear: user.birthYear,
+      streakCount: user.streakCount ?? entry.streakCount,
+      lastActiveOn: user.lastActiveOn ?? entry.lastActiveOn,
+      tutorialSeen: user.tutorialSeen ?? entry.tutorialSeen,
+      lastLoginAt: new Date().toISOString(),
+    }));
     return;
   }
 
@@ -1034,6 +1296,12 @@ async function syncLearnerProfile(user: Pick<LearnerProfile, 'email' | 'countryC
       level: user.level,
       mode: user.mode,
       subject: user.subject,
+      birth_day: user.birthDay ?? null,
+      birth_month: user.birthMonth ?? null,
+      birth_year: user.birthYear ?? null,
+      streak_count: user.streakCount ?? 0,
+      last_active_on: user.lastActiveOn ?? null,
+      tutorial_seen: user.tutorialSeen ?? false,
       last_login_at: new Date().toISOString(),
     })
     .eq('email', normalizedEmail);
@@ -1042,27 +1310,28 @@ async function syncLearnerProfile(user: Pick<LearnerProfile, 'email' | 'countryC
     return;
   }
 
-  const localUsers = getLocalUsers();
-  saveLocalUsers(
-    localUsers.map((entry) =>
-      entry.email.toLowerCase() === normalizedEmail
-        ? {
-            ...entry,
-            countryCode: user.countryCode,
-            plan: user.plan,
-            stage: user.stage,
-            level: user.level,
-            mode: user.mode,
-            subject: user.subject,
-            lastLoginAt: new Date().toISOString(),
-          }
-        : entry,
-    ),
-  );
+  updateLocalUserByEmail(normalizedEmail, (entry) => ({
+    ...entry,
+    countryCode: user.countryCode,
+    plan: user.plan,
+    stage: user.stage,
+    level: user.level,
+    mode: user.mode,
+    subject: user.subject,
+    birthDay: user.birthDay,
+    birthMonth: user.birthMonth,
+    birthYear: user.birthYear,
+    streakCount: user.streakCount ?? entry.streakCount,
+    lastActiveOn: user.lastActiveOn ?? entry.lastActiveOn,
+    tutorialSeen: user.tutorialSeen ?? entry.tutorialSeen,
+    lastLoginAt: new Date().toISOString(),
+  }));
 }
 
 function buildCountrySummary(users: RegisteredUser[]) {
-  return users.reduce<Record<string, { learners: number; families: number }>>((summary, user) => {
+  return users
+    .filter((user) => user.role === 'student')
+    .reduce<Record<string, { learners: number; families: number }>>((summary, user) => {
     const existing = summary[user.countryCode] ?? { learners: 0, families: 0 };
     const nextLearners = existing.learners + 1;
 
@@ -1072,7 +1341,7 @@ function buildCountrySummary(users: RegisteredUser[]) {
     };
 
     return summary;
-  }, {});
+    }, {});
 }
 
 function countryLeadFor(code: string, staffMembers: AdminStaffMember[]) {
@@ -1106,11 +1375,16 @@ export const appRepository = {
   listStaffMembers,
   listStaffMaterials,
   listFeedbackEntries,
+  listSupportRequests,
+  listAnnouncements,
   addStaffMember,
   addStaffMaterial,
   addFeedbackEntry,
+  addSupportRequest,
+  addAnnouncement,
   deleteFeedbackEntry,
   updateStaffMaterial,
+  updateSupportRequestStatus,
   removeStaffMember,
   removeStaffMaterial,
   removeRegisteredLearner,

@@ -1,5 +1,6 @@
 import { CSSProperties, ClipboardEvent, FormEvent, SVGProps, useEffect, useRef, useState } from 'react';
 import {
+  type Announcement,
   COUNTRIES,
   MOTTO,
   generateQuestions,
@@ -7,7 +8,6 @@ import {
   getCountryByCode,
   getLearningMaterial,
   getLearningVideo,
-  getLeaderboard,
   getLevelOptions,
   getPlanDetails,
   getPlanLabel,
@@ -27,6 +27,7 @@ import {
   type QuestionArt,
   type QuizResult,
   type RegisteredUser,
+  type SupportRequest,
   type StaffMaterial,
   type StaffMaterialCategory,
   type StaffMaterialResourceType,
@@ -112,6 +113,27 @@ type StaffQuestionDraft = {
   explanation: string;
 };
 
+type StaffAccountDraft = {
+  name: string;
+  role: string;
+  focus: string;
+  qualifications: string;
+  eligibility: string;
+  countryCode: string;
+};
+
+type SupportRequestDraft = {
+  title: string;
+  detail: string;
+  category: SupportRequest['category'];
+};
+
+type AnnouncementDraft = {
+  title: string;
+  message: string;
+  audience: Announcement['audience'];
+};
+
 type StaffMaterialDraft = {
   editingId?: string;
   title: string;
@@ -150,6 +172,8 @@ type StoredState = {
   followUpsByCountry?: AdminFollowUpMap;
   feedbackEntries?: FeedbackEntry[];
   submittedFeedbackKeys?: string[];
+  supportRequests?: SupportRequest[];
+  announcements?: Announcement[];
 };
 
 type BeforeInstallPromptEvent = Event & {
@@ -166,12 +190,28 @@ type GeneratedAvatarOption = {
 
 const STORAGE_KEY = 'review-buddy-state';
 const INSTALL_DISMISS_KEY = 'review-buddy-install-dismissed';
-const APP_VERSION = '1.10.4';
-const APP_CREATED_ON = 'March 31, 2026';
+const APP_VERSION = '1.11.0';
+const APP_DISPLAY_VERSION = 'Beta';
+const APP_CREATED_ON = 'March 26';
 const DEFAULT_ADMIN_USERNAME = 'Admin';
 const DEFAULT_ADMIN_PASSWORD = 'admin';
 const DEFAULT_STAFF_USERNAME = 'Staff';
 const DEFAULT_STAFF_PASSWORD = 'staff';
+const TERMS_UPDATED_ON = 'April 21, 2026';
+const MONTH_OPTIONS = [
+  'January',
+  'February',
+  'March',
+  'April',
+  'May',
+  'June',
+  'July',
+  'August',
+  'September',
+  'October',
+  'November',
+  'December',
+] as const;
 const GENERATED_AVATARS: Record<LearnerGender, GeneratedAvatarOption[]> = {
   boy: [
     { emoji: '👦🏻', label: 'Bright starter' },
@@ -440,6 +480,12 @@ function createInitialProfile(): LearnerProfile {
     level: getLevelOptions(stage)[0],
     mode: 'solo',
     subject,
+    birthDay: undefined,
+    birthMonth: undefined,
+    birthYear: undefined,
+    streakCount: 0,
+    lastActiveOn: undefined,
+    tutorialSeen: false,
   };
 }
 
@@ -508,6 +554,7 @@ function createDefaultAdminUser(): RegisteredUser {
     subject: 'Mathematics',
     createdAt: new Date('2026-03-31T00:00:00.000Z').toISOString(),
     lastLoginAt: undefined,
+    tutorialSeen: true,
   };
 }
 
@@ -530,6 +577,10 @@ function createDefaultStaffUser(): RegisteredUser {
     subject: 'Communication Skills',
     createdAt: new Date('2026-03-31T00:00:00.000Z').toISOString(),
     lastLoginAt: undefined,
+    tutorialSeen: true,
+    qualifications: 'Curriculum coach',
+    eligibility: 'Verified school partner',
+    supportFocus: 'Teacher support and review',
   };
 }
 
@@ -574,6 +625,9 @@ function normalizeRegisteredUser(user: Partial<RegisteredUser>): RegisteredUser 
     username: user.username ?? createUsername(normalizedProfile.fullName, normalizedProfile.email),
     createdAt: user.createdAt ?? new Date().toISOString(),
     lastLoginAt: user.lastLoginAt,
+    qualifications: user.qualifications,
+    eligibility: user.eligibility,
+    supportFocus: user.supportFocus,
   };
 }
 
@@ -790,6 +844,157 @@ function buildFeedbackSummary(entries: FeedbackEntry[]) {
   };
 }
 
+function createInitialStaffAccountDraft(countryCode = 'US'): StaffAccountDraft {
+  return {
+    name: '',
+    role: 'Learning mentor',
+    focus: '',
+    qualifications: '',
+    eligibility: '',
+    countryCode,
+  };
+}
+
+function createInitialSupportRequestDraft(): SupportRequestDraft {
+  return {
+    title: '',
+    detail: '',
+    category: 'topic',
+  };
+}
+
+function createInitialAnnouncementDraft(): AnnouncementDraft {
+  return {
+    title: '',
+    message: '',
+    audience: 'all',
+  };
+}
+
+function defaultAnnouncements(): Announcement[] {
+  return [
+    {
+      id: 'welcome-board',
+      title: 'Welcome to Review Buddy beta',
+      message: 'Use the tutorial card, practise a subject, and share quick feedback so we can improve before full launch.',
+      audience: 'all',
+      createdAt: new Date('2026-04-21T08:00:00.000Z').toISOString(),
+    },
+  ];
+}
+
+function getTodayKey() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function getYesterdayKey() {
+  const now = new Date();
+  now.setDate(now.getDate() - 1);
+  return now.toISOString().slice(0, 10);
+}
+
+function generateEasyPassword(name: string) {
+  const base = name
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((part) => part.replace(/[^a-zA-Z]/g, '').slice(0, 4))
+    .filter(Boolean)
+    .join('');
+
+  const suffix = Math.floor(100 + Math.random() * 900);
+  return `${base || 'Buddy'}${suffix}!`;
+}
+
+function reviewMaterialSafety(material: StaffMaterial) {
+  const combined = `${material.title} ${material.summary} ${material.body}`.toLowerCase();
+  const riskyWords = ['violence', 'weapon', 'adult', 'gambling', 'hate'];
+  const found = riskyWords.find((word) => combined.includes(word));
+
+  if (found) {
+    return `Needs admin review carefully because it mentions "${found}" and may not suit children yet.`;
+  }
+
+  if (material.resourceType === 'video') {
+    return 'Looks suitable for review. Confirm the video link is age-appropriate before approval.';
+  }
+
+  if (material.resourceType === 'question-bank' && (material.questions?.length ?? 0) < 3) {
+    return 'Safe tone so far, but add a few more questions before publishing to learners.';
+  }
+
+  return 'Looks child-friendly and ready for admin approval after a quick final check.';
+}
+
+function getMaterialStatusLabel(status?: StaffMaterial['approvalStatus']) {
+  if (status === 'approved') return 'Approved';
+  if (status === 'denied') return 'Needs changes';
+  return 'Pending review';
+}
+
+function getMaterialStatusBadge(status?: StaffMaterial['approvalStatus']) {
+  if (status === 'approved') return '✅ Approved';
+  if (status === 'denied') return '🛠️ Changes needed';
+  return '🕒 Pending';
+}
+
+function getProgressSnapshot(attempts: AttemptRecord[]) {
+  if (attempts.length === 0) {
+    return {
+      average: 0,
+      passRate: 0,
+      level: 'Just starting',
+      detail: 'Complete a quiz or exam to unlock your first progress review.',
+    };
+  }
+
+  const average = Math.round(attempts.reduce((sum, attempt) => sum + attempt.percent, 0) / attempts.length);
+  const passed = attempts.filter((attempt) => attempt.percent >= 60).length;
+  const passRate = Math.round((passed / attempts.length) * 100);
+  const level =
+    average >= 85 ? 'Excellent progress' : average >= 70 ? 'Strong progress' : average >= 55 ? 'Building steadily' : 'Needs support';
+  const detail =
+    average >= 85
+      ? 'You are ready for harder practice and challenge exams.'
+      : average >= 70
+        ? 'Keep going. Your scores show growing confidence.'
+        : average >= 55
+          ? 'A few more guided lessons will help lift your average.'
+          : 'Ask for a mentor or topic support so the next lessons feel easier.';
+
+  return { average, passRate, level, detail };
+}
+
+function isBirthdayToday(user: RegisteredUser) {
+  if (!user.birthDay || !user.birthMonth) return false;
+  const today = new Date();
+  return today.getDate() === user.birthDay && today.getMonth() + 1 === user.birthMonth;
+}
+
+function tutorialStepsFor(role: LearnerProfile['role']) {
+  if (role === 'admin') {
+    return [
+      'Open Staff to create staff accounts and share easy passwords.',
+      'Use Follow-ups to review uploads, requests, and approvals.',
+      'Use Reports for feedback trends, approvals, and activity.',
+    ];
+  }
+
+  if (role === 'staff') {
+    return [
+      'Upload a material and wait for admin approval before it reaches learners.',
+      'Use Recent uploads to edit or remove your own work.',
+      'Open Review lounge only when you want to send your own feedback.',
+    ];
+  }
+
+  return [
+    'Pick a subject from Learning home and open notes, video, quiz, or exam.',
+    'Use Request support to ask for topics, mentors, or technical help.',
+    'Watch your streak and progress cards to see how you are improving.',
+  ];
+}
+
 function ColoringBoard({ art, fillColor }: { art?: QuestionArt; fillColor?: string }) {
   const fill = fillColor ?? '#ffffff';
   const stroke = '#1f2937';
@@ -940,12 +1145,10 @@ function App() {
   const [followUpsByCountry, setFollowUpsByCountry] = useState<AdminFollowUpMap>({});
   const [feedbackEntries, setFeedbackEntries] = useState<FeedbackEntry[]>([]);
   const [submittedFeedbackKeys, setSubmittedFeedbackKeys] = useState<string[]>([]);
+  const [supportRequests, setSupportRequests] = useState<SupportRequest[]>([]);
+  const [announcements, setAnnouncements] = useState<Announcement[]>(defaultAnnouncements);
   const [adminNotice, setAdminNotice] = useState('Choose a tool to manage staff, countries, or reports.');
-  const [staffDraft, setStaffDraft] = useState({
-    name: '',
-    role: '',
-    focus: '',
-  });
+  const [staffDraft, setStaffDraft] = useState<StaffAccountDraft>(() => createInitialStaffAccountDraft());
   const [staffMaterialDraft, setStaffMaterialDraft] = useState<StaffMaterialDraft>(() =>
     createInitialMaterialDraft(createInitialProfile().countryCode),
   );
@@ -956,6 +1159,19 @@ function App() {
   const [isRecoveryMode, setIsRecoveryMode] = useState(false);
   const [feedbackRatings, setFeedbackRatings] = useState<Record<FeedbackQuestionKey, number>>(createEmptyFeedbackRatings);
   const [feedbackComment, setFeedbackComment] = useState('');
+  const [supportRequestDraft, setSupportRequestDraft] = useState<SupportRequestDraft>(createInitialSupportRequestDraft);
+  const [announcementDraft, setAnnouncementDraft] = useState<AnnouncementDraft>(createInitialAnnouncementDraft);
+  const [learnerSearch, setLearnerSearch] = useState('');
+  const [staffSearch, setStaffSearch] = useState('');
+  const [showTermsModal, setShowTermsModal] = useState(false);
+  const [showTutorial, setShowTutorial] = useState(false);
+  const [showVersionPrompt, setShowVersionPrompt] = useState(false);
+  const [streakNotice, setStreakNotice] = useState('');
+  const [generatedStaffAccount, setGeneratedStaffAccount] = useState<{
+    name: string;
+    email: string;
+    password: string;
+  } | null>(null);
   const [authScene] = useState(() => AUTH_SCENES[Math.floor(Math.random() * AUTH_SCENES.length)]);
   const speechKeyRef = useRef<string | null>(null);
 
@@ -998,9 +1214,7 @@ function App() {
       const saved = JSON.parse(raw) as StoredState;
 
       if (saved.appVersion !== APP_VERSION) {
-        window.localStorage.removeItem(STORAGE_KEY);
-        setIsReady(true);
-        return;
+        setShowVersionPrompt(Boolean(saved.appVersion));
       }
 
       if (saved.profile) setProfile(normalizeLearnerProfile(saved.profile));
@@ -1021,6 +1235,8 @@ function App() {
       if (saved.followUpsByCountry) setFollowUpsByCountry(saved.followUpsByCountry);
       if (saved.feedbackEntries) setFeedbackEntries(saved.feedbackEntries);
       if (saved.submittedFeedbackKeys) setSubmittedFeedbackKeys(saved.submittedFeedbackKeys);
+      if (saved.supportRequests) setSupportRequests(saved.supportRequests);
+      if (saved.announcements) setAnnouncements(saved.announcements);
     } catch {
       window.localStorage.removeItem(STORAGE_KEY);
     } finally {
@@ -1071,11 +1287,13 @@ function App() {
     let cancelled = false;
 
     async function hydrateSharedData() {
-      const [repoUsers, repoStaff, repoMaterials, repoFeedback] = await Promise.all([
+      const [repoUsers, repoStaff, repoMaterials, repoFeedback, repoSupportRequests, repoAnnouncements] = await Promise.all([
         appRepository.listRegisteredUsers(),
         appRepository.listStaffMembers(),
         appRepository.listStaffMaterials(),
         appRepository.listFeedbackEntries(),
+        appRepository.listSupportRequests(),
+        appRepository.listAnnouncements(),
       ]);
 
       if (cancelled) return;
@@ -1094,6 +1312,14 @@ function App() {
 
       if (repoFeedback.length > 0) {
         setFeedbackEntries(repoFeedback);
+      }
+
+      if (repoSupportRequests.length > 0) {
+        setSupportRequests(repoSupportRequests);
+      }
+
+      if (repoAnnouncements.length > 0) {
+        setAnnouncements(repoAnnouncements);
       }
     }
 
@@ -1129,6 +1355,8 @@ function App() {
         followUpsByCountry,
         feedbackEntries,
         submittedFeedbackKeys,
+        supportRequests,
+        announcements,
       } satisfies StoredState),
     );
   }, [
@@ -1144,6 +1372,8 @@ function App() {
     reviewSnapshot,
     screen,
     selectedSubject,
+    announcements,
+    supportRequests,
     staffMembers,
     staffMaterials,
     staffView,
@@ -1205,11 +1435,6 @@ function App() {
   const currentQuestion = quizState?.questions[quizState.currentIndex];
   const adminMetricsCode = screen === 'admin' ? adminFocusCode : profile.countryCode;
   const activeStudentSubject = selectedSubject ?? profile.subject;
-  const leaderboard = getLeaderboard(
-    quizState?.activeSubject ?? activeStudentSubject,
-    profile,
-    quizState?.result ?? undefined,
-  );
   const adminCountry = getCountryByCode(adminMetricsCode);
   const learnerRegistrations = registeredUsers.filter((entry) => entry.role === 'student');
   const staffRegistrations = registeredUsers.filter((entry) => entry.role === 'staff');
@@ -1230,9 +1455,6 @@ function App() {
       staffLead,
     };
   }).filter((entry) => entry.learners > 0);
-  const recentRegistrations = [...learnerRegistrations].sort(
-    (left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime(),
-  );
   const recentLearnerActivity = [...focusedLearners]
     .sort(
       (left, right) =>
@@ -1240,20 +1462,19 @@ function App() {
         new Date(left.lastLoginAt ?? left.createdAt).getTime(),
     )
     .slice(0, 8);
-  const registrationsGroupedByCountry = COUNTRIES.map((countryEntry) => ({
-    country: countryEntry,
-    learners: recentRegistrations.filter((entry) => entry.countryCode === countryEntry.code),
-  })).filter((entry) => entry.learners.length > 0);
   const countryRegistrationCards = registrationsByCountry;
   const focusedStaffMembers = staffMembers.filter((member) => !member.countryCode || member.countryCode === adminMetricsCode);
   const feedbackSummary = buildFeedbackSummary(feedbackEntries);
+  const learnerFeedbackEntries = feedbackEntries.filter((entry) => entry.role === 'student');
+  const learnerFeedbackSummary = buildFeedbackSummary(learnerFeedbackEntries);
   const recentFeedback = [...feedbackEntries]
     .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())
     .slice(0, 5);
-  const activeFeedbackQuestions = profile.role === 'staff' ? STAFF_FEEDBACK_QUESTIONS : LEARNER_FEEDBACK_QUESTIONS;
-  const onlineStaffMembers = focusedStaffMembers.filter(
-    (member) => !member.status.toLowerCase().includes('offline') && !member.status.toLowerCase().includes('away'),
+  const supportRequestsForAdmin = [...supportRequests].sort(
+    (left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime(),
   );
+  const focusCountryRequests = supportRequestsForAdmin.filter((request) => request.countryCode === adminMetricsCode);
+  const activeFeedbackQuestions = profile.role === 'staff' ? STAFF_FEEDBACK_QUESTIONS : LEARNER_FEEDBACK_QUESTIONS;
   const recentActiveLearners = focusedLearners.filter((entry) => {
     if (!entry.lastLoginAt) return false;
     return now - new Date(entry.lastLoginAt).getTime() <= liveWindowMs;
@@ -1280,12 +1501,35 @@ function App() {
   const reportActivity = hasActivityOverride
     ? (adminActivityByCountry[adminMetricsCode] ?? [])
     : realReportActivity;
+  const pendingMaterials = [...staffMaterials]
+    .filter((material) => (material.approvalStatus ?? 'approved') === 'pending')
+    .sort(
+      (left, right) =>
+        new Date(right.updatedAt ?? right.createdAt).getTime() -
+        new Date(left.updatedAt ?? left.createdAt).getTime(),
+    );
   const quietLearners = focusedLearners.filter((entry) => {
     if (!entry.lastLoginAt) return true;
     return now - new Date(entry.lastLoginAt).getTime() > recentWindowMs;
   });
   const trialLearners = focusedLearners.filter((entry) => entry.plan === 'trial');
   const realFollowUps = [
+    ...(pendingMaterials.length > 0
+      ? [
+          {
+            title: 'Staff uploads waiting for approval',
+            detail: `${pendingMaterials.length} material${pendingMaterials.length === 1 ? '' : 's'} need admin review before publishing to learners.`,
+          },
+        ]
+      : []),
+    ...(focusCountryRequests.length > 0
+      ? [
+          {
+            title: 'Learner and staff requests',
+            detail: `${focusCountryRequests.length} support request${focusCountryRequests.length === 1 ? '' : 's'} need attention in ${adminCountry.name}.`,
+          },
+        ]
+      : []),
     ...(trialLearners.length > 0
       ? [
           {
@@ -1315,26 +1559,6 @@ function App() {
   const followUpItems = hasFollowUpOverride
     ? (followUpsByCountry[adminMetricsCode] ?? [])
     : realFollowUps;
-  const subjectInsights = Object.values(
-    focusedLearners.reduce<Record<string, { subject: string; learners: number; recent: number }>>((summary, entry) => {
-      const current = summary[entry.subject] ?? { subject: entry.subject, learners: 0, recent: 0 };
-      current.learners += 1;
-      if (entry.lastLoginAt && now - new Date(entry.lastLoginAt).getTime() <= recentWindowMs) {
-        current.recent += 1;
-      }
-      summary[entry.subject] = current;
-      return summary;
-    }, {}),
-  )
-    .sort((left, right) => right.learners - left.learners)
-    .slice(0, 3)
-    .map((item) => ({
-      subject: item.subject,
-      learners: item.learners,
-      averageScore: 0,
-      trend:
-        item.recent > 2 ? 'Active this week' : item.recent > 0 ? 'New recent activity' : 'Waiting for activity',
-    }));
   const planMix = (['free', 'trial', 'elite'] as const).map((plan) => {
     const count = focusedLearners.filter((entry) => entry.plan === plan).length;
     return {
@@ -1365,27 +1589,61 @@ function App() {
   const chosenAvatarOption = generatedAvatarOptions.find((option) => option.emoji === profile.avatarEmoji);
   const matchingStaffMaterials = staffMaterials.filter(
     (material) =>
+      (material.approvalStatus ?? 'approved') === 'approved' &&
       material.countryCode === profile.countryCode &&
       material.stage === profile.stage &&
       material.level === profile.level &&
       material.subject === activeStudentSubject,
   );
+  const myStaffMaterials = [...staffMaterials]
+    .filter((material) => (material.uploadedByEmail ?? '').toLowerCase() === profile.email.toLowerCase())
+    .sort(
+      (left, right) =>
+        new Date(right.updatedAt ?? right.createdAt).getTime() -
+        new Date(left.updatedAt ?? left.createdAt).getTime(),
+    );
   const readingMaterials = matchingStaffMaterials.filter((material) => material.category === 'reading');
   const quizMaterials = matchingStaffMaterials.filter((material) => material.category === 'quiz');
   const examMaterials = matchingStaffMaterials.filter((material) => material.category === 'exam');
-  const staffFocusMaterials = [...staffMaterials]
-    .filter((material) => material.countryCode === staffMaterialDraft.countryCode)
-    .sort((left, right) => new Date(right.updatedAt ?? right.createdAt).getTime() - new Date(left.updatedAt ?? left.createdAt).getTime());
-  const archiveTypeCounts = {
-    reading: staffFocusMaterials.filter((material) => material.category === 'reading').length,
-    quiz: staffFocusMaterials.filter((material) => material.category === 'quiz').length,
-    exam: staffFocusMaterials.filter((material) => material.category === 'exam').length,
-  };
   const duplicateQuestionPrompts = staffMaterialDraft.resourceType === 'question-bank' ? findDuplicateQuestionPrompts() : [];
   const feedbackUserKey = `${profile.role}:${(profile.email || profile.fullName || firstName).trim().toLowerCase()}`;
   const hasSubmittedFeedback =
     submittedFeedbackKeys.includes(feedbackUserKey) ||
     feedbackEntries.some((entry) => entry.userKey === feedbackUserKey);
+  const progressSnapshot = getProgressSnapshot(attempts);
+  const filteredLearners = learnerRegistrations.filter((entry) => {
+    const query = learnerSearch.trim().toLowerCase();
+    if (!query) return true;
+    return [entry.fullName, entry.email, entry.level, entry.subject, getCountryByCode(entry.countryCode).name]
+      .join(' ')
+      .toLowerCase()
+      .includes(query);
+  });
+  const filteredStaff = staffRegistrations.filter((entry) => {
+    const query = staffSearch.trim().toLowerCase();
+    if (!query) return true;
+    return [
+      entry.fullName,
+      entry.email,
+      entry.qualifications ?? '',
+      entry.eligibility ?? '',
+      entry.supportFocus ?? '',
+      getCountryByCode(entry.countryCode).name,
+    ]
+      .join(' ')
+      .toLowerCase()
+      .includes(query);
+  });
+  const visibleAnnouncements = announcements.filter(
+    (announcement) =>
+      announcement.audience === 'all' ||
+      (profile.role === 'student' && announcement.audience === 'learners') ||
+      (profile.role === 'staff' && announcement.audience === 'staff'),
+  );
+  const mySupportRequests = supportRequestsForAdmin.filter(
+    (request) => request.createdBy.toLowerCase() === (profile.email || profile.fullName).toLowerCase(),
+  );
+  const birthdayLearners = learnerRegistrations.filter((entry) => isBirthdayToday(entry));
 
   useEffect(() => {
     if ('speechSynthesis' in window) {
@@ -1530,28 +1788,81 @@ function App() {
       username: createUsername(enriched.fullName, enriched.email),
       createdAt: new Date().toISOString(),
       lastLoginAt: new Date().toISOString(),
+      birthDay: enriched.birthDay,
+      birthMonth: enriched.birthMonth,
+      birthYear: enriched.birthYear,
+      streakCount: enriched.streakCount ?? 0,
+      lastActiveOn: enriched.lastActiveOn,
+      tutorialSeen: enriched.tutorialSeen ?? false,
     };
   }
 
   function enterWorkspace(nextProfile: LearnerProfile) {
     const normalized = normalizeLearnerProfile(nextProfile);
-    setProfile(normalized);
+    const todayKey = getTodayKey();
+    const yesterdayKey = getYesterdayKey();
+    let nextStreak = normalized.streakCount ?? 0;
+
+    if (normalized.role === 'student') {
+      if (normalized.lastActiveOn === todayKey) {
+        nextStreak = normalized.streakCount ?? 1;
+      } else if (normalized.lastActiveOn === yesterdayKey) {
+        nextStreak = (normalized.streakCount ?? 0) + 1;
+      } else {
+        nextStreak = 1;
+      }
+    }
+
+    const sessionProfile = {
+      ...normalized,
+      streakCount: normalized.role === 'student' ? nextStreak : normalized.streakCount,
+      lastActiveOn: normalized.role === 'student' ? todayKey : normalized.lastActiveOn,
+      tutorialSeen: normalized.tutorialSeen ?? false,
+    };
+
+    setProfile(sessionProfile);
     setQuizState(null);
-    setSelectedSubject(normalized.subject);
+    setSelectedSubject(sessionProfile.subject);
     setStudentView('home');
     setAdminView('overview');
     setStaffView('lounge');
-    setScreen(normalized.role === 'admin' ? 'admin' : normalized.role === 'staff' ? 'staff' : 'student');
+    setScreen(sessionProfile.role === 'admin' ? 'admin' : sessionProfile.role === 'staff' ? 'staff' : 'student');
+    setShowTutorial(!(sessionProfile.tutorialSeen ?? false));
+    setStreakNotice(
+      sessionProfile.role === 'student'
+        ? `You are on a ${sessionProfile.streakCount ?? 1}-day learning streak.`
+        : '',
+    );
 
-    if (normalized.role === 'student') {
+    setRegisteredUsers((current) =>
+      current.map((entry) =>
+        entry.email.toLowerCase() === sessionProfile.email.toLowerCase()
+          ? {
+              ...entry,
+              ...sessionProfile,
+              lastLoginAt: new Date().toISOString(),
+              streakCount: sessionProfile.streakCount,
+              lastActiveOn: sessionProfile.lastActiveOn,
+            }
+          : entry,
+      ),
+    );
+
+    if (sessionProfile.role === 'student') {
       void appRepository.syncLearnerProfile({
-        email: normalized.email,
-        countryCode: normalized.countryCode,
-        plan: normalized.plan,
-        stage: normalized.stage,
-        level: normalized.level,
-        mode: normalized.mode,
-        subject: normalized.subject,
+        email: sessionProfile.email,
+        countryCode: sessionProfile.countryCode,
+        plan: sessionProfile.plan,
+        stage: sessionProfile.stage,
+        level: sessionProfile.level,
+        mode: sessionProfile.mode,
+        subject: sessionProfile.subject,
+        birthDay: sessionProfile.birthDay,
+        birthMonth: sessionProfile.birthMonth,
+        birthYear: sessionProfile.birthYear,
+        streakCount: sessionProfile.streakCount,
+        lastActiveOn: sessionProfile.lastActiveOn,
+        tutorialSeen: sessionProfile.tutorialSeen,
       });
     }
   }
@@ -1602,8 +1913,20 @@ function App() {
       const newUser = createRegisteredUser(profile);
       try {
         const savedUser = await appRepository.registerLearner(newUser);
-        const allUsers = await appRepository.listRegisteredUsers();
+        const [allUsers, repoStaff, repoMaterials, repoFeedback, repoSupportRequests, repoAnnouncements] = await Promise.all([
+          appRepository.listRegisteredUsers(),
+          appRepository.listStaffMembers(),
+          appRepository.listStaffMaterials(),
+          appRepository.listFeedbackEntries(),
+          appRepository.listSupportRequests(),
+          appRepository.listAnnouncements(),
+        ]);
         setRegisteredUsers(ensureRegisteredUsers(allUsers));
+        setStaffMembers(repoStaff);
+        setStaffMaterials(repoMaterials);
+        setFeedbackEntries(repoFeedback);
+        setSupportRequests(repoSupportRequests);
+        setAnnouncements(repoAnnouncements.length > 0 ? repoAnnouncements : defaultAnnouncements());
         setSigninIdentifier(savedUser.email);
         setAdminNotice(`${savedUser.fullName} joined registered learners.`);
         setConfirmPassword('');
@@ -1622,25 +1945,25 @@ function App() {
       return;
     }
 
-    const allUsers = await appRepository.listRegisteredUsers();
+    const [allUsers, repoStaff, repoMaterials, repoFeedback, repoSupportRequests, repoAnnouncements] = await Promise.all([
+      appRepository.listRegisteredUsers(),
+      appRepository.listStaffMembers(),
+      appRepository.listStaffMaterials(),
+      appRepository.listFeedbackEntries(),
+      appRepository.listSupportRequests(),
+      appRepository.listAnnouncements(),
+    ]);
     setRegisteredUsers(ensureRegisteredUsers(allUsers));
+    setStaffMembers(repoStaff);
+    setStaffMaterials(repoMaterials);
+    setFeedbackEntries(repoFeedback);
+    setSupportRequests(repoSupportRequests);
+    setAnnouncements(repoAnnouncements.length > 0 ? repoAnnouncements : defaultAnnouncements());
     enterWorkspace(matchedUser);
   }
 
   async function handleForgotPassword() {
-    setAuthNotice('');
-
-    try {
-      const email = await appRepository.requestPasswordReset(signinIdentifier);
-      setAuthNotice(`A reset link is on the way to ${email}.`);
-    } catch (error) {
-      setAuthNotice(
-        getErrorMessage(
-          error,
-          'We could not start password reset just now. Please check your email and try again.',
-        ),
-      );
-    }
+    setAuthNotice('Password reset is paused for now. Admin-created accounts should use the shared starter password from admin.');
   }
 
   function logout() {
@@ -1667,6 +1990,8 @@ function App() {
     setRecoveryPassword('');
     setRecoveryConfirmPassword('');
     setIsRecoveryMode(false);
+    setShowTutorial(false);
+    setStreakNotice('');
   }
 
   async function handleInstallApp() {
@@ -1692,31 +2017,64 @@ function App() {
 
   async function addStaffMember() {
     const focusCountry = getCountryByCode(adminFocusCode);
-    if (!staffDraft.name.trim() || !staffDraft.role.trim() || !staffDraft.focus.trim()) {
-      setAdminNotice('Add a staff name, role, and support focus before saving.');
+    if (
+      !staffDraft.name.trim() ||
+      !staffDraft.role.trim() ||
+      !staffDraft.focus.trim() ||
+      !staffDraft.qualifications.trim() ||
+      !staffDraft.eligibility.trim()
+    ) {
+      setAdminNotice('Add name, role, support focus, qualifications, and eligibility before saving.');
       return;
     }
 
+    const fullName = staffDraft.name.trim();
+    const email = `${createUsername(fullName, `${fullName}@reviewbuddy.app`)}@reviewbuddy.app`;
+    const password = generateEasyPassword(fullName);
+    const registeredStaffUser = normalizeRegisteredUser({
+      fullName,
+      email,
+      password,
+      role: 'staff',
+      username: createUsername(fullName, email),
+      countryCode: staffDraft.countryCode,
+      plan: 'elite',
+      stage: 'primary',
+      level: 'Grade 4',
+      mode: 'solo',
+      subject: 'Mathematics',
+      createdAt: new Date().toISOString(),
+      qualifications: staffDraft.qualifications.trim(),
+      eligibility: staffDraft.eligibility.trim(),
+      supportFocus: `${staffDraft.focus.trim()} · ${focusCountry.name}`,
+      tutorialSeen: false,
+    });
+
     try {
       const savedMember = await appRepository.addStaffMember({
-        name: staffDraft.name.trim(),
+        name: fullName,
         role: staffDraft.role.trim(),
         focus: `${staffDraft.focus.trim()} · ${focusCountry.name}`,
         status: 'Ready to assign',
-        countryCode: adminFocusCode,
+        countryCode: staffDraft.countryCode,
+        email,
+        username: registeredStaffUser.username,
+        password,
+        qualifications: staffDraft.qualifications.trim(),
+        eligibility: staffDraft.eligibility.trim(),
+        createdAt: registeredStaffUser.createdAt,
       });
-      setStaffMembers((current) => [...current, savedMember]);
+      setStaffMembers((current) => [savedMember, ...current.filter((entry) => entry.email !== email)]);
+      const refreshedUsers = await appRepository.listRegisteredUsers();
+      setRegisteredUsers(ensureRegisteredUsers(refreshedUsers));
     } catch {
       setAdminNotice(`We could not save that staff profile for ${focusCountry.name} just now.`);
       return;
     }
 
-    setStaffDraft({
-      name: '',
-      role: '',
-      focus: '',
-    });
-    setAdminNotice(`A new staff profile was added for ${focusCountry.name}.`);
+    setGeneratedStaffAccount({ name: fullName, email, password });
+    setStaffDraft(createInitialStaffAccountDraft(adminFocusCode));
+    setAdminNotice(`A new staff account was created for ${focusCountry.name}. Share the starter password with ${fullName}.`);
   }
 
   function updateStaffMaterialDraft<Key extends keyof StaffMaterialDraft>(key: Key, value: StaffMaterialDraft[Key]) {
@@ -1956,10 +2314,42 @@ function App() {
             }))
           : [],
       uploadedBy: profile.fullName.trim() || DEFAULT_STAFF_USERNAME,
+      uploadedByEmail: profile.email,
       createdAt:
         staffMaterials.find((material) => material.id === staffMaterialDraft.editingId)?.createdAt ??
         new Date().toISOString(),
       updatedAt: new Date().toISOString(),
+      approvalStatus: profile.role === 'admin' ? 'approved' : 'pending',
+      aiReviewSummary: reviewMaterialSafety({
+        id: staffMaterialDraft.editingId ?? 'draft',
+        title: staffMaterialDraft.title.trim(),
+        summary: staffMaterialDraft.summary.trim(),
+        body:
+          staffMaterialDraft.resourceType === 'question-bank'
+            ? 'Staff-authored question bank'
+            : staffMaterialDraft.body.trim(),
+        countryCode: staffMaterialDraft.countryCode,
+        stage: staffMaterialDraft.stage,
+        level: staffMaterialDraft.level,
+        subject: staffMaterialDraft.subject,
+        category: staffMaterialDraft.category,
+        resourceType: staffMaterialDraft.resourceType,
+        questions:
+          staffMaterialDraft.resourceType === 'question-bank'
+            ? staffMaterialDraft.questions.map((question) => ({
+                id: question.id,
+                prompt: question.prompt.trim(),
+                choices: question.choices.map((choice) => choice.trim()) as [string, string, string, string],
+                answerIndex: question.answerIndex,
+                explanation: question.explanation.trim(),
+              }))
+            : [],
+        uploadedBy: profile.fullName.trim() || DEFAULT_STAFF_USERNAME,
+        createdAt: new Date().toISOString(),
+      }),
+      adminReviewNote: profile.role === 'admin' ? 'Published by admin.' : 'Waiting for admin review.',
+      reviewedAt: profile.role === 'admin' ? new Date().toISOString() : undefined,
+      reviewedBy: profile.role === 'admin' ? profile.fullName : undefined,
     };
 
     const savedMaterial = staffMaterialDraft.editingId
@@ -1975,7 +2365,9 @@ function App() {
     );
     setStaffMaterialDraft(createInitialMaterialDraft(profile.countryCode));
     setAdminNotice(
-      `${savedMaterial.title} is ready for ${getFlagEmoji(savedMaterial.countryCode)} ${getCountryByCode(savedMaterial.countryCode).name}, ${savedMaterial.level}, ${savedMaterial.subject}.`,
+      profile.role === 'admin'
+        ? `${savedMaterial.title} was published for ${getFlagEmoji(savedMaterial.countryCode)} ${getCountryByCode(savedMaterial.countryCode).name}, ${savedMaterial.level}, ${savedMaterial.subject}.`
+        : `${savedMaterial.title} was sent to admin for approval before learners can see it.`,
     );
   }
 
@@ -1987,10 +2379,15 @@ function App() {
   }
 
   async function removeStaffMember(memberIdOrName: string) {
-    const member = staffMembers.find((entry) => entry.id === memberIdOrName || entry.name === memberIdOrName);
+    const member =
+      staffMembers.find((entry) => entry.id === memberIdOrName || entry.name === memberIdOrName) ??
+      staffRegistrations.find((entry) => entry.id === memberIdOrName || entry.fullName === memberIdOrName);
+    const removedName =
+      member && 'name' in member ? member.name : (member as RegisteredUser | undefined)?.fullName ?? memberIdOrName;
     await appRepository.removeStaffMember(memberIdOrName);
     setStaffMembers((current) => current.filter((entry) => entry.id !== memberIdOrName && entry.name !== memberIdOrName));
-    setAdminNotice(`${member?.name ?? memberIdOrName} was removed from the staff list.`);
+    setRegisteredUsers((current) => current.filter((entry) => entry.id !== memberIdOrName && entry.fullName !== memberIdOrName));
+    setAdminNotice(`${removedName} was removed from the staff list.`);
   }
 
   function addCountryFollowUp() {
@@ -2005,6 +2402,131 @@ function App() {
       [adminFocusCode]: [...followUpItems, nextItem],
     }));
     setAdminNotice(`A new follow-up item was created for families in ${focusCountry.name}.`);
+  }
+
+  async function submitSupportRequest() {
+    if (!supportRequestDraft.title.trim() || !supportRequestDraft.detail.trim()) {
+      setAdminNotice('Add a request title and details first.');
+      return;
+    }
+
+    const nextRequest: SupportRequest = {
+      id: `request-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`,
+      createdAt: new Date().toISOString(),
+      createdBy: profile.email || profile.fullName,
+      createdByRole: profile.role,
+      countryCode: profile.countryCode,
+      title: supportRequestDraft.title.trim(),
+      detail: supportRequestDraft.detail.trim(),
+      category: supportRequestDraft.category,
+      status: 'new',
+    };
+
+    try {
+      const savedRequest = await appRepository.addSupportRequest(nextRequest);
+      setSupportRequests((current) => [savedRequest, ...current.filter((entry) => entry.id !== savedRequest.id)]);
+      setSupportRequestDraft(createInitialSupportRequestDraft());
+      setAdminNotice('Your request was sent to admin follow-ups.');
+    } catch (error) {
+      setAdminNotice(getErrorMessage(error, 'We could not send that request just now.'));
+    }
+  }
+
+  async function resolveSupportRequest(requestId: string, status: SupportRequest['status']) {
+    try {
+      await appRepository.updateSupportRequestStatus(requestId, status);
+      setSupportRequests((current) =>
+        current.map((request) => (request.id === requestId ? { ...request, status } : request)),
+      );
+      setAdminNotice(status === 'resolved' ? 'That request was marked as resolved.' : 'That request is now under review.');
+    } catch (error) {
+      setAdminNotice(getErrorMessage(error, 'We could not update that request just now.'));
+    }
+  }
+
+  async function addAnnouncement() {
+    if (!announcementDraft.title.trim() || !announcementDraft.message.trim()) {
+      setAdminNotice('Add an announcement title and message first.');
+      return;
+    }
+
+    const nextAnnouncement: Announcement = {
+      id: `announcement-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`,
+      title: announcementDraft.title.trim(),
+      message: announcementDraft.message.trim(),
+      audience: announcementDraft.audience,
+      createdAt: new Date().toISOString(),
+    };
+
+    try {
+      const savedAnnouncement = await appRepository.addAnnouncement(nextAnnouncement);
+      setAnnouncements((current) => [savedAnnouncement, ...current.filter((entry) => entry.id !== savedAnnouncement.id)]);
+      setAnnouncementDraft(createInitialAnnouncementDraft());
+      setAdminNotice('Announcement posted to the board.');
+    } catch (error) {
+      setAdminNotice(getErrorMessage(error, 'We could not post that announcement just now.'));
+    }
+  }
+
+  async function reviewPendingMaterial(materialId: string, status: Extract<StaffMaterial['approvalStatus'], 'approved' | 'denied'>) {
+    const targetMaterial = staffMaterials.find((material) => material.id === materialId);
+    if (!targetMaterial) return;
+
+    try {
+      const reviewedMaterial = await appRepository.updateStaffMaterial({
+        ...targetMaterial,
+        approvalStatus: status,
+        reviewedAt: new Date().toISOString(),
+        reviewedBy: profile.fullName,
+        adminReviewNote:
+          status === 'approved'
+            ? 'Approved for learners after admin review.'
+            : 'Please revise this upload and resubmit after edits.',
+      });
+
+      setStaffMaterials((current) =>
+        current.map((material) => (material.id === materialId ? reviewedMaterial : material)),
+      );
+      setAdminNotice(status === 'approved' ? 'Material approved and published.' : 'Material returned to staff for changes.');
+    } catch (error) {
+      setAdminNotice(getErrorMessage(error, 'We could not review that material just now.'));
+    }
+  }
+
+  function closeTutorial() {
+    setShowTutorial(false);
+    const nextProfile = { ...profile, tutorialSeen: true };
+    setProfile(nextProfile);
+    if (profile.email) {
+      setRegisteredUsers((current) =>
+        current.map((entry) =>
+          entry.email.toLowerCase() === profile.email.toLowerCase()
+            ? { ...entry, tutorialSeen: true }
+            : entry,
+        ),
+      );
+      if (profile.role === 'student') {
+        void appRepository.syncLearnerProfile({
+          email: profile.email,
+          countryCode: nextProfile.countryCode,
+          plan: nextProfile.plan,
+          stage: nextProfile.stage,
+          level: nextProfile.level,
+          mode: nextProfile.mode,
+          subject: nextProfile.subject,
+          birthDay: nextProfile.birthDay,
+          birthMonth: nextProfile.birthMonth,
+          birthYear: nextProfile.birthYear,
+          streakCount: nextProfile.streakCount,
+          lastActiveOn: nextProfile.lastActiveOn,
+          tutorialSeen: true,
+        });
+      }
+    }
+  }
+
+  function dismissVersionPrompt() {
+    setShowVersionPrompt(false);
   }
 
   function exportCountryReport() {
@@ -2048,16 +2570,6 @@ function App() {
       [adminFocusCode]: followUpItems.filter((item) => item.title !== title),
     }));
     setAdminNotice('That follow-up item was removed.');
-  }
-
-  function removeReportActivity(activityKey: string) {
-    setAdminActivityByCountry((current) => ({
-      ...current,
-      [adminFocusCode]: reportActivity.filter(
-        (item) => `${item.learner}-${item.subject}-${item.staff}` !== activityKey,
-      ),
-    }));
-    setAdminNotice('That learner activity row was removed.');
   }
 
   function openSubject(subject: string) {
@@ -2182,6 +2694,12 @@ function App() {
         level: nextProfile.level,
         mode: nextProfile.mode,
         subject: nextProfile.subject,
+        birthDay: nextProfile.birthDay,
+        birthMonth: nextProfile.birthMonth,
+        birthYear: nextProfile.birthYear,
+        streakCount: nextProfile.streakCount,
+        lastActiveOn: nextProfile.lastActiveOn,
+        tutorialSeen: nextProfile.tutorialSeen,
       });
     }
     setQuizState({
@@ -2751,6 +3269,45 @@ function App() {
                       <option value="girl">Girl</option>
                     </select>
                   </label>
+                  <label>
+                    Birth day
+                    <select
+                      value={profile.birthDay ?? ''}
+                      onChange={(event) => updateProfile('birthDay', event.target.value ? Number(event.target.value) : undefined)}
+                    >
+                      <option value="">Day</option>
+                      {Array.from({ length: 31 }, (_, index) => index + 1).map((day) => (
+                        <option key={day} value={day}>
+                          {day}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    Birth month
+                    <select
+                      value={profile.birthMonth ?? ''}
+                      onChange={(event) => updateProfile('birthMonth', event.target.value ? Number(event.target.value) : undefined)}
+                    >
+                      <option value="">Month</option>
+                      {MONTH_OPTIONS.map((month, index) => (
+                        <option key={month} value={index + 1}>
+                          {month}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    Birth year
+                    <input
+                      type="number"
+                      min={1990}
+                      max={new Date().getFullYear()}
+                      value={profile.birthYear ?? ''}
+                      onChange={(event) => updateProfile('birthYear', event.target.value ? Number(event.target.value) : undefined)}
+                      placeholder="Year"
+                    />
+                  </label>
                   </div>
                 </div>
               )}
@@ -2772,7 +3329,7 @@ function App() {
                     <span className="field-label-row">
                       <span>Password</span>
                       <button type="button" className="auth-inline-link" onClick={handleForgotPassword}>
-                        Forgot password?
+                        Password reset paused
                       </button>
                     </span>
                     <div className="password-field">
@@ -2929,6 +3486,29 @@ function App() {
                   </div>
                 </section>
 
+                {(streakNotice || isBirthdayToday(normalizeRegisteredUser({ ...profile, username: profile.email || 'learner' }))) && (
+                  <section className="setup-panel compact-panel">
+                    <div className="history-list">
+                      {streakNotice ? (
+                        <article className="history-row">
+                          <div>
+                            <strong>🔥 Learning streak</strong>
+                            <span>{streakNotice}</span>
+                          </div>
+                        </article>
+                      ) : null}
+                      {profile.birthDay && profile.birthMonth && isBirthdayToday(normalizeRegisteredUser({ ...profile, username: profile.email || 'learner' })) ? (
+                        <article className="history-row">
+                          <div>
+                            <strong>🎉 Happy birthday</strong>
+                            <span>Enjoy your special day and celebrate with a gentle practice round.</span>
+                          </div>
+                        </article>
+                      ) : null}
+                    </div>
+                  </section>
+                )}
+
                 <section className="setup-panel">
                   <div className="panel-heading">
                     <p className="eyebrow">Today&apos;s learning</p>
@@ -3032,28 +3612,43 @@ function App() {
 
                 <section className="side-card">
                   <div className="panel-heading">
-                    <p className="eyebrow">Top learners</p>
-                    <h2>{activeStudentSubject}</h2>
-                    <p>Strong scores from learners practising this subject.</p>
+                    <p className="eyebrow">Announcement board</p>
+                    <h2>Latest updates</h2>
+                    <p>Breaks, new versions, and quick messages from the admin team.</p>
                   </div>
-                  <div className="leaderboard-list">
-                    {leaderboard.map((entry, index) => (
-                      <article key={`${entry.name}-${index}`} className="leaderboard-row">
+                  <div className="history-list">
+                    {visibleAnnouncements.length > 0 ? visibleAnnouncements.slice(0, 3).map((announcement) => (
+                      <article key={announcement.id} className="history-row">
                         <div>
-                          <strong>#{index + 1} {entry.name}</strong>
-                          <span>{getCountryByCode(entry.countryCode).name} · {getPlanLabel(entry.plan)}</span>
+                          <strong>{announcement.title}</strong>
+                          <span>{announcement.message}</span>
                         </div>
-                        <strong>{entry.score}%</strong>
                       </article>
-                    ))}
+                    )) : (
+                      <p className="empty-state">Announcements will appear here when the admin team posts them.</p>
+                    )}
                   </div>
                 </section>
 
                 <section className="side-card">
                   <div className="panel-heading">
                     <p className="eyebrow">My progress</p>
-                    <h2>Recent results</h2>
-                    <p>Your latest quiz scores stay here for a quick check-in.</p>
+                    <h2>{progressSnapshot.level}</h2>
+                    <p>{progressSnapshot.detail}</p>
+                  </div>
+                  <div className="mini-stat-list">
+                    <article className="mini-stat-card">
+                      <span>📈</span>
+                      <strong>{progressSnapshot.average}%</strong>
+                    </article>
+                    <article className="mini-stat-card">
+                      <span>✅</span>
+                      <strong>{progressSnapshot.passRate}%</strong>
+                    </article>
+                    <article className="mini-stat-card">
+                      <span>🔥</span>
+                      <strong>{profile.streakCount ?? 0}</strong>
+                    </article>
                   </div>
                   <div className="history-list">
                     {attempts.length > 0 ? (
@@ -3069,6 +3664,30 @@ function App() {
                     ) : (
                       <p className="empty-state">Your recent scores will show here after the first quiz.</p>
                     )}
+                  </div>
+                  <div className="field-grid">
+                    <label className="field-span-2">
+                      Request support
+                      <input
+                        value={supportRequestDraft.title}
+                        onChange={(event) => setSupportRequestDraft((current) => ({ ...current, title: event.target.value }))}
+                        placeholder="Ask for a topic, mentor, or help"
+                      />
+                    </label>
+                    <label className="field-span-2">
+                      Details
+                      <textarea
+                        rows={3}
+                        value={supportRequestDraft.detail}
+                        onChange={(event) => setSupportRequestDraft((current) => ({ ...current, detail: event.target.value }))}
+                        placeholder="Tell admin what would help you next."
+                      />
+                    </label>
+                  </div>
+                  <div className="banner-actions">
+                    <button type="button" className="ghost-button ghost-button-small" onClick={submitSupportRequest}>
+                      Send request
+                    </button>
                   </div>
                 </section>
               </aside>
@@ -3171,21 +3790,32 @@ function App() {
 
                 <section className="side-card">
                   <div className="panel-heading">
-                    <p className="eyebrow">Top learners</p>
-                    <h2>{activeStudentSubject}</h2>
-                    <p>Leaderboard preview for this subject.</p>
+                    <p className="eyebrow">Lesson request</p>
+                    <h2>Need extra help?</h2>
+                    <p>Ask admin for a mentor, another topic, or a clearer lesson.</p>
                   </div>
-                  <div className="leaderboard-list">
-                    {leaderboard.map((entry, index) => (
-                      <article key={`${entry.name}-${index}`} className="leaderboard-row">
-                        <div>
-                          <strong>#{index + 1} {entry.name}</strong>
-                          <span>{getCountryByCode(entry.countryCode).name}</span>
-                        </div>
-                        <strong>{entry.score}%</strong>
-                      </article>
-                    ))}
+                  <div className="field-grid">
+                    <label className="field-span-2">
+                      Request title
+                      <input
+                        value={supportRequestDraft.title}
+                        onChange={(event) => setSupportRequestDraft((current) => ({ ...current, title: event.target.value }))}
+                        placeholder="Example: Need fractions mentor"
+                      />
+                    </label>
+                    <label className="field-span-2">
+                      Details
+                      <textarea
+                        rows={3}
+                        value={supportRequestDraft.detail}
+                        onChange={(event) => setSupportRequestDraft((current) => ({ ...current, detail: event.target.value }))}
+                        placeholder="Tell admin what topic or support you want."
+                      />
+                    </label>
                   </div>
+                  <button type="button" className="primary-button" onClick={submitSupportRequest}>
+                    Send request
+                  </button>
                 </section>
               </aside>
             </>
@@ -3345,9 +3975,9 @@ function App() {
                   <div className="book-cover video-lesson-hero">
                     <div className="book-cover-mark">🎬</div>
                     <div className="book-cover-copy">
-                      <p className="eyebrow">Lesson reel</p>
+                      <p className="eyebrow">AI lesson reel</p>
                       <h2>{learningVideo.subtitle}</h2>
-                      <p>{learningVideo.intro}</p>
+                      <p>A short guided walkthrough keeps the key ideas light, visual, and easier to remember.</p>
                     </div>
                   </div>
                   <div className="page-chip-row">
@@ -3365,7 +3995,7 @@ function App() {
                     </button>
                   </div>
                   <div className="video-scene-list video-scene-list-full">
-                    {learningVideo.scenes.map((scene, index) => (
+                    {learningVideo.scenes.slice(0, 3).map((scene, index) => (
                       <article key={`${scene.title}-${index}`} className="video-scene-card video-scene-card-full">
                         <span className="subject-icon video-scene-icon">{scene.visual}</span>
                         <div>
@@ -3373,7 +4003,7 @@ function App() {
                           <p>{scene.subtitle}</p>
                           <p>{scene.narration}</p>
                           <ul className="simple-list">
-                            {scene.bullets.map((bullet) => (
+                            {scene.bullets.slice(0, 2).map((bullet) => (
                               <li key={bullet}>{bullet}</li>
                             ))}
                           </ul>
@@ -3381,6 +4011,18 @@ function App() {
                       </article>
                     ))}
                   </div>
+                  {readingMaterials.find((material) => material.resourceType === 'video' && material.videoUrl) && (
+                    <div className="banner-actions">
+                      <a
+                        className="primary-button inline-link-button"
+                        href={readingMaterials.find((material) => material.resourceType === 'video' && material.videoUrl)?.videoUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        Open approved lesson video
+                      </a>
+                    </div>
+                  )}
                 </section>
               </section>
 
@@ -3684,20 +4326,20 @@ function App() {
           <aside className="dashboard-side">
             <section className="side-card accent-side-card">
               <div className="panel-heading">
-                <p className="eyebrow">AI summary</p>
-                <h2>{feedbackSummary.headline}</h2>
-                <p>{feedbackSummary.detail}</p>
+                <p className="eyebrow">Staff note</p>
+                <h2>Your review goes to admin only</h2>
+                <p>Staff can submit feedback, but only admin can read the full shared feedback board.</p>
               </div>
               <div className="history-list">
-                {recentFeedback.length > 0 ? recentFeedback.map((entry) => (
+                {mySupportRequests.length > 0 ? mySupportRequests.map((entry) => (
                   <article key={entry.id} className="history-row">
                     <div>
-                      <strong>{'⭐'.repeat(Math.round(entry.rating))}</strong>
-                      <span>{entry.role === 'staff' ? 'Staff' : 'Learner'} · {getFlagEmoji(entry.countryCode)} {entry.choice}</span>
+                      <strong>{entry.title}</strong>
+                      <span>{entry.status}</span>
                     </div>
                   </article>
                 )) : (
-                  <p className="empty-state">Reviews from staff and learners will appear here after the first submission.</p>
+                  <p className="empty-state">Your own support requests will appear here after you send one.</p>
                 )}
               </div>
             </section>
@@ -3732,34 +4374,31 @@ function App() {
                 <p>{recentActiveLearners.length}</p>
               </article>
               <article className="info-card">
-                <strong>👥 Staff</strong>
-                <p>{staffRegistrations.length || onlineStaffMembers.length}</p>
+                <strong>📤 My uploads</strong>
+                <p>{myStaffMaterials.length}</p>
               </article>
               <article className="info-card">
-                <strong>⚠️ Alerts</strong>
-                <p>{feedbackSummary.lowCount}</p>
+                <strong>🕒 Pending</strong>
+                <p>{myStaffMaterials.filter((material) => material.approvalStatus === 'pending').length}</p>
               </article>
             </section>
 
             <section className="setup-panel">
               <div className="panel-heading">
                 <p className="eyebrow">Today</p>
-                <h2>Assigned lounge</h2>
-                <p>Keep an eye on recent learners, fresh reviews, and where support is needed next.</p>
+                <h2>Staff workspace</h2>
+                <p>Keep an eye on announcements, activity, and admin decisions on your uploads.</p>
               </div>
               <div className="history-list">
-                {recentLearnerActivity.length > 0 ? recentLearnerActivity.slice(0, 5).map((entry) => (
+                {visibleAnnouncements.length > 0 ? visibleAnnouncements.slice(0, 3).map((entry) => (
                   <article key={entry.id} className="history-row">
                     <div>
-                      <strong>{entry.fullName}</strong>
-                      <span>
-                        {getFlagEmoji(entry.countryCode)} {entry.subject} · {entry.level}
-                      </span>
+                      <strong>{entry.title}</strong>
+                      <span>{entry.message}</span>
                     </div>
-                    <strong>{entry.lastLoginAt ? 'Active' : 'New'}</strong>
                   </article>
                 )) : (
-                  <p className="empty-state">Learner activity will show here as people start practising.</p>
+                  <p className="empty-state">Announcements and admin updates will appear here.</p>
                 )}
               </div>
             </section>
@@ -3767,8 +4406,8 @@ function App() {
             <section className="setup-panel">
               <div className="panel-heading">
                 <p className="eyebrow">Staff archive</p>
-                <h2>{staffMaterialDraft.editingId ? 'Edit learner material' : 'Assign to learners'}</h2>
-                <p>Choose the right country, class, subject, and content type before sending it out.</p>
+                <h2>{staffMaterialDraft.editingId ? 'Edit learner material' : 'Send material for approval'}</h2>
+                <p>Choose the right country, class, subject, and content type, then send it to admin review.</p>
               </div>
               <div className="field-grid">
                 <label>
@@ -3985,7 +4624,7 @@ function App() {
               </div>
               <div className="banner-actions">
                 <button type="button" className="primary-button" onClick={addStaffMaterial}>
-                  {staffMaterialDraft.editingId ? 'Save changes' : 'Assign material'}
+                  {staffMaterialDraft.editingId ? 'Save changes' : 'Send to admin'}
                 </button>
                 {staffMaterialDraft.editingId && (
                   <button
@@ -3998,16 +4637,18 @@ function App() {
                 )}
               </div>
               <div className="teacher-material-grid">
-                {staffFocusMaterials.length > 0 ? staffFocusMaterials.slice(0, 6).map((material) => (
+                {myStaffMaterials.length > 0 ? myStaffMaterials.slice(0, 6).map((material) => (
                   <article key={material.id} className="teacher-material-card">
                     <div className="teacher-material-head">
                       <strong>{material.title}</strong>
-                      <span className="mini-badge">{material.category}</span>
+                      <span className="mini-badge">{getMaterialStatusBadge(material.approvalStatus)}</span>
                     </div>
                     <p>{material.summary}</p>
                     <span className="teacher-material-meta">
                       {getFlagEmoji(material.countryCode)} {getCountryByCode(material.countryCode).name} · {material.subject} · {material.level}
                     </span>
+                    <p className="teacher-material-meta">{material.aiReviewSummary ?? 'Waiting for review.'}</p>
+                    {material.adminReviewNote ? <p className="teacher-material-meta">{material.adminReviewNote}</p> : null}
                     <div className="material-pill-row">
                       <span className="mini-badge">{material.resourceType === 'document' ? '📄 File' : material.resourceType === 'video' ? '🎬 Video' : material.resourceType === 'question-bank' ? '🧠 Questions' : '📘 Notes'}</span>
                       {material.questionLimit ? <span className="mini-badge">#{material.questionLimit}</span> : null}
@@ -4033,7 +4674,7 @@ function App() {
                     </div>
                   </article>
                 )) : (
-                  <p className="empty-state">Assigned materials will appear here after staff upload them.</p>
+                  <p className="empty-state">Your uploads will appear here after you send material to admin.</p>
                 )}
               </div>
             </section>
@@ -4042,70 +4683,57 @@ function App() {
           <aside className="dashboard-side">
             <section className="side-card accent-side-card">
               <div className="panel-heading">
-                <p className="eyebrow">AI summary</p>
-                <h2>{feedbackSummary.headline}</h2>
-                <p>{feedbackSummary.detail}</p>
+                <p className="eyebrow">Upload performance</p>
+                <h2>{myStaffMaterials.filter((material) => material.approvalStatus === 'approved').length} published</h2>
+                <p>Approved uploads are visible to learners. Pending and denied items stay with staff and admin only.</p>
+              </div>
+              <div className="mini-stat-list">
+                <article className="mini-stat-card">
+                  <span>🕒</span>
+                  <strong>{myStaffMaterials.filter((material) => material.approvalStatus === 'pending').length}</strong>
+                </article>
+                <article className="mini-stat-card">
+                  <span>✅</span>
+                  <strong>{myStaffMaterials.filter((material) => material.approvalStatus === 'approved').length}</strong>
+                </article>
+                <article className="mini-stat-card">
+                  <span>🛠️</span>
+                  <strong>{myStaffMaterials.filter((material) => material.approvalStatus === 'denied').length}</strong>
+                </article>
               </div>
               <button type="button" className="ghost-button" onClick={openFeedbackPage}>
                 {hasSubmittedFeedback ? 'Review sent' : 'Leave a review'}
               </button>
-              <div className="history-list">
-                {recentFeedback.length > 0 ? recentFeedback.map((entry) => (
-                  <article key={entry.id} className="history-row">
-                    <div>
-                      <strong>{'⭐'.repeat(entry.rating)}</strong>
-                      <span>
-                        {entry.role === 'staff' ? 'Staff' : 'Learner'} · {getFlagEmoji(entry.countryCode)} {entry.choice}
-                      </span>
-                      {entry.comment && <span>{entry.comment}</span>}
-                    </div>
-                    <button
-                      type="button"
-                      className="ghost-button ghost-button-small feedback-delete-button"
-                      onClick={() => void deleteFeedback(entry.id)}
-                    >
-                      Delete
-                    </button>
-                  </article>
-                )) : (
-                  <p className="empty-state">Survey replies from staff and learners will show here after people send feedback.</p>
-                )}
-              </div>
             </section>
             <section className="side-card">
               <div className="panel-heading">
-                <p className="eyebrow">Staff archive</p>
-                <h2>Recent uploads</h2>
-                <p>Latest materials ready to edit, reassign, or replace.</p>
+                <p className="eyebrow">Request admin help</p>
+                <h2>Need support?</h2>
+                <p>Ask for upload approval help, learner follow-up, or topic planning.</p>
               </div>
-              <div className="mini-stat-list">
-                <article className="mini-stat-card">
-                  <span>📘</span>
-                  <strong>{archiveTypeCounts.reading}</strong>
-                </article>
-                <article className="mini-stat-card">
-                  <span>🧠</span>
-                  <strong>{archiveTypeCounts.quiz}</strong>
-                </article>
-                <article className="mini-stat-card">
-                  <span>🎓</span>
-                  <strong>{archiveTypeCounts.exam}</strong>
-                </article>
+              <div className="field-grid">
+                <label className="field-span-2">
+                  Request title
+                  <input
+                    value={supportRequestDraft.title}
+                    onChange={(event) => setSupportRequestDraft((current) => ({ ...current, title: event.target.value }))}
+                    placeholder="Example: Please review my Grade 4 reading pack"
+                  />
+                </label>
+                <label className="field-span-2">
+                  Details
+                  <textarea
+                    rows={3}
+                    value={supportRequestDraft.detail}
+                    onChange={(event) => setSupportRequestDraft((current) => ({ ...current, detail: event.target.value }))}
+                    placeholder="Tell admin what help you need next."
+                  />
+                </label>
               </div>
-              <div className="history-list">
-                {staffFocusMaterials.slice(0, 4).map((material) => (
-                  <article key={material.id} className="history-row">
-                    <div>
-                      <strong>{material.title}</strong>
-                      <span>{getFlagEmoji(material.countryCode)} {material.subject} · {material.level}</span>
-                      <span>{material.category} · {new Date(material.updatedAt ?? material.createdAt).toLocaleDateString()}</span>
-                    </div>
-                    <button type="button" className="ghost-button ghost-button-small" onClick={() => beginEditStaffMaterial(material)}>
-                      Open
-                    </button>
-                  </article>
-                ))}
-                {staffFocusMaterials.length === 0 && <p className="empty-state">New uploads will appear here after staff add materials, quizzes, or exams.</p>}
+              <div className="banner-actions">
+                <button type="button" className="ghost-button ghost-button-small" onClick={submitSupportRequest}>
+                  Send request
+                </button>
               </div>
             </section>
           </aside>
@@ -4263,12 +4891,12 @@ function App() {
                     <p>{registrationsByCountry.length}</p>
                   </article>
                   <article className="info-card">
-                    <strong>Learning right now</strong>
-                    <p>{recentActiveLearners.length}</p>
+                    <strong>Pending approvals</strong>
+                    <p>{pendingMaterials.length}</p>
                   </article>
                   <article className="info-card">
-                    <strong>Staff online</strong>
-                    <p>{onlineStaffMembers.length}</p>
+                    <strong>Support requests</strong>
+                    <p>{supportRequestsForAdmin.filter((request) => request.status !== 'resolved').length}</p>
                   </article>
                 </section>
 
@@ -4319,30 +4947,72 @@ function App() {
                       <strong>{registrationsByCountry.length}</strong>
                     </article>
                     <article className="mini-stat-card">
-                      <span>📚</span>
-                      <strong>{recentActiveLearners.length}</strong>
+                      <span>🕒</span>
+                      <strong>{pendingMaterials.length}</strong>
                     </article>
                     <article className="mini-stat-card">
-                      <span>👥</span>
-                      <strong>{onlineStaffMembers.length}</strong>
+                      <span>📬</span>
+                      <strong>{supportRequestsForAdmin.filter((request) => request.status !== 'resolved').length}</strong>
                     </article>
                   </div>
                 </section>
                 <section className="side-card">
                   <div className="panel-heading">
                     <p className="eyebrow">AI summary</p>
-                    <h2>{feedbackSummary.headline}</h2>
-                    <p>What learners are saying.</p>
+                    <h2>{learnerFeedbackSummary.headline}</h2>
+                    <p>What learners are saying right now.</p>
                   </div>
                   <div className="mini-stat-list">
                     <article className="mini-stat-card">
                       <span>⭐</span>
-                      <strong>{feedbackSummary.average || 0}</strong>
+                      <strong>{learnerFeedbackSummary.average || 0}</strong>
                     </article>
                     <article className="mini-stat-card">
                       <span>⚠️</span>
-                      <strong>{feedbackSummary.lowCount}</strong>
+                      <strong>{learnerFeedbackSummary.lowCount}</strong>
                     </article>
+                  </div>
+                </section>
+                <section className="side-card">
+                  <div className="panel-heading">
+                    <p className="eyebrow">Announcements</p>
+                    <h2>Post an update</h2>
+                    <p>Use this board for testing notes, school breaks, and rollout updates.</p>
+                  </div>
+                  <div className="field-grid">
+                    <label className="field-span-2">
+                      Title
+                      <input
+                        value={announcementDraft.title}
+                        onChange={(event) => setAnnouncementDraft((current) => ({ ...current, title: event.target.value }))}
+                        placeholder="Example: Beta testing starts today"
+                      />
+                    </label>
+                    <label className="field-span-2">
+                      Message
+                      <textarea
+                        rows={3}
+                        value={announcementDraft.message}
+                        onChange={(event) => setAnnouncementDraft((current) => ({ ...current, message: event.target.value }))}
+                        placeholder="Share the update learners and staff should see."
+                      />
+                    </label>
+                    <label>
+                      Audience
+                      <select
+                        value={announcementDraft.audience}
+                        onChange={(event) => setAnnouncementDraft((current) => ({ ...current, audience: event.target.value as Announcement['audience'] }))}
+                      >
+                        <option value="all">Everyone</option>
+                        <option value="learners">Learners only</option>
+                        <option value="staff">Staff only</option>
+                      </select>
+                    </label>
+                  </div>
+                  <div className="banner-actions">
+                    <button type="button" className="ghost-button ghost-button-small" onClick={addAnnouncement}>
+                      Post announcement
+                    </button>
                   </div>
                 </section>
               </aside>
@@ -4432,17 +5102,17 @@ function App() {
                 <section className="setup-panel">
                   <div className="panel-heading">
                     <p className="eyebrow">Manage staff</p>
-                    <h2>Staff</h2>
+                    <h2>Create and manage staff</h2>
                     {adminNotice && <p>{adminNotice}</p>}
                   </div>
                   <AdminTabs active={adminView} onChange={openAdminView} />
                   <div className="field-grid">
                     <label>
-                      Staff name
+                      Full name
                       <input
                         value={staffDraft.name}
                         onChange={(event) => setStaffDraft((current) => ({ ...current, name: event.target.value }))}
-                        placeholder="Name"
+                        placeholder="Staff name"
                       />
                     </label>
                     <label>
@@ -4450,7 +5120,36 @@ function App() {
                       <input
                         value={staffDraft.role}
                         onChange={(event) => setStaffDraft((current) => ({ ...current, role: event.target.value }))}
-                        placeholder="Role"
+                        placeholder="Learning mentor"
+                      />
+                    </label>
+                    <label>
+                      Country
+                      <select
+                        value={staffDraft.countryCode}
+                        onChange={(event) => setStaffDraft((current) => ({ ...current, countryCode: event.target.value }))}
+                      >
+                        {COUNTRIES.map((entry) => (
+                          <option key={entry.code} value={entry.code}>
+                            {getFlagEmoji(entry.code)} {entry.name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      Eligibility
+                      <input
+                        value={staffDraft.eligibility}
+                        onChange={(event) => setStaffDraft((current) => ({ ...current, eligibility: event.target.value }))}
+                        placeholder="Verified teacher / mentor"
+                      />
+                    </label>
+                    <label className="field-span-2">
+                      Qualifications
+                      <input
+                        value={staffDraft.qualifications}
+                        onChange={(event) => setStaffDraft((current) => ({ ...current, qualifications: event.target.value }))}
+                        placeholder="B.Ed, classroom experience, subject speciality"
                       />
                     </label>
                     <label className="field-span-2">
@@ -4458,28 +5157,39 @@ function App() {
                       <input
                         value={staffDraft.focus}
                         onChange={(event) => setStaffDraft((current) => ({ ...current, focus: event.target.value }))}
-                        placeholder="Focus"
+                        placeholder="What learners this staff member supports"
                       />
                     </label>
                   </div>
                   <div className="banner-actions">
                     <button type="button" className="ghost-button ghost-button-small" onClick={addStaffMember}>
-                      Add staff
+                      Create staff account
                     </button>
                   </div>
+                  <label>
+                    Search staff
+                    <input
+                      value={staffSearch}
+                      onChange={(event) => setStaffSearch(event.target.value)}
+                      placeholder="Search by name, country, qualification, or email"
+                    />
+                  </label>
                   <div className="history-list">
-                    {staffMembers.length > 0 ? staffMembers.map((member) => (
-                      <article key={`${member.name}-${member.role}`} className="history-row">
+                    {filteredStaff.length > 0 ? filteredStaff.map((member) => (
+                      <article key={`${member.id}-${member.email}`} className="history-row">
                         <div>
-                          <strong>{member.name}</strong>
-                          <span>{member.role}</span>
+                          <strong>{member.fullName}</strong>
+                          <span>
+                            {getFlagEmoji(member.countryCode)} {member.role} · {member.qualifications || 'Qualification pending'}
+                          </span>
+                          <span>{member.email} · Joined {new Date(member.createdAt).toLocaleDateString()}</span>
                         </div>
                         <div className="row-actions">
-                          <strong>{member.status}</strong>
+                          <strong>{member.eligibility || 'Ready'}</strong>
                           <button
                             type="button"
                             className="ghost-button ghost-button-small"
-                            onClick={() => removeStaffMember(member.id ?? member.name)}
+                            onClick={() => removeStaffMember(member.id)}
                           >
                             Remove
                           </button>
@@ -4495,21 +5205,41 @@ function App() {
               <aside className="dashboard-side">
                 <section className="side-card">
                   <div className="panel-heading">
-                    <p className="eyebrow">Staff links</p>
-                    <h2>Team</h2>
+                    <p className="eyebrow">New account</p>
+                    <h2>Starter password</h2>
+                  </div>
+                  {generatedStaffAccount ? (
+                    <div className="history-list">
+                      <article className="history-row">
+                        <div>
+                          <strong>{generatedStaffAccount.name}</strong>
+                          <span>{generatedStaffAccount.email}</span>
+                          <span>Password: {generatedStaffAccount.password}</span>
+                        </div>
+                      </article>
+                    </div>
+                  ) : (
+                    <p className="empty-state">Create a staff account to generate an easy starter password.</p>
+                  )}
+                </section>
+                <section className="side-card">
+                  <div className="panel-heading">
+                    <p className="eyebrow">Recommendations</p>
+                    <h2>Admin checklist</h2>
                   </div>
                   <div className="history-list">
-                    {(focusedStaffMembers.length > 0 ? focusedStaffMembers : staffMembers).length > 0 ? (focusedStaffMembers.length > 0 ? focusedStaffMembers : staffMembers).map((member) => (
-                      <article key={`${member.name}-${member.role}`} className="history-row">
-                        <div>
-                          <strong>{member.name}</strong>
-                          <span>{member.role}</span>
-                        </div>
-                        <strong>{member.status}</strong>
-                      </article>
-                    )) : (
-                      <p className="empty-state">Staff records will appear here after you add team members.</p>
-                    )}
+                    <article className="history-row">
+                      <div>
+                        <strong>Use role-based focus</strong>
+                        <span>Set a clear subject or country focus so large test groups stay easy to manage.</span>
+                      </div>
+                    </article>
+                    <article className="history-row">
+                      <div>
+                        <strong>Refresh starter passwords later</strong>
+                        <span>Keep generated passwords easy for onboarding, then rotate them in a later auth update.</span>
+                      </div>
+                    </article>
                   </div>
                 </section>
               </aside>
@@ -4536,36 +5266,38 @@ function App() {
                     <h2>Learners</h2>
                   </div>
                   <AdminTabs active={adminView} onChange={openAdminView} />
-                  <div className="country-groups">
-                    {registrationsGroupedByCountry.length > 0 ? registrationsGroupedByCountry.map(({ country, learners }) => (
-                      <section key={country.code} className="country-group-card">
-                        <div className="panel-heading">
-                          <p className="eyebrow">{getFlagEmoji(country.code)} {country.name}</p>
-                          <h2>{learners.length} learner{learners.length === 1 ? '' : 's'}</h2>
+                  <label>
+                    Search learners
+                    <input
+                      value={learnerSearch}
+                      onChange={(event) => setLearnerSearch(event.target.value)}
+                      placeholder="Search by name, email, country, subject, or level"
+                    />
+                  </label>
+                  <div className="history-list compact-record-list">
+                    {filteredLearners.length > 0 ? filteredLearners.map((entry) => (
+                      <article key={entry.id} className="history-row">
+                        <div>
+                          <strong>{entry.fullName}</strong>
+                          <span>
+                            {getFlagEmoji(entry.countryCode)} {getCountryByCode(entry.countryCode).name} · {entry.subject} · {entry.level}
+                          </span>
+                          <span>
+                            Joined {new Date(entry.createdAt).toLocaleDateString()} · Streak {entry.streakCount ?? 0}
+                            {entry.birthDay && entry.birthMonth ? ` · Birthday ${entry.birthDay}/${entry.birthMonth}` : ''}
+                          </span>
                         </div>
-                        <div className="history-list">
-                          {learners.map((entry) => (
-                            <article key={entry.id} className="history-row">
-                              <div>
-                                <strong>{entry.fullName}</strong>
-                                <span>
-                                  {getFlagEmoji(entry.countryCode)} {getPlanLabel(entry.plan)} · {getStageLabel(entry.stage)}
-                                </span>
-                              </div>
-                              <div className="row-actions">
-                                <strong>{entry.lastLoginAt ? new Date(entry.lastLoginAt).toLocaleDateString() : 'New'}</strong>
-                                <button
-                                  type="button"
-                                  className="ghost-button ghost-button-small"
-                                  onClick={() => removeRegisteredLearner(entry.id)}
-                                >
-                                  Remove
-                                </button>
-                              </div>
-                            </article>
-                          ))}
+                        <div className="row-actions">
+                          <strong>{entry.lastLoginAt ? new Date(entry.lastLoginAt).toLocaleDateString() : 'New'}</strong>
+                          <button
+                            type="button"
+                            className="ghost-button ghost-button-small"
+                            onClick={() => removeRegisteredLearner(entry.id)}
+                          >
+                            Remove
+                          </button>
                         </div>
-                      </section>
+                      </article>
                     )) : (
                       <p className="empty-state">Learner sign-ups will appear here after registration.</p>
                     )}
@@ -4590,6 +5322,24 @@ function App() {
                       </article>
                     )) : (
                       <p className="empty-state">Country totals will appear after learners create accounts.</p>
+                    )}
+                  </div>
+                </section>
+                <section className="side-card">
+                  <div className="panel-heading">
+                    <p className="eyebrow">Birthdays</p>
+                    <h2>{birthdayLearners.length} today</h2>
+                  </div>
+                  <div className="history-list">
+                    {birthdayLearners.length > 0 ? birthdayLearners.map((entry) => (
+                      <article key={entry.id} className="history-row">
+                        <div>
+                          <strong>{entry.fullName}</strong>
+                          <span>{getFlagEmoji(entry.countryCode)} {entry.level}</span>
+                        </div>
+                      </article>
+                    )) : (
+                      <p className="empty-state">Today’s learner birthdays will appear here.</p>
                     )}
                   </div>
                 </section>
@@ -4627,7 +5377,57 @@ function App() {
                     </button>
                   </div>
                   <div className="history-list">
-                    {followUpItems.length > 0 ? followUpItems.map((item) => (
+                    {pendingMaterials.map((item) => (
+                      <article key={item.id} className="history-row">
+                        <div>
+                          <strong>{item.title}</strong>
+                          <span>Upload approval · {item.uploadedBy} · {getFlagEmoji(item.countryCode)} {item.subject}</span>
+                          <span>{item.aiReviewSummary}</span>
+                        </div>
+                        <div className="row-actions">
+                          <button
+                            type="button"
+                            className="ghost-button ghost-button-small"
+                            onClick={() => reviewPendingMaterial(item.id, 'approved')}
+                          >
+                            Approve
+                          </button>
+                          <button
+                            type="button"
+                            className="ghost-button ghost-button-small"
+                            onClick={() => reviewPendingMaterial(item.id, 'denied')}
+                          >
+                            Deny
+                          </button>
+                        </div>
+                      </article>
+                    ))}
+                    {focusCountryRequests.map((item) => (
+                      <article key={item.id} className="history-row">
+                        <div>
+                          <strong>{item.title}</strong>
+                          <span>{item.createdByRole} · {item.category} · {getFlagEmoji(item.countryCode)} {getCountryByCode(item.countryCode).name}</span>
+                          <span>{item.detail}</span>
+                        </div>
+                        <div className="row-actions">
+                          <button
+                            type="button"
+                            className="ghost-button ghost-button-small"
+                            onClick={() => resolveSupportRequest(item.id, 'in-review')}
+                          >
+                            Review
+                          </button>
+                          <button
+                            type="button"
+                            className="ghost-button ghost-button-small"
+                            onClick={() => resolveSupportRequest(item.id, 'resolved')}
+                          >
+                            Resolve
+                          </button>
+                        </div>
+                      </article>
+                    ))}
+                    {followUpItems.map((item) => (
                       <article key={item.title} className="history-row">
                         <div>
                           <strong>{item.title}</strong>
@@ -4643,9 +5443,10 @@ function App() {
                           </button>
                         </div>
                       </article>
-                    )) : (
+                    ))}
+                    {pendingMaterials.length === 0 && focusCountryRequests.length === 0 && followUpItems.length === 0 ? (
                       <p className="empty-state">Follow-up items will appear here when real learner activity needs support.</p>
-                    )}
+                    ) : null}
                   </div>
                 </section>
               </section>
@@ -4687,7 +5488,7 @@ function App() {
                   <div>
                     <p className="eyebrow">Admin page</p>
                     <h2>Reports</h2>
-                    <p>Live view.</p>
+                    <p>Testing feedback, approvals, and learner activity in one place.</p>
                   </div>
                   <div className="banner-actions">
                     <button type="button" className="ghost-button" onClick={() => openAdminView('overview')}>
@@ -4698,27 +5499,27 @@ function App() {
 
                 <section className="setup-panel">
                   <div className="panel-heading">
-                    <p className="eyebrow">Current learning</p>
-                    <h2>Current learner activity</h2>
+                    <p className="eyebrow">Reporting center</p>
+                    <h2>Testing and learning insights</h2>
                     {adminNotice && <p>{adminNotice}</p>}
                   </div>
                   <AdminTabs active={adminView} onChange={openAdminView} />
                   <div className="stats-grid report-stats-grid">
                     <article className="info-card">
-                      <strong>📚 Activity</strong>
-                      <p>{reportActivity.length}</p>
+                      <strong>⭐ Average rating</strong>
+                      <p>{learnerFeedbackSummary.average || 0}</p>
                     </article>
                     <article className="info-card">
-                      <strong>📌 Follow-ups</strong>
-                      <p>{followUpItems.length}</p>
+                      <strong>🕒 Pending approvals</strong>
+                      <p>{pendingMaterials.length}</p>
                     </article>
                     <article className="info-card">
-                      <strong>🏆 Top subject</strong>
-                      <p>{subjectInsights[0]?.subject ?? 'No activity yet'}</p>
+                      <strong>📬 Open requests</strong>
+                      <p>{supportRequestsForAdmin.filter((request) => request.status !== 'resolved').length}</p>
                     </article>
                     <article className="info-card">
-                      <strong>🌍 Country</strong>
-                      <p>{getFlagEmoji(adminCountry.code)} {adminCountry.name}</p>
+                      <strong>📚 Active learners</strong>
+                      <p>{recentActiveLearners.length}</p>
                     </article>
                   </div>
                   <div className="banner-actions">
@@ -4726,79 +5527,106 @@ function App() {
                       Download report
                     </button>
                   </div>
-                  <div className="history-list">
-                    {reportActivity.length > 0 ? reportActivity.map((session) => (
-                      <article key={`${session.learner}-${session.subject}-${session.staff}`} className="history-row">
-                        <div>
-                          <strong>{session.learner}</strong>
-                          <span>{session.subject} · {session.plan} · {session.status}</span>
-                          <span>{session.support}</span>
-                        </div>
-                        <div className="row-actions">
-                          <strong>{session.staff}</strong>
-                          <button
-                            type="button"
-                            className="ghost-button ghost-button-small"
-                            onClick={() => removeReportActivity(`${session.learner}-${session.subject}-${session.staff}`)}
-                          >
-                            Remove
-                          </button>
-                        </div>
-                      </article>
-                    )) : (
-                    <p className="empty-state">Current learner activity will appear here as learners sign in and practise.</p>
-                  )}
-                </div>
+                  <div className="country-groups">
+                    <section className="country-group-card">
+                      <div className="panel-heading">
+                        <p className="eyebrow">Question ratings</p>
+                        <h2>Average by question</h2>
+                      </div>
+                      <div className="history-list">
+                        {FEEDBACK_SUMMARY_QUESTIONS.map((question) => {
+                          const avg =
+                            learnerFeedbackEntries.length > 0
+                              ? Math.round(
+                                  (learnerFeedbackEntries.reduce(
+                                    (sum, entry) => sum + (entry.ratings?.[question.key] ?? entry.rating),
+                                    0,
+                                  ) /
+                                    learnerFeedbackEntries.length) *
+                                    10,
+                                ) / 10
+                              : 0;
+                          return (
+                            <article key={question.key} className="history-row">
+                              <div>
+                                <strong>{question.label}</strong>
+                              </div>
+                              <strong>{avg || '-'}</strong>
+                            </article>
+                          );
+                        })}
+                      </div>
+                    </section>
+                    <section className="country-group-card">
+                      <div className="panel-heading">
+                        <p className="eyebrow">Recent comments</p>
+                        <h2>Latest learner notes</h2>
+                      </div>
+                      <div className="history-list">
+                        {learnerFeedbackEntries.filter((entry) => entry.comment).slice(0, 6).map((entry) => (
+                          <article key={entry.id} className="history-row">
+                            <div>
+                              <strong>{'⭐'.repeat(Math.round(entry.rating))}</strong>
+                              <span>{entry.choice}</span>
+                              <span>{entry.comment}</span>
+                            </div>
+                          </article>
+                        ))}
+                        {learnerFeedbackEntries.filter((entry) => entry.comment).length === 0 ? (
+                          <p className="empty-state">Comment feedback will appear here once testers start sharing notes.</p>
+                        ) : null}
+                      </div>
+                    </section>
+                  </div>
               </section>
               </section>
 
               <aside className="dashboard-side">
                 <section className="side-card">
                   <div className="panel-heading">
-                    <p className="eyebrow">Top performers</p>
-                    <h2>Leaderboard</h2>
+                    <p className="eyebrow">Approvals</p>
+                    <h2>Pending uploads</h2>
                   </div>
-                  <div className="leaderboard-list">
-                    {leaderboard.map((entry, index) => (
-                      <article key={`${entry.name}-${index}`} className="leaderboard-row">
+                  <div className="history-list">
+                    {pendingMaterials.slice(0, 5).map((entry) => (
+                      <article key={entry.id} className="history-row">
                         <div>
-                          <strong>#{index + 1} {entry.name}</strong>
-                          <span>{getFlagEmoji(entry.countryCode)} {getCountryByCode(entry.countryCode).name}</span>
+                          <strong>{entry.title}</strong>
+                          <span>{entry.uploadedBy} · {entry.subject}</span>
                         </div>
-                        <strong>{entry.score}%</strong>
+                        <strong>{getMaterialStatusLabel(entry.approvalStatus)}</strong>
                       </article>
                     ))}
+                    {pendingMaterials.length === 0 ? <p className="empty-state">No uploads are waiting for review right now.</p> : null}
                   </div>
                 </section>
 
                 <section className="side-card">
                   <div className="panel-heading">
-                    <p className="eyebrow">Popular subjects</p>
-                    <h2>Subjects</h2>
+                    <p className="eyebrow">Requests</p>
+                    <h2>Open support items</h2>
                   </div>
                   <div className="history-list">
-                    {subjectInsights.length > 0 ? subjectInsights.map((item) => (
-                      <article key={item.subject} className="history-row">
+                    {supportRequestsForAdmin.filter((request) => request.status !== 'resolved').slice(0, 5).map((item) => (
+                      <article key={item.id} className="history-row">
                         <div>
-                          <strong>{item.subject}</strong>
-                          <span>
-                            {item.learners} learner{item.learners === 1 ? '' : 's'}
-                            {item.averageScore > 0 ? ` · average ${item.averageScore}%` : ''}
-                          </span>
+                          <strong>{item.title}</strong>
+                          <span>{item.createdByRole} · {item.category}</span>
                         </div>
-                        <strong>{item.trend}</strong>
+                        <strong>{item.status}</strong>
                       </article>
-                    )) : (
-                      <p className="empty-state">Subject activity will appear here after learners begin using the app.</p>
-                    )}
+                    ))}
+                    {supportRequestsForAdmin.filter((request) => request.status !== 'resolved').length === 0 ? (
+                      <p className="empty-state">Support requests will appear here after staff or learners submit them.</p>
+                    ) : null}
                   </div>
                 </section>
 
                 <section className="side-card">
                   <div className="panel-heading">
                     <p className="eyebrow">AI summary</p>
-                    <h2>{feedbackSummary.headline}</h2>
-                    <p>{feedbackSummary.detail}</p>
+                    <h2>{learnerFeedbackSummary.headline}</h2>
+                    <p>{learnerFeedbackSummary.detail}</p>
                   </div>
                   <div className="history-list">
                     {recentFeedback.length > 0 ? recentFeedback.map((entry) => (
@@ -4810,13 +5638,15 @@ function App() {
                           </span>
                           {entry.comment && <span>{entry.comment}</span>}
                         </div>
-                        <button
-                          type="button"
-                          className="ghost-button ghost-button-small feedback-delete-button"
-                          onClick={() => void deleteFeedback(entry.id)}
-                        >
-                          Delete
-                        </button>
+                        {profile.role === 'admin' ? (
+                          <button
+                            type="button"
+                            className="ghost-button ghost-button-small feedback-delete-button"
+                            onClick={() => void deleteFeedback(entry.id)}
+                          >
+                            Delete
+                          </button>
+                        ) : null}
                       </article>
                     )) : (
                       <p className="empty-state">Survey replies will show here after learners send feedback.</p>
@@ -4826,8 +5656,8 @@ function App() {
 
                 <section className="side-card">
                   <div className="panel-heading">
-                    <p className="eyebrow">Plan mix</p>
-                    <h2>Plans</h2>
+                    <p className="eyebrow">Testing overview</p>
+                    <h2>Plan mix</h2>
                   </div>
                   <div className="history-list">
                     {planMix.map((item) => (
@@ -4847,15 +5677,113 @@ function App() {
         </main>
       )}
 
+      {showTutorial && (
+        <div className="modal-backdrop" role="presentation">
+          <section className="modal-card" role="dialog" aria-label="Welcome tutorial">
+            <div className="panel-heading">
+              <p className="eyebrow">Welcome guide</p>
+              <h2>How to use Review Buddy</h2>
+              <p>{profile.role === 'student' ? 'A quick tour for new learners.' : profile.role === 'staff' ? 'A quick tour for staff.' : 'A quick tour for admin.'}</p>
+            </div>
+            <div className="history-list">
+              {tutorialStepsFor(profile.role).map((step) => (
+                <article key={step} className="history-row">
+                  <div>
+                    <strong>{step}</strong>
+                  </div>
+                </article>
+              ))}
+            </div>
+            <div className="sample-buttons">
+              <button type="button" className="primary-button" onClick={closeTutorial}>
+                Start using the app
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+
+      {showVersionPrompt && (
+        <div className="modal-backdrop" role="presentation">
+          <section className="modal-card" role="dialog" aria-label="Version update">
+            <div className="panel-heading">
+              <p className="eyebrow">Update available</p>
+              <h2>A newer beta is ready</h2>
+              <p>This version adds staff approvals, requests, streaks, announcements, and the new reporting flow.</p>
+            </div>
+            <div className="sample-buttons">
+              <button type="button" className="primary-button" onClick={() => window.location.reload()}>
+                Refresh to update
+              </button>
+              <button type="button" className="ghost-button" onClick={dismissVersionPrompt}>
+                Later
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+
+      {showTermsModal && (
+        <div className="modal-backdrop" role="presentation">
+          <section className="modal-card modal-card-wide" role="dialog" aria-label="Terms and conditions">
+            <div className="panel-heading">
+              <p className="eyebrow">Terms and conditions</p>
+              <h2>Review Buddy beta terms</h2>
+              <p>Updated {TERMS_UPDATED_ON}</p>
+            </div>
+            <div className="history-list">
+              <article className="history-row">
+                <div>
+                  <strong>Educational support only</strong>
+                  <span>Review Buddy gives learning support, practice, and workflow tools. It does not replace a school, licensed teacher judgment, medical guidance, or emergency support.</span>
+                </div>
+              </article>
+              <article className="history-row">
+                <div>
+                  <strong>Beta testing notice</strong>
+                  <span>This is a beta service. Features, content, scoring, and approvals may change while testing is in progress.</span>
+                </div>
+              </article>
+              <article className="history-row">
+                <div>
+                  <strong>User responsibility</strong>
+                  <span>Admins, staff, learners, and families should review important decisions before relying on platform output. Uploaded content may be delayed, denied, or removed during review.</span>
+                </div>
+              </article>
+              <article className="history-row">
+                <div>
+                  <strong>Content and feedback</strong>
+                  <span>Feedback, requests, and uploads may be used to improve the service, moderation flow, and learner experience. Please avoid sharing private information that is not needed for learning support.</span>
+                </div>
+              </article>
+              <article className="history-row">
+                <div>
+                  <strong>Limitation of accountability</strong>
+                  <span>To the fullest extent allowed, Review Buddy is provided as-is during beta testing without guarantees of uninterrupted service, perfect accuracy, or suitability for every use case.</span>
+                </div>
+              </article>
+            </div>
+            <div className="sample-buttons">
+              <button type="button" className="primary-button" onClick={() => setShowTermsModal(false)}>
+                Close terms
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+
       <footer className="site-footer">
         <div>
           <strong>Review Buddy</strong>
           <p>{MOTTO}</p>
         </div>
         <div className="footer-meta">
-          <span>Version {APP_VERSION}</span>
-          <span>Created: {APP_CREATED_ON}</span>
-          <span>Creator: Review Buddy</span>
+          <span>Version: {APP_DISPLAY_VERSION}</span>
+          <span>{APP_CREATED_ON}</span>
+          <button type="button" className="footer-link-button" onClick={() => setShowTermsModal(true)}>
+            Terms
+          </button>
+          <span>Review Buddy</span>
         </div>
       </footer>
     </div>

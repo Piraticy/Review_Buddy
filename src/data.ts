@@ -40,6 +40,12 @@ export type LearnerProfile = {
   level: string;
   mode: QuizMode;
   subject: string;
+  birthDay?: number;
+  birthMonth?: number;
+  birthYear?: number;
+  streakCount?: number;
+  lastActiveOn?: string;
+  tutorialSeen?: boolean;
 };
 
 export type RegisteredUser = LearnerProfile & {
@@ -47,6 +53,9 @@ export type RegisteredUser = LearnerProfile & {
   username: string;
   createdAt: string;
   lastLoginAt?: string;
+  qualifications?: string;
+  eligibility?: string;
+  supportFocus?: string;
 };
 
 export type QuestionVisual = {
@@ -124,7 +133,15 @@ export type AdminStaffMember = {
   focus: string;
   status: string;
   countryCode?: string;
+  email?: string;
+  username?: string;
+  password?: string;
+  qualifications?: string;
+  eligibility?: string;
+  createdAt?: string;
 };
+
+export type MaterialApprovalStatus = 'pending' | 'approved' | 'denied';
 
 export type StaffMaterialCategory = 'reading' | 'quiz' | 'exam';
 export type StaffMaterialResourceType = 'text' | 'document' | 'video' | 'question-bank';
@@ -154,8 +171,14 @@ export type StaffMaterial = {
   questionLimit?: number;
   questions?: StaffQuestionItem[];
   uploadedBy: string;
+  uploadedByEmail?: string;
   createdAt: string;
   updatedAt?: string;
+  approvalStatus?: MaterialApprovalStatus;
+  aiReviewSummary?: string;
+  adminReviewNote?: string;
+  reviewedAt?: string;
+  reviewedBy?: string;
 };
 
 export type FeedbackQuestionKey = 'ease' | 'clarity' | 'look' | 'speed' | 'confidence';
@@ -170,6 +193,27 @@ export type FeedbackEntry = {
   choice: string;
   ratings: Record<FeedbackQuestionKey, number>;
   comment: string;
+  createdAt: string;
+};
+
+export type SupportRequest = {
+  id: string;
+  createdAt: string;
+  createdBy: string;
+  createdByRole: Role;
+  countryCode: string;
+  title: string;
+  detail: string;
+  category: 'topic' | 'mentor' | 'technical' | 'material' | 'approval' | 'wellbeing' | 'general';
+  status: 'new' | 'in-review' | 'resolved';
+  relatedMaterialId?: string;
+};
+
+export type Announcement = {
+  id: string;
+  title: string;
+  message: string;
+  audience: 'all' | 'learners' | 'staff';
   createdAt: string;
 };
 

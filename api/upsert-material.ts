@@ -23,8 +23,14 @@ type MaterialPayload = {
   questionLimit?: number;
   questions?: unknown[];
   uploadedBy: string;
+  uploadedByEmail?: string;
   createdAt: string;
   updatedAt?: string;
+  approvalStatus?: 'pending' | 'approved' | 'denied';
+  aiReviewSummary?: string;
+  adminReviewNote?: string;
+  reviewedAt?: string;
+  reviewedBy?: string;
 };
 
 function decodeDataUrl(dataUrl: string) {
@@ -62,7 +68,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return;
   }
 
-  const { supabaseAdmin } = authResult;
+  const { supabaseAdmin, profile } = authResult;
   let attachmentName = payload.attachmentName ?? null;
   let attachmentData = payload.attachmentData ?? null;
 
@@ -112,6 +118,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     attachmentData = publicUrl;
   }
 
+  const normalizedUploadedByEmail = (payload.uploadedByEmail ?? profile.email).trim().toLowerCase();
+  const isAdmin = profile.role === 'admin';
+
   const row = {
     id: payload.id,
     title: payload.title,
@@ -129,8 +138,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     question_limit: payload.questionLimit ?? null,
     questions: payload.questions ?? [],
     uploaded_by: payload.uploadedBy,
+    uploaded_by_email: normalizedUploadedByEmail,
     created_at: payload.createdAt,
     updated_at: payload.updatedAt ?? payload.createdAt,
+    approval_status: isAdmin ? (payload.approvalStatus ?? 'approved') : 'pending',
+    ai_review_summary: payload.aiReviewSummary ?? null,
+    admin_review_note: isAdmin ? (payload.adminReviewNote ?? null) : 'Waiting for admin review.',
+    reviewed_at: isAdmin ? (payload.reviewedAt ?? new Date().toISOString()) : null,
+    reviewed_by: isAdmin ? (payload.reviewedBy ?? profile.email) : null,
   };
 
   const { data, error } = await supabaseAdmin

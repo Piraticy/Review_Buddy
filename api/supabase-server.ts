@@ -48,7 +48,7 @@ const DEFAULT_ROLE_EMAILS = {
   staff: 'staff@reviewbuddy.app',
 } as const;
 
-type SupabaseAdminClient = NonNullable<ReturnType<typeof createSupabaseAdminClient>>;
+export type SupabaseAdminClient = NonNullable<ReturnType<typeof createSupabaseAdminClient>>;
 
 export async function listAuthUsersByEmail(supabaseAdmin: SupabaseAdminClient, email: string) {
   const normalizedEmail = email.trim().toLowerCase();
@@ -56,11 +56,12 @@ export async function listAuthUsersByEmail(supabaseAdmin: SupabaseAdminClient, e
 
   const matches: Array<{ id: string; email: string }> = [];
   let page = 1;
+  const perPage = 200;
 
-  while (page < 20) {
+  while (true) {
     const { data, error } = await supabaseAdmin.auth.admin.listUsers({
       page,
-      perPage: 200,
+      perPage,
     });
 
     if (error || !data?.users?.length) {
@@ -74,7 +75,7 @@ export async function listAuthUsersByEmail(supabaseAdmin: SupabaseAdminClient, e
       }
     }
 
-    if (data.users.length < 200) {
+    if (data.users.length < perPage) {
       break;
     }
 
@@ -82,6 +83,30 @@ export async function listAuthUsersByEmail(supabaseAdmin: SupabaseAdminClient, e
   }
 
   return matches;
+}
+
+export async function makeUniqueUsername(supabaseAdmin: SupabaseAdminClient, proposed: string) {
+  const base = toSafeUsername(proposed);
+  const { data, error } = await supabaseAdmin
+    .from('learner_profiles')
+    .select('username')
+    .ilike('username', `${base}%`);
+
+  if (error || !data || data.length === 0) {
+    return base;
+  }
+
+  const taken = new Set(data.map((row) => String(row.username).toLowerCase()));
+  if (!taken.has(base)) return base;
+
+  for (let index = 2; index < 1000; index += 1) {
+    const candidate = `${base}.${index}`;
+    if (!taken.has(candidate)) {
+      return candidate;
+    }
+  }
+
+  return `${base}.${Date.now().toString(36).slice(-4)}`;
 }
 
 export function getBearerToken(req: VercelRequest) {
@@ -113,43 +138,53 @@ export async function requireAuthorizedRole(
 
   const normalizedEmail = authData.user.email?.trim().toLowerCase() ?? '';
 
-  let { data: profile, error: profileError } = await supabaseAdmin
+  const { data: idProfile, error: idProfileError } = await supabaseAdmin
     .from('learner_profiles')
-    .select('id, role, email, username, full_name')
+    .select('id, role, email, username, full_name, created_at')
     .eq('id', authData.user.id)
     .maybeSingle();
 
-  if (!profile && normalizedEmail) {
-    const { data: emailProfile, error: emailProfileError } = await supabaseAdmin
+  let emailProfile: {
+    id: string;
+    role: string;
+    email: string;
+    username: string;
+    full_name: string;
+    created_at: string;
+  } | null = null;
+
+  if (!idProfile && normalizedEmail) {
+    const { data: existingEmailProfile, error: emailProfileError } = await supabaseAdmin
       .from('learner_profiles')
-      .select('id, role, email, username, full_name')
+      .select('id, role, email, username, full_name, created_at')
       .eq('email', normalizedEmail)
       .maybeSingle();
 
-    if (!emailProfileError && emailProfile) {
-      profile = emailProfile;
-      profileError = null;
+    if (!emailProfileError && existingEmailProfile) {
+      emailProfile = existingEmailProfile;
     }
   }
 
-  let resolvedRole = profile?.role as 'admin' | 'staff' | undefined;
+  const profile = idProfile ?? emailProfile;
+  const profileError = idProfileError;
 
-  if (!resolvedRole) {
-    const metadataRole = String(authData.user.user_metadata?.role ?? '').toLowerCase();
-    if (metadataRole === 'admin' || metadataRole === 'staff') {
-      resolvedRole = metadataRole;
-    } else if (normalizedEmail === DEFAULT_ROLE_EMAILS.admin) {
-      resolvedRole = 'admin';
-    } else if (normalizedEmail === DEFAULT_ROLE_EMAILS.staff) {
-      resolvedRole = 'staff';
-    }
+  let resolvedRole: 'admin' | 'staff' | undefined;
+  if (profile?.role === 'admin' || profile?.role === 'staff') {
+    resolvedRole = profile.role;
+  } else if (normalizedEmail === DEFAULT_ROLE_EMAILS.admin) {
+    resolvedRole = 'admin';
+  } else if (normalizedEmail === DEFAULT_ROLE_EMAILS.staff) {
+    resolvedRole = 'staff';
   }
 
-  if (!profileError && normalizedEmail && resolvedRole && (!profile || profile.id !== authData.user.id)) {
+  const needsProfileRepair = !profileError && normalizedEmail && resolvedRole && (!idProfile || idProfile.id !== authData.user.id);
+
+  if (needsProfileRepair) {
+    await supabaseAdmin.from('learner_profiles').delete().eq('email', normalizedEmail).neq('id', authData.user.id);
+
     await supabaseAdmin.from('learner_profiles').upsert({
       id: authData.user.id,
-      username:
-        String(profile?.username ?? authData.user.user_metadata?.username ?? normalizedEmail.split('@')[0]).slice(0, 40),
+      username: toSafeUsername(String(profile?.username ?? authData.user.user_metadata?.username ?? normalizedEmail.split('@')[0])),
       full_name: String(profile?.full_name ?? authData.user.user_metadata?.full_name ?? `Review Buddy ${resolvedRole}`),
       email: normalizedEmail,
       role: resolvedRole,
@@ -163,7 +198,7 @@ export async function requireAuthorizedRole(
       level: 'Grade 4',
       mode: 'solo',
       subject: 'Mathematics',
-      created_at: new Date().toISOString(),
+      created_at: String(profile?.created_at ?? new Date().toISOString()),
       last_login_at: new Date().toISOString(),
     });
   }

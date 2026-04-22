@@ -1,4 +1,4 @@
-const CACHE_NAME = 'review-buddy-v1-10-4';
+const CACHE_NAME = 'review-buddy-v1-11-1';
 const APP_SHELL = [
   './',
   './manifest.webmanifest',
@@ -33,23 +33,38 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
+  const isNavigationRequest = request.mode === 'navigate';
+  const shouldRefreshFromNetwork =
+    isNavigationRequest ||
+    request.destination === 'document' ||
+    requestUrl.pathname.endsWith('/manifest.webmanifest');
+
   event.respondWith(
-    caches.match(request).then((cached) => {
-      if (cached) {
-        return cached;
-      }
+    (shouldRefreshFromNetwork
+      ? fetch(request)
+          .then((response) => {
+            if (response.ok && !requestUrl.pathname.includes('/api/')) {
+              const copy = response.clone();
+              caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
+            }
 
-      return fetch(request)
-        .then((response) => {
-          if (!response.ok || requestUrl.pathname.includes('/api/')) {
             return response;
-          }
+          })
+          .catch(() => caches.match(request).then((cached) => cached || caches.match('./')))
+      : caches.match(request).then((cached) => {
+          const fetchAndCache = fetch(request)
+            .then((response) => {
+              if (!response.ok || requestUrl.pathname.includes('/api/')) {
+                return response;
+              }
 
-          const copy = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
-          return response;
-        })
-        .catch(() => caches.match('./'));
-    }),
+              const copy = response.clone();
+              caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
+              return response;
+            })
+            .catch(() => cached || caches.match('./'));
+
+          return cached || fetchAndCache;
+        })),
   );
 });

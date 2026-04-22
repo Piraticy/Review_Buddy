@@ -202,11 +202,25 @@ type GeneratedAvatarOption = {
 
 const STORAGE_KEY = 'review-buddy-state';
 const INSTALL_DISMISS_KEY = 'review-buddy-install-dismissed';
-const APP_VERSION = '1.11.0';
+const APP_VERSION = '1.11.1';
 const APP_DISPLAY_VERSION = 'Beta';
 const APP_CREATED_ON = 'March 26';
 const BIRTHDAY_MIN_DATE = new Date(1990, 0, 1);
 const BIRTHDAY_WEEKDAY_LABELS = ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'];
+const BIRTHDAY_MONTH_LABELS = [
+  'January',
+  'February',
+  'March',
+  'April',
+  'May',
+  'June',
+  'July',
+  'August',
+  'September',
+  'October',
+  'November',
+  'December',
+];
 const DEFAULT_ADMIN_USERNAME = 'Admin';
 const DEFAULT_ADMIN_PASSWORD = 'admin';
 const DEFAULT_STAFF_USERNAME = 'Staff';
@@ -975,10 +989,6 @@ function getMonthStart(date: Date) {
   return new Date(date.getFullYear(), date.getMonth(), 1);
 }
 
-function shiftMonth(date: Date, offset: number) {
-  return new Date(date.getFullYear(), date.getMonth() + offset, 1);
-}
-
 function isSameCalendarDay(left: Date | null, right: Date | null) {
   if (!left || !right) return false;
 
@@ -991,27 +1001,28 @@ function isSameCalendarDay(left: Date | null, right: Date | null) {
 
 function buildBirthdayCalendar(viewDate: Date, selectedDate: Date | null) {
   const monthStart = getMonthStart(viewDate);
-  const firstWeekdayOffset = (monthStart.getDay() + 6) % 7;
-  const gridStart = new Date(monthStart);
-  gridStart.setDate(monthStart.getDate() - firstWeekdayOffset);
   const minDate = normalizeCalendarDay(BIRTHDAY_MIN_DATE);
   const maxDate = normalizeCalendarDay(new Date());
+  const totalDays = new Date(monthStart.getFullYear(), monthStart.getMonth() + 1, 0).getDate();
+  const firstWeekdayOffset = (monthStart.getDay() + 6) % 7;
 
-  return Array.from({ length: 42 }, (_, index) => {
-    const nextDate = new Date(gridStart);
-    nextDate.setDate(gridStart.getDate() + index);
-    const date = normalizeCalendarDay(nextDate);
+  return {
+    firstWeekdayOffset,
+    days: Array.from({ length: totalDays }, (_, index) => {
+      const date = normalizeCalendarDay(
+        new Date(monthStart.getFullYear(), monthStart.getMonth(), index + 1),
+      );
 
-    return {
-      key: date.toISOString(),
-      date,
-      label: date.getDate(),
-      inMonth: date.getMonth() === monthStart.getMonth(),
-      isDisabled: date < minDate || date > maxDate,
-      isSelected: isSameCalendarDay(date, selectedDate),
-      isToday: isSameCalendarDay(date, maxDate),
-    };
-  });
+      return {
+        key: date.toISOString(),
+        date,
+        label: date.getDate(),
+        isDisabled: date < minDate || date > maxDate,
+        isSelected: isSameCalendarDay(date, selectedDate),
+        isToday: isSameCalendarDay(date, maxDate),
+      };
+    }),
+  };
 }
 
 function getTodayKey() {
@@ -1767,11 +1778,12 @@ function App() {
     feedbackEntries.some((entry) => entry.userKey === feedbackUserKey);
   const progressSnapshot = getProgressSnapshot(attempts);
   const selectedBirthday = getBirthDate(profile);
-  const birthdayCalendarDays = buildBirthdayCalendar(birthdayCalendarDate, selectedBirthday);
-  const minBirthdayMonth = getMonthStart(BIRTHDAY_MIN_DATE);
+  const birthdayCalendar = buildBirthdayCalendar(birthdayCalendarDate, selectedBirthday);
+  const birthdayYearOptions = Array.from(
+    { length: new Date().getFullYear() - BIRTHDAY_MIN_DATE.getFullYear() + 1 },
+    (_, index) => new Date().getFullYear() - index,
+  );
   const maxBirthdayMonth = getMonthStart(new Date());
-  const canMoveBirthdayBackward = birthdayCalendarDate.getTime() > minBirthdayMonth.getTime();
-  const canMoveBirthdayForward = birthdayCalendarDate.getTime() < maxBirthdayMonth.getTime();
   const filteredLearners = learnerRegistrations.filter((entry) => {
     const query = learnerSearch.trim().toLowerCase();
     if (!query) return true;
@@ -1913,6 +1925,34 @@ function App() {
     const focusDate = getBirthDate(profile) ?? new Date();
     setBirthdayCalendarDate(getMonthStart(focusDate));
     setShowBirthdayPicker(true);
+  }
+
+  function updateBirthdayCalendarYear(year: number) {
+    setBirthdayCalendarDate((current) => {
+      const next = new Date(year, current.getMonth(), 1);
+      const maxMonth = getMonthStart(new Date());
+      if (next.getTime() > maxMonth.getTime()) {
+        return maxMonth;
+      }
+      if (next.getTime() < getMonthStart(BIRTHDAY_MIN_DATE).getTime()) {
+        return getMonthStart(BIRTHDAY_MIN_DATE);
+      }
+      return next;
+    });
+  }
+
+  function updateBirthdayCalendarMonth(monthIndex: number) {
+    setBirthdayCalendarDate((current) => {
+      const next = new Date(current.getFullYear(), monthIndex, 1);
+      const maxMonth = getMonthStart(new Date());
+      if (next.getTime() > maxMonth.getTime()) {
+        return maxMonth;
+      }
+      if (next.getTime() < getMonthStart(BIRTHDAY_MIN_DATE).getTime()) {
+        return getMonthStart(BIRTHDAY_MIN_DATE);
+      }
+      return next;
+    });
   }
 
   function selectBirthday(date: Date) {
@@ -3542,34 +3582,38 @@ function App() {
                       </button>
                       {showBirthdayPicker && (
                         <div className="birthday-calendar" role="dialog" aria-label="Choose birthday">
-                          <div className="birthday-calendar-header">
-                            <button
-                              type="button"
-                              className="birthday-calendar-nav"
-                              onClick={() => setBirthdayCalendarDate((current) => shiftMonth(current, -1))}
-                              disabled={!canMoveBirthdayBackward}
-                              aria-label="Previous month"
-                            >
-                              ‹
-                            </button>
-                            <div className="birthday-calendar-heading">
-                              <strong>
-                                {new Intl.DateTimeFormat('en-US', {
-                                  month: 'long',
-                                  year: 'numeric',
-                                }).format(birthdayCalendarDate)}
-                              </strong>
-                              <span>Choose a past date in one polished view.</span>
-                            </div>
-                            <button
-                              type="button"
-                              className="birthday-calendar-nav"
-                              onClick={() => setBirthdayCalendarDate((current) => shiftMonth(current, 1))}
-                              disabled={!canMoveBirthdayForward}
-                              aria-label="Next month"
-                            >
-                              ›
-                            </button>
+                          <div className="birthday-calendar-controls">
+                            <label className="birthday-calendar-field">
+                              <span>Year</span>
+                              <select
+                                value={birthdayCalendarDate.getFullYear()}
+                                onChange={(event) => updateBirthdayCalendarYear(Number(event.target.value))}
+                              >
+                                {birthdayYearOptions.map((year) => (
+                                  <option key={year} value={year}>{year}</option>
+                                ))}
+                              </select>
+                            </label>
+                            <label className="birthday-calendar-field">
+                              <span>Month</span>
+                              <select
+                                value={birthdayCalendarDate.getMonth()}
+                                onChange={(event) => updateBirthdayCalendarMonth(Number(event.target.value))}
+                              >
+                                {BIRTHDAY_MONTH_LABELS.map((month, index) => (
+                                  <option
+                                    key={month}
+                                    value={index}
+                                    disabled={
+                                      new Date(birthdayCalendarDate.getFullYear(), index, 1).getTime() >
+                                      maxBirthdayMonth.getTime()
+                                    }
+                                  >
+                                    {month}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
                           </div>
                           <div className="birthday-calendar-weekdays" aria-hidden="true">
                             {BIRTHDAY_WEEKDAY_LABELS.map((label) => (
@@ -3577,13 +3621,15 @@ function App() {
                             ))}
                           </div>
                           <div className="birthday-calendar-grid">
-                            {birthdayCalendarDays.map((day) => (
+                            {Array.from({ length: birthdayCalendar.firstWeekdayOffset }).map((_, index) => (
+                              <span key={`empty-${index}`} className="birthday-calendar-blank" aria-hidden="true" />
+                            ))}
+                            {birthdayCalendar.days.map((day) => (
                               <button
                                 key={day.key}
                                 type="button"
                                 className={[
                                   'birthday-calendar-day',
-                                  day.inMonth ? '' : ' birthday-calendar-day-muted',
                                   day.isSelected ? ' birthday-calendar-day-selected' : '',
                                   day.isToday ? ' birthday-calendar-day-today' : '',
                                 ].join('')}
@@ -3600,9 +3646,6 @@ function App() {
                             ))}
                           </div>
                           <div className="birthday-calendar-footer">
-                            <span className="birthday-calendar-summary">
-                              {selectedBirthday ? `Selected ${formatBirthdayLabel(profile)}` : 'Pick day, month, and year together.'}
-                            </span>
                             <button
                               type="button"
                               className="ghost-button birthday-calendar-clear"
@@ -5278,7 +5321,7 @@ function App() {
                   <div className="panel-heading">
                     <p className="eyebrow">AI summary</p>
                     <h2>Feedback overview</h2>
-                    <p>Question-by-question signals from learner testing.</p>
+                    <p>See how learners rated each question.</p>
                   </div>
                   <div className="mini-stat-list">
                     <article className="mini-stat-card">
@@ -5307,7 +5350,7 @@ function App() {
                     <div className="panel-heading">
                       <p className="eyebrow">Announcements</p>
                       <h2>Post an update</h2>
-                      <p>Share polished notices for learners and staff, then keep the latest posts visible on the board.</p>
+                      <p>Write a clear update for learners and staff.</p>
                     </div>
                     <div className="announcement-preview-list">
                       {adminAnnouncementPreview.map((announcement) => (
@@ -5329,7 +5372,7 @@ function App() {
                         <input
                           value={announcementDraft.title}
                           onChange={(event) => setAnnouncementDraft((current) => ({ ...current, title: event.target.value }))}
-                          placeholder="Example: Beta testing starts today"
+                          placeholder="Example: School break on Friday"
                         />
                       </label>
                       <label className="field-span-2">
@@ -6075,9 +6118,9 @@ function App() {
         <div className="modal-backdrop" role="presentation">
           <section className="modal-card" role="dialog" aria-label="Version update">
             <div className="panel-heading">
-              <p className="eyebrow">Update available</p>
-              <h2>A newer beta is ready</h2>
-              <p>This version adds staff approvals, requests, streaks, announcements, and the new reporting flow.</p>
+              <p className="eyebrow">New version</p>
+              <h2>Your app is ready to update</h2>
+              <p>Refresh now to get the latest improvements and fixes.</p>
             </div>
             <div className="sample-buttons">
               <button type="button" className="primary-button" onClick={() => window.location.reload()}>
@@ -6098,7 +6141,7 @@ function App() {
               <div className="panel-heading">
                 <p className="eyebrow">Terms and conditions</p>
                 <h2>Review Buddy beta terms</h2>
-                <p>Updated {TERMS_UPDATED_ON}. These terms explain how the platform should be used during beta testing.</p>
+                <p>Updated {TERMS_UPDATED_ON}. These terms explain how Review Buddy should be used during this beta period.</p>
               </div>
               <div className="terms-hero-badges">
                 <span className="mini-badge">Beta service</span>
@@ -6109,7 +6152,7 @@ function App() {
             <div className="terms-section-grid">
               <article className="terms-section-card">
                 <strong>Educational support only</strong>
-                <span>Review Buddy provides practice, revision, progress guidance, and workflow support. It does not replace a school, certified teacher judgment, therapy, legal advice, medical care, or emergency services.</span>
+                <span>Review Buddy provides practice, revision, progress guidance, and learning support. It does not replace a school, teacher judgment, therapy, legal advice, medical care, or emergency services.</span>
               </article>
               <article className="terms-section-card">
                 <strong>Beta testing notice</strong>
@@ -6141,15 +6184,15 @@ function App() {
               </article>
               <article className="terms-section-card">
                 <strong>Availability and product changes</strong>
-                <span>We may update, pause, limit, or retire parts of the platform at any time during beta testing, including plans, features, APIs, workflows, or country-specific learning tools.</span>
+                <span>We may update, pause, limit, or remove parts of the platform at any time during beta use, including plans, features, and country-specific learning tools.</span>
               </article>
               <article className="terms-section-card">
                 <strong>Limitation of liability</strong>
-                <span>To the fullest extent allowed, Review Buddy is provided as-is during beta testing without guarantees of uninterrupted access, perfect accuracy, or fitness for every classroom, learner, or institution.</span>
+                <span>To the fullest extent allowed, Review Buddy is provided as-is during beta use without guarantees of uninterrupted access, perfect accuracy, or suitability for every classroom, learner, or institution.</span>
               </article>
               <article className="terms-section-card">
                 <strong>Policy updates</strong>
-                <span>Continued use after an update means the latest beta terms apply. Major workflow or policy changes may also be highlighted in the announcement board or version update prompt.</span>
+                <span>Continued use after an update means the latest beta terms apply. Important changes may also be shared in announcements or in the update message inside the app.</span>
               </article>
             </div>
             <div className="sample-buttons">
@@ -6167,10 +6210,11 @@ function App() {
           <p>{MOTTO}</p>
         </div>
         <div className="footer-release">
-          <p className="eyebrow">Current release</p>
+          <p className="eyebrow">Release</p>
           <strong>Review Buddy Beta</strong>
           <div className="footer-release-row">
-            <span className="footer-pill footer-pill-highlight">{APP_DISPLAY_VERSION}</span>
+            <span>{APP_DISPLAY_VERSION}</span>
+            <span className="footer-dot" aria-hidden="true">•</span>
             <span className="footer-release-date">{APP_CREATED_ON}</span>
           </div>
         </div>

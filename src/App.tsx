@@ -1,4 +1,4 @@
-import { CSSProperties, ClipboardEvent, FormEvent, SVGProps, useEffect, useRef, useState } from 'react';
+import { CSSProperties, ClipboardEvent, FormEvent, SVGProps, startTransition, useEffect, useRef, useState } from 'react';
 import {
   type Announcement,
   COUNTRIES,
@@ -134,6 +134,18 @@ type AnnouncementDraft = {
   audience: Announcement['audience'];
 };
 
+type FeedbackSummarySnapshot = {
+  average: number;
+  lowCount: number;
+  headline: string;
+  detail: string;
+  questionAverages: Array<{
+    key: FeedbackQuestionKey;
+    label: string;
+    average: number;
+  }>;
+};
+
 type StaffMaterialDraft = {
   editingId?: string;
   title: string;
@@ -198,20 +210,6 @@ const DEFAULT_ADMIN_PASSWORD = 'admin';
 const DEFAULT_STAFF_USERNAME = 'Staff';
 const DEFAULT_STAFF_PASSWORD = 'staff';
 const TERMS_UPDATED_ON = 'April 21, 2026';
-const MONTH_OPTIONS = [
-  'January',
-  'February',
-  'March',
-  'April',
-  'May',
-  'June',
-  'July',
-  'August',
-  'September',
-  'October',
-  'November',
-  'December',
-] as const;
 const GENERATED_AVATARS: Record<LearnerGender, GeneratedAvatarOption[]> = {
   boy: [
     { emoji: '👦🏻', label: 'Bright starter' },
@@ -763,6 +761,39 @@ const STAFF_FEEDBACK_QUESTIONS: { key: FeedbackQuestionKey; label: string }[] = 
   { key: 'confidence', label: 'How much did it help you support learners?' },
 ];
 
+const STAFF_ROLE_OPTIONS = [
+  'Learning mentor',
+  'Subject specialist',
+  'Reading coach',
+  'Exam coach',
+  'Family support guide',
+];
+
+const STAFF_ELIGIBILITY_OPTIONS = [
+  'Verified teacher',
+  'Teaching assistant',
+  'School mentor',
+  'Curriculum partner',
+  'Community tutor',
+];
+
+const STAFF_QUALIFICATION_OPTIONS = [
+  'B.Ed educator',
+  'Primary classroom lead',
+  'STEM specialist',
+  'Language and literacy coach',
+  'Exam preparation coach',
+];
+
+const STAFF_SUPPORT_FOCUS_OPTIONS = [
+  'Foundations support',
+  'Reading confidence',
+  'Math mastery',
+  'Science investigations',
+  'Exam readiness',
+  'Family onboarding',
+];
+
 function AdminTabs({
   active,
   onChange,
@@ -813,22 +844,30 @@ function FeedbackStars({
   );
 }
 
-function buildFeedbackSummary(entries: FeedbackEntry[]) {
+function buildFeedbackSummary(entries: FeedbackEntry[]): FeedbackSummarySnapshot {
   if (entries.length === 0) {
     return {
       average: 0,
       lowCount: 0,
       headline: 'No feedback yet',
       detail: 'Survey replies will appear here after learners share them.',
+      questionAverages: FEEDBACK_SUMMARY_QUESTIONS.map((question) => ({
+        key: question.key,
+        label: question.label,
+        average: 0,
+      })),
     };
   }
 
   const average = Math.round((entries.reduce((sum, entry) => sum + entry.rating, 0) / entries.length) * 10) / 10;
   const lowCount = entries.filter((entry) => entry.rating < 3).length;
   const questionAverages = FEEDBACK_SUMMARY_QUESTIONS.map((question) => ({
+    key: question.key,
     label: question.label,
     average:
-      entries.reduce((sum, entry) => sum + (entry.ratings?.[question.key] ?? entry.rating), 0) / entries.length,
+      Math.round(
+        (entries.reduce((sum, entry) => sum + (entry.ratings?.[question.key] ?? entry.rating), 0) / entries.length) * 10,
+      ) / 10,
   })).sort((left, right) => left.average - right.average);
 
   const weakestQuestion = questionAverages[0]?.label ?? 'General feedback';
@@ -841,16 +880,17 @@ function buildFeedbackSummary(entries: FeedbackEntry[]) {
       lowCount > 0
         ? `${lowCount} reply${lowCount === 1 ? '' : 'ies'} need attention first.`
         : 'Most learners are sharing positive feedback.',
+    questionAverages,
   };
 }
 
 function createInitialStaffAccountDraft(countryCode = 'US'): StaffAccountDraft {
   return {
     name: '',
-    role: 'Learning mentor',
-    focus: '',
-    qualifications: '',
-    eligibility: '',
+    role: STAFF_ROLE_OPTIONS[0],
+    focus: STAFF_SUPPORT_FOCUS_OPTIONS[0],
+    qualifications: STAFF_QUALIFICATION_OPTIONS[0],
+    eligibility: STAFF_ELIGIBILITY_OPTIONS[0],
     countryCode,
   };
 }
@@ -881,6 +921,18 @@ function defaultAnnouncements(): Announcement[] {
       createdAt: new Date('2026-04-21T08:00:00.000Z').toISOString(),
     },
   ];
+}
+
+function formatBirthDateInput(profile: Pick<LearnerProfile, 'birthDay' | 'birthMonth' | 'birthYear'>) {
+  if (!profile.birthDay || !profile.birthMonth || !profile.birthYear) {
+    return '';
+  }
+
+  return [
+    String(profile.birthYear).padStart(4, '0'),
+    String(profile.birthMonth).padStart(2, '0'),
+    String(profile.birthDay).padStart(2, '0'),
+  ].join('-');
 }
 
 function getTodayKey() {
@@ -1167,6 +1219,7 @@ function App() {
   const [showTutorial, setShowTutorial] = useState(false);
   const [showVersionPrompt, setShowVersionPrompt] = useState(false);
   const [streakNotice, setStreakNotice] = useState('');
+  const [isAuthBusy, setIsAuthBusy] = useState(false);
   const [generatedStaffAccount, setGeneratedStaffAccount] = useState<{
     name: string;
     email: string;
@@ -1298,29 +1351,14 @@ function App() {
 
       if (cancelled) return;
 
-      if (repoUsers.length > 0) {
-        setRegisteredUsers(ensureRegisteredUsers(repoUsers));
-      }
-
-      if (repoStaff.length > 0) {
-        setStaffMembers(repoStaff);
-      }
-
-      if (repoMaterials.length > 0) {
-        setStaffMaterials(repoMaterials);
-      }
-
-      if (repoFeedback.length > 0) {
-        setFeedbackEntries(repoFeedback);
-      }
-
-      if (repoSupportRequests.length > 0) {
-        setSupportRequests(repoSupportRequests);
-      }
-
-      if (repoAnnouncements.length > 0) {
-        setAnnouncements(repoAnnouncements);
-      }
+      applySharedState(
+        repoUsers,
+        repoStaff,
+        repoMaterials,
+        repoFeedback,
+        repoSupportRequests,
+        repoAnnouncements,
+      );
     }
 
     void hydrateSharedData();
@@ -1471,6 +1509,9 @@ function App() {
     .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())
     .slice(0, 5);
   const supportRequestsForAdmin = [...supportRequests].sort(
+    (left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime(),
+  );
+  const announcementFeed = [...announcements].sort(
     (left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime(),
   );
   const focusCountryRequests = supportRequestsForAdmin.filter((request) => request.countryCode === adminMetricsCode);
@@ -1640,6 +1681,8 @@ function App() {
       (profile.role === 'student' && announcement.audience === 'learners') ||
       (profile.role === 'staff' && announcement.audience === 'staff'),
   );
+  const adminAnnouncementPreview = announcementFeed.slice(0, 3);
+  const learnerSummaryQuestions = learnerFeedbackSummary.questionAverages.slice(0, 4);
   const mySupportRequests = supportRequestsForAdmin.filter(
     (request) => request.createdBy.toLowerCase() === (profile.email || profile.fullName).toLowerCase(),
   );
@@ -1720,6 +1763,83 @@ function App() {
       ...current,
       [key]: value,
     }));
+  }
+
+  function handleBirthDateChange(value: string) {
+    if (!value) {
+      setProfile((current) => ({
+        ...current,
+        birthDay: undefined,
+        birthMonth: undefined,
+        birthYear: undefined,
+      }));
+      return;
+    }
+
+    const [year, month, day] = value.split('-').map((entry) => Number(entry));
+    if (!year || !month || !day) {
+      return;
+    }
+
+    setProfile((current) => ({
+      ...current,
+      birthDay: day,
+      birthMonth: month,
+      birthYear: year,
+    }));
+  }
+
+  function applySharedState(
+    repoUsers: RegisteredUser[],
+    repoStaff: AdminStaffMember[],
+    repoMaterials: StaffMaterial[],
+    repoFeedback: FeedbackEntry[],
+    repoSupportRequests: SupportRequest[],
+    repoAnnouncements: Announcement[],
+  ) {
+    startTransition(() => {
+      setRegisteredUsers(ensureRegisteredUsers(repoUsers));
+      setStaffMembers(repoStaff);
+      setStaffMaterials(repoMaterials);
+      setFeedbackEntries(repoFeedback);
+      setSupportRequests(repoSupportRequests);
+      setAnnouncements(repoAnnouncements.length > 0 ? repoAnnouncements : defaultAnnouncements());
+    });
+  }
+
+  async function refreshSharedState() {
+    const [repoUsers, repoStaff, repoMaterials, repoFeedback, repoSupportRequests, repoAnnouncements] = await Promise.all([
+      appRepository.listRegisteredUsers(),
+      appRepository.listStaffMembers(),
+      appRepository.listStaffMaterials(),
+      appRepository.listFeedbackEntries(),
+      appRepository.listSupportRequests(),
+      appRepository.listAnnouncements(),
+    ]);
+
+    applySharedState(
+      repoUsers,
+      repoStaff,
+      repoMaterials,
+      repoFeedback,
+      repoSupportRequests,
+      repoAnnouncements,
+    );
+  }
+
+  function getLearnerRecordLabel(entry: RegisteredUser) {
+    if (!entry.lastLoginAt) {
+      return 'New learner';
+    }
+
+    const elapsed = Date.now() - new Date(entry.lastLoginAt).getTime();
+    if (elapsed < 24 * 60 * 60 * 1000) {
+      return 'Active today';
+    }
+    if (elapsed < 7 * 24 * 60 * 60 * 1000) {
+      return 'Recently active';
+    }
+    return 'Needs follow-up';
   }
 
   function updateGender(nextGender: LearnerGender) {
@@ -1874,92 +1994,74 @@ function App() {
 
   async function handleAuthSubmit(event: FormEvent) {
     event.preventDefault();
+    if (isAuthBusy) return;
     setAuthNotice('');
+    setIsAuthBusy(true);
 
-    if (isRecoveryMode) {
-      if (recoveryPassword !== recoveryConfirmPassword) {
-        setAuthNotice('New passwords do not match yet.');
+    try {
+      if (isRecoveryMode) {
+        if (recoveryPassword !== recoveryConfirmPassword) {
+          setAuthNotice('New passwords do not match yet.');
+          return;
+        }
+
+        try {
+          await appRepository.completePasswordReset(recoveryPassword);
+          setRecoveryPassword('');
+          setRecoveryConfirmPassword('');
+          setIsRecoveryMode(false);
+          setShowPassword(false);
+          window.history.replaceState({}, document.title, window.location.pathname);
+          setAuthNotice('Password updated. Sign in with your new password.');
+        } catch (error) {
+          setAuthNotice(getErrorMessage(error, 'We could not save the new password just now.'));
+        }
         return;
       }
 
-      try {
-        await appRepository.completePasswordReset(recoveryPassword);
-        setRecoveryPassword('');
-        setRecoveryConfirmPassword('');
-        setIsRecoveryMode(false);
-        setShowPassword(false);
-        window.history.replaceState({}, document.title, window.location.pathname);
-        setAuthNotice('Password updated. Sign in with your new password.');
-      } catch (error) {
-        setAuthNotice(getErrorMessage(error, 'We could not save the new password just now.'));
-      }
-      return;
-    }
+      if (authMode === 'signup') {
+        if (profile.password !== confirmPassword) {
+          setAuthNotice('Passwords do not match yet.');
+          return;
+        }
 
-    if (authMode === 'signup') {
-      if (profile.password !== confirmPassword) {
-        setAuthNotice('Passwords do not match yet.');
+        const email = profile.email.trim().toLowerCase();
+        const alreadyExists = registeredUsers.some((user) => user.email.toLowerCase() === email);
+
+        if (alreadyExists) {
+          setAuthNotice('That email is already registered. Please sign in instead.');
+          return;
+        }
+
+        const newUser = createRegisteredUser(profile);
+        try {
+          const savedUser = await appRepository.registerLearner(newUser);
+          setSigninIdentifier(savedUser.email);
+          setAdminNotice(`${savedUser.fullName} joined registered learners.`);
+          setConfirmPassword('');
+          enterWorkspace(savedUser);
+          void refreshSharedState().catch(() => undefined);
+        } catch (error) {
+          setAuthNotice(getErrorMessage(error, 'We could not create the account just now. Please try again.'));
+        }
         return;
       }
 
-      const email = profile.email.trim().toLowerCase();
-      const alreadyExists = registeredUsers.some((user) => user.email.toLowerCase() === email);
+      const identifier = signinIdentifier.trim().toLowerCase();
+      const matchedUser = await appRepository.signIn(identifier, profile.password);
 
-      if (alreadyExists) {
-        setAuthNotice('That email is already registered. Please sign in instead.');
+      if (!matchedUser) {
+        setAuthNotice('We could not find that login. Check the details and try again.');
         return;
       }
 
-      const newUser = createRegisteredUser(profile);
-      try {
-        const savedUser = await appRepository.registerLearner(newUser);
-        const [allUsers, repoStaff, repoMaterials, repoFeedback, repoSupportRequests, repoAnnouncements] = await Promise.all([
-          appRepository.listRegisteredUsers(),
-          appRepository.listStaffMembers(),
-          appRepository.listStaffMaterials(),
-          appRepository.listFeedbackEntries(),
-          appRepository.listSupportRequests(),
-          appRepository.listAnnouncements(),
-        ]);
-        setRegisteredUsers(ensureRegisteredUsers(allUsers));
-        setStaffMembers(repoStaff);
-        setStaffMaterials(repoMaterials);
-        setFeedbackEntries(repoFeedback);
-        setSupportRequests(repoSupportRequests);
-        setAnnouncements(repoAnnouncements.length > 0 ? repoAnnouncements : defaultAnnouncements());
-        setSigninIdentifier(savedUser.email);
-        setAdminNotice(`${savedUser.fullName} joined registered learners.`);
-        setConfirmPassword('');
-        enterWorkspace(savedUser);
-      } catch (error) {
-        setAuthNotice(getErrorMessage(error, 'We could not create the account just now. Please try again.'));
-      }
-      return;
+      enterWorkspace(matchedUser);
+      void refreshSharedState().catch(() => undefined);
+    } catch (error) {
+      setAuthNotice(getErrorMessage(error, 'We could not continue right now. Please try again.'));
+    } finally {
+      setIsAuthBusy(false);
     }
-
-    const identifier = signinIdentifier.trim().toLowerCase();
-    const matchedUser = await appRepository.signIn(identifier, profile.password);
-
-    if (!matchedUser) {
-      setAuthNotice('We could not find that login. Check the details and try again.');
-      return;
-    }
-
-    const [allUsers, repoStaff, repoMaterials, repoFeedback, repoSupportRequests, repoAnnouncements] = await Promise.all([
-      appRepository.listRegisteredUsers(),
-      appRepository.listStaffMembers(),
-      appRepository.listStaffMaterials(),
-      appRepository.listFeedbackEntries(),
-      appRepository.listSupportRequests(),
-      appRepository.listAnnouncements(),
-    ]);
-    setRegisteredUsers(ensureRegisteredUsers(allUsers));
-    setStaffMembers(repoStaff);
-    setStaffMaterials(repoMaterials);
-    setFeedbackEntries(repoFeedback);
-    setSupportRequests(repoSupportRequests);
-    setAnnouncements(repoAnnouncements.length > 0 ? repoAnnouncements : defaultAnnouncements());
-    enterWorkspace(matchedUser);
   }
 
   async function handleForgotPassword() {
@@ -3269,43 +3371,14 @@ function App() {
                       <option value="girl">Girl</option>
                     </select>
                   </label>
-                  <label>
-                    Birth day
-                    <select
-                      value={profile.birthDay ?? ''}
-                      onChange={(event) => updateProfile('birthDay', event.target.value ? Number(event.target.value) : undefined)}
-                    >
-                      <option value="">Day</option>
-                      {Array.from({ length: 31 }, (_, index) => index + 1).map((day) => (
-                        <option key={day} value={day}>
-                          {day}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label>
-                    Birth month
-                    <select
-                      value={profile.birthMonth ?? ''}
-                      onChange={(event) => updateProfile('birthMonth', event.target.value ? Number(event.target.value) : undefined)}
-                    >
-                      <option value="">Month</option>
-                      {MONTH_OPTIONS.map((month, index) => (
-                        <option key={month} value={index + 1}>
-                          {month}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label>
-                    Birth year
+                  <label className="field-span-2">
+                    Birthday
                     <input
-                      type="number"
-                      min={1990}
-                      max={new Date().getFullYear()}
-                      value={profile.birthYear ?? ''}
-                      onChange={(event) => updateProfile('birthYear', event.target.value ? Number(event.target.value) : undefined)}
-                      placeholder="Year"
+                      type="date"
+                      min="1990-01-01"
+                      max={new Date().toISOString().slice(0, 10)}
+                      value={formatBirthDateInput(profile)}
+                      onChange={(event) => handleBirthDateChange(event.target.value)}
                     />
                   </label>
                   </div>
@@ -3460,8 +3533,18 @@ function App() {
 
               {authNotice && <p className="auth-notice">{authNotice}</p>}
 
-              <button className="primary-button" type="submit">
-                {isRecoveryMode ? 'Save new password' : authMode === 'signin' ? 'Continue' : 'Create account'}
+              <button className="primary-button" type="submit" disabled={isAuthBusy}>
+                {isAuthBusy
+                  ? isRecoveryMode
+                    ? 'Saving...'
+                    : authMode === 'signin'
+                      ? 'Opening your space...'
+                      : 'Creating your account...'
+                  : isRecoveryMode
+                    ? 'Save new password'
+                    : authMode === 'signin'
+                      ? 'Continue'
+                      : 'Create account'}
               </button>
                 </form>
               </div>
@@ -4959,8 +5042,8 @@ function App() {
                 <section className="side-card">
                   <div className="panel-heading">
                     <p className="eyebrow">AI summary</p>
-                    <h2>{learnerFeedbackSummary.headline}</h2>
-                    <p>What learners are saying right now.</p>
+                    <h2>Feedback overview</h2>
+                    <p>Question-by-question signals from learner testing.</p>
                   </div>
                   <div className="mini-stat-list">
                     <article className="mini-stat-card">
@@ -4972,47 +5055,74 @@ function App() {
                       <strong>{learnerFeedbackSummary.lowCount}</strong>
                     </article>
                   </div>
+                  <div className="summary-score-list">
+                    {learnerSummaryQuestions.map((question) => (
+                      <article key={question.key} className="summary-score-row">
+                        <div>
+                          <strong>{question.label}</strong>
+                          <span>{question.average > 0 ? `${question.average}/5 average` : 'Waiting for ratings'}</span>
+                        </div>
+                        <strong>{question.average > 0 ? question.average : '-'}</strong>
+                      </article>
+                    ))}
+                  </div>
                 </section>
                 <section className="side-card">
-                  <div className="panel-heading">
-                    <p className="eyebrow">Announcements</p>
-                    <h2>Post an update</h2>
-                    <p>Use this board for testing notes, school breaks, and rollout updates.</p>
-                  </div>
-                  <div className="field-grid">
-                    <label className="field-span-2">
-                      Title
-                      <input
-                        value={announcementDraft.title}
-                        onChange={(event) => setAnnouncementDraft((current) => ({ ...current, title: event.target.value }))}
-                        placeholder="Example: Beta testing starts today"
-                      />
-                    </label>
-                    <label className="field-span-2">
-                      Message
-                      <textarea
-                        rows={3}
-                        value={announcementDraft.message}
-                        onChange={(event) => setAnnouncementDraft((current) => ({ ...current, message: event.target.value }))}
-                        placeholder="Share the update learners and staff should see."
-                      />
-                    </label>
-                    <label>
-                      Audience
-                      <select
-                        value={announcementDraft.audience}
-                        onChange={(event) => setAnnouncementDraft((current) => ({ ...current, audience: event.target.value as Announcement['audience'] }))}
-                      >
-                        <option value="all">Everyone</option>
-                        <option value="learners">Learners only</option>
-                        <option value="staff">Staff only</option>
-                      </select>
-                    </label>
-                  </div>
-                  <div className="banner-actions">
-                    <button type="button" className="ghost-button ghost-button-small" onClick={addAnnouncement}>
-                      Post announcement
-                    </button>
+                  <div className="announcement-board-card">
+                    <div className="panel-heading">
+                      <p className="eyebrow">Announcements</p>
+                      <h2>Post an update</h2>
+                      <p>Share polished notices for learners and staff, then keep the latest posts visible on the board.</p>
+                    </div>
+                    <div className="announcement-preview-list">
+                      {adminAnnouncementPreview.map((announcement) => (
+                        <article key={announcement.id} className="announcement-preview-card">
+                          <div className="announcement-preview-meta">
+                            <span className="mini-badge">
+                              {announcement.audience === 'all' ? 'Everyone' : announcement.audience === 'learners' ? 'Learners' : 'Staff'}
+                            </span>
+                            <span>{new Date(announcement.createdAt).toLocaleDateString()}</span>
+                          </div>
+                          <strong>{announcement.title}</strong>
+                          <p>{announcement.message}</p>
+                        </article>
+                      ))}
+                    </div>
+                    <div className="field-grid">
+                      <label className="field-span-2">
+                        Title
+                        <input
+                          value={announcementDraft.title}
+                          onChange={(event) => setAnnouncementDraft((current) => ({ ...current, title: event.target.value }))}
+                          placeholder="Example: Beta testing starts today"
+                        />
+                      </label>
+                      <label className="field-span-2">
+                        Message
+                        <textarea
+                          rows={4}
+                          value={announcementDraft.message}
+                          onChange={(event) => setAnnouncementDraft((current) => ({ ...current, message: event.target.value }))}
+                          placeholder="Share the update learners and staff should see."
+                        />
+                      </label>
+                      <label>
+                        Audience
+                        <select
+                          value={announcementDraft.audience}
+                          onChange={(event) => setAnnouncementDraft((current) => ({ ...current, audience: event.target.value as Announcement['audience'] }))}
+                        >
+                          <option value="all">Everyone</option>
+                          <option value="learners">Learners only</option>
+                          <option value="staff">Staff only</option>
+                        </select>
+                      </label>
+                    </div>
+                    <div className="banner-actions">
+                      <button type="button" className="primary-button" onClick={addAnnouncement}>
+                        Post announcement
+                      </button>
+                    </div>
                   </div>
                 </section>
               </aside>
@@ -5117,11 +5227,14 @@ function App() {
                     </label>
                     <label>
                       Role
-                      <input
+                      <select
                         value={staffDraft.role}
                         onChange={(event) => setStaffDraft((current) => ({ ...current, role: event.target.value }))}
-                        placeholder="Learning mentor"
-                      />
+                      >
+                        {STAFF_ROLE_OPTIONS.map((option) => (
+                          <option key={option} value={option}>{option}</option>
+                        ))}
+                      </select>
                     </label>
                     <label>
                       Country
@@ -5138,27 +5251,36 @@ function App() {
                     </label>
                     <label>
                       Eligibility
-                      <input
+                      <select
                         value={staffDraft.eligibility}
                         onChange={(event) => setStaffDraft((current) => ({ ...current, eligibility: event.target.value }))}
-                        placeholder="Verified teacher / mentor"
-                      />
+                      >
+                        {STAFF_ELIGIBILITY_OPTIONS.map((option) => (
+                          <option key={option} value={option}>{option}</option>
+                        ))}
+                      </select>
                     </label>
                     <label className="field-span-2">
                       Qualifications
-                      <input
+                      <select
                         value={staffDraft.qualifications}
                         onChange={(event) => setStaffDraft((current) => ({ ...current, qualifications: event.target.value }))}
-                        placeholder="B.Ed, classroom experience, subject speciality"
-                      />
+                      >
+                        {STAFF_QUALIFICATION_OPTIONS.map((option) => (
+                          <option key={option} value={option}>{option}</option>
+                        ))}
+                      </select>
                     </label>
                     <label className="field-span-2">
                       Support focus
-                      <input
+                      <select
                         value={staffDraft.focus}
                         onChange={(event) => setStaffDraft((current) => ({ ...current, focus: event.target.value }))}
-                        placeholder="What learners this staff member supports"
-                      />
+                      >
+                        {STAFF_SUPPORT_FOCUS_OPTIONS.map((option) => (
+                          <option key={option} value={option}>{option}</option>
+                        ))}
+                      </select>
                     </label>
                   </div>
                   <div className="banner-actions">
@@ -5288,7 +5410,7 @@ function App() {
                           </span>
                         </div>
                         <div className="row-actions">
-                          <strong>{entry.lastLoginAt ? new Date(entry.lastLoginAt).toLocaleDateString() : 'New'}</strong>
+                          <strong>{getLearnerRecordLabel(entry)}</strong>
                           <button
                             type="button"
                             className="ghost-button ghost-button-small"
@@ -5625,33 +5747,44 @@ function App() {
                 <section className="side-card">
                   <div className="panel-heading">
                     <p className="eyebrow">AI summary</p>
-                    <h2>{learnerFeedbackSummary.headline}</h2>
+                    <h2>Question overview</h2>
                     <p>{learnerFeedbackSummary.detail}</p>
                   </div>
-                  <div className="history-list">
-                    {recentFeedback.length > 0 ? recentFeedback.map((entry) => (
-                      <article key={entry.id} className="history-row">
+                  <div className="summary-score-list">
+                    {learnerSummaryQuestions.map((question) => (
+                      <article key={question.key} className="summary-score-row">
                         <div>
-                          <strong>{'⭐'.repeat(entry.rating)}</strong>
-                          <span>
-                            {getFlagEmoji(entry.countryCode)} {entry.choice}
-                          </span>
-                          {entry.comment && <span>{entry.comment}</span>}
+                          <strong>{question.label}</strong>
+                          <span>{question.average > 0 ? `${question.average}/5 average` : 'Waiting for ratings'}</span>
                         </div>
-                        {profile.role === 'admin' ? (
-                          <button
-                            type="button"
-                            className="ghost-button ghost-button-small feedback-delete-button"
-                            onClick={() => void deleteFeedback(entry.id)}
-                          >
-                            Delete
-                          </button>
-                        ) : null}
+                        <strong>{question.average > 0 ? question.average : '-'}</strong>
                       </article>
-                    )) : (
-                      <p className="empty-state">Survey replies will show here after learners send feedback.</p>
-                    )}
+                    ))}
                   </div>
+                  {recentFeedback.length > 0 ? (
+                    <div className="history-list feedback-preview-list">
+                      {recentFeedback.slice(0, 2).map((entry) => (
+                        <article key={entry.id} className="history-row">
+                          <div>
+                            <strong>{'⭐'.repeat(entry.rating)}</strong>
+                            <span>
+                              {getFlagEmoji(entry.countryCode)} {entry.choice}
+                            </span>
+                            {entry.comment && <span>{entry.comment}</span>}
+                          </div>
+                          {profile.role === 'admin' ? (
+                            <button
+                              type="button"
+                              className="ghost-button ghost-button-small feedback-delete-button"
+                              onClick={() => void deleteFeedback(entry.id)}
+                            >
+                              Delete
+                            </button>
+                          ) : null}
+                        </article>
+                      ))}
+                    </div>
+                  ) : null}
                 </section>
 
                 <section className="side-card">
@@ -5726,41 +5859,62 @@ function App() {
       {showTermsModal && (
         <div className="modal-backdrop" role="presentation">
           <section className="modal-card modal-card-wide" role="dialog" aria-label="Terms and conditions">
-            <div className="panel-heading">
-              <p className="eyebrow">Terms and conditions</p>
-              <h2>Review Buddy beta terms</h2>
-              <p>Updated {TERMS_UPDATED_ON}</p>
+            <div className="terms-hero">
+              <div className="panel-heading">
+                <p className="eyebrow">Terms and conditions</p>
+                <h2>Review Buddy beta terms</h2>
+                <p>Updated {TERMS_UPDATED_ON}. These terms explain how the platform should be used during beta testing.</p>
+              </div>
+              <div className="terms-hero-badges">
+                <span className="mini-badge">Beta service</span>
+                <span className="mini-badge">Education support</span>
+                <span className="mini-badge">Admin-reviewed content</span>
+              </div>
             </div>
-            <div className="history-list">
-              <article className="history-row">
-                <div>
-                  <strong>Educational support only</strong>
-                  <span>Review Buddy gives learning support, practice, and workflow tools. It does not replace a school, licensed teacher judgment, medical guidance, or emergency support.</span>
-                </div>
+            <div className="terms-section-grid">
+              <article className="terms-section-card">
+                <strong>Educational support only</strong>
+                <span>Review Buddy provides practice, revision, progress guidance, and workflow support. It does not replace a school, certified teacher judgment, therapy, legal advice, medical care, or emergency services.</span>
               </article>
-              <article className="history-row">
-                <div>
-                  <strong>Beta testing notice</strong>
-                  <span>This is a beta service. Features, content, scoring, and approvals may change while testing is in progress.</span>
-                </div>
+              <article className="terms-section-card">
+                <strong>Beta testing notice</strong>
+                <span>This is a live beta environment. Features, designs, scoring models, approvals, AI summaries, and material flows may change as the product improves.</span>
               </article>
-              <article className="history-row">
-                <div>
-                  <strong>User responsibility</strong>
-                  <span>Admins, staff, learners, and families should review important decisions before relying on platform output. Uploaded content may be delayed, denied, or removed during review.</span>
-                </div>
+              <article className="terms-section-card">
+                <strong>Account responsibility</strong>
+                <span>Users are responsible for keeping their sign-in details private, using approved access only, and notifying the admin team if they believe an account has been used incorrectly.</span>
               </article>
-              <article className="history-row">
-                <div>
-                  <strong>Content and feedback</strong>
-                  <span>Feedback, requests, and uploads may be used to improve the service, moderation flow, and learner experience. Please avoid sharing private information that is not needed for learning support.</span>
-                </div>
+              <article className="terms-section-card">
+                <strong>Content moderation and approvals</strong>
+                <span>Staff uploads, learner requests, announcements, and feedback may be reviewed, delayed, edited, denied, or removed when needed to keep the platform safe and appropriate.</span>
               </article>
-              <article className="history-row">
-                <div>
-                  <strong>Limitation of accountability</strong>
-                  <span>To the fullest extent allowed, Review Buddy is provided as-is during beta testing without guarantees of uninterrupted service, perfect accuracy, or suitability for every use case.</span>
-                </div>
+              <article className="terms-section-card">
+                <strong>Data and privacy</strong>
+                <span>Profile details, progress scores, birthdays, uploads, requests, and feedback may be stored and used to operate the service, improve product quality, and support onboarding and learning decisions.</span>
+              </article>
+              <article className="terms-section-card">
+                <strong>Children and guardian awareness</strong>
+                <span>Where required, a parent, guardian, school, or program lead should supervise account creation, learning choices, and use of recommendations for younger learners.</span>
+              </article>
+              <article className="terms-section-card">
+                <strong>Acceptable use</strong>
+                <span>Users should not upload harmful, adult, hateful, illegal, misleading, or copyrighted material they do not have permission to use, and should not try to bypass approval or role controls.</span>
+              </article>
+              <article className="terms-section-card">
+                <strong>External links and shared resources</strong>
+                <span>Approved documents, videos, or outside links may still require user judgment. Review Buddy does not guarantee the availability or long-term accuracy of third-party materials.</span>
+              </article>
+              <article className="terms-section-card">
+                <strong>Availability and product changes</strong>
+                <span>We may update, pause, limit, or retire parts of the platform at any time during beta testing, including plans, features, APIs, workflows, or country-specific learning tools.</span>
+              </article>
+              <article className="terms-section-card">
+                <strong>Limitation of liability</strong>
+                <span>To the fullest extent allowed, Review Buddy is provided as-is during beta testing without guarantees of uninterrupted access, perfect accuracy, or fitness for every classroom, learner, or institution.</span>
+              </article>
+              <article className="terms-section-card">
+                <strong>Policy updates</strong>
+                <span>Continued use after an update means the latest beta terms apply. Major workflow or policy changes may also be highlighted in the announcement board or version update prompt.</span>
               </article>
             </div>
             <div className="sample-buttons">
@@ -5773,17 +5927,21 @@ function App() {
       )}
 
       <footer className="site-footer">
-        <div>
+        <div className="footer-brand">
           <strong>Review Buddy</strong>
           <p>{MOTTO}</p>
         </div>
+        <div className="footer-center">
+          <span className="footer-pill">Version: {APP_DISPLAY_VERSION}</span>
+          <span className="footer-pill">{APP_CREATED_ON}</span>
+        </div>
         <div className="footer-meta">
-          <span>Version: {APP_DISPLAY_VERSION}</span>
-          <span>{APP_CREATED_ON}</span>
-          <button type="button" className="footer-link-button" onClick={() => setShowTermsModal(true)}>
-            Terms
-          </button>
           <span>Review Buddy</span>
+          <div className="footer-link-row">
+            <button type="button" className="footer-link-button" onClick={() => setShowTermsModal(true)}>
+              Terms
+            </button>
+          </div>
         </div>
       </footer>
     </div>

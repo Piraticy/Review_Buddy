@@ -59,6 +59,25 @@ function getLocalUsers() {
   return readStoredState().registeredUsers ?? [];
 }
 
+function withFallbackLocalUsers(users: RegisteredUser[]) {
+  const nextUsers = [...users];
+  const hasAdmin = nextUsers.some(
+    (user) =>
+      user.email.toLowerCase() === DEFAULT_ADMIN_EMAIL ||
+      user.username.toLowerCase() === 'admin',
+  );
+  const hasStaff = nextUsers.some(
+    (user) =>
+      user.email.toLowerCase() === DEFAULT_STAFF_EMAIL ||
+      user.username.toLowerCase() === 'staff',
+  );
+
+  if (!hasStaff) nextUsers.unshift(createStaffFallbackUser());
+  if (!hasAdmin) nextUsers.unshift(createAdminFallbackUser());
+
+  return nextUsers;
+}
+
 function saveLocalUsers(users: RegisteredUser[]) {
   mergeStoredState({ registeredUsers: users });
 }
@@ -73,7 +92,7 @@ async function getAccessToken() {
 
 function findLocalUser(identifier: string, password: string) {
   const normalizedIdentifier = identifier.trim().toLowerCase();
-  const localUsers = getLocalUsers();
+  const localUsers = withFallbackLocalUsers(getLocalUsers());
   const match = localUsers.find(
     (user) =>
       user.email.toLowerCase() === normalizedIdentifier ||
@@ -647,7 +666,7 @@ async function signIn(identifier: string, password: string) {
 
 async function listRegisteredUsers() {
   if (!supabase) {
-    return getLocalUsers();
+    return withFallbackLocalUsers(getLocalUsers());
   }
 
   const { data, error } = await supabase

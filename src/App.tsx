@@ -205,6 +205,8 @@ const INSTALL_DISMISS_KEY = 'review-buddy-install-dismissed';
 const APP_VERSION = '1.11.0';
 const APP_DISPLAY_VERSION = 'Beta';
 const APP_CREATED_ON = 'March 26';
+const BIRTHDAY_MIN_DATE = new Date(1990, 0, 1);
+const BIRTHDAY_WEEKDAY_LABELS = ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'];
 const DEFAULT_ADMIN_USERNAME = 'Admin';
 const DEFAULT_ADMIN_PASSWORD = 'admin';
 const DEFAULT_STAFF_USERNAME = 'Staff';
@@ -720,6 +722,17 @@ function MoonIcon(props: SVGProps<SVGSVGElement>) {
   );
 }
 
+function CalendarIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" {...props}>
+      <rect x="3.5" y="5" width="17" height="15.5" rx="3" />
+      <path d="M7.5 3.5v4" />
+      <path d="M16.5 3.5v4" />
+      <path d="M3.5 9.5h17" />
+    </svg>
+  );
+}
+
 function getFlagEmoji(code: string) {
   return code
     .toUpperCase()
@@ -933,6 +946,72 @@ function formatBirthDateInput(profile: Pick<LearnerProfile, 'birthDay' | 'birthM
     String(profile.birthMonth).padStart(2, '0'),
     String(profile.birthDay).padStart(2, '0'),
   ].join('-');
+}
+
+function getBirthDate(profile: Pick<LearnerProfile, 'birthDay' | 'birthMonth' | 'birthYear'>) {
+  if (!profile.birthDay || !profile.birthMonth || !profile.birthYear) {
+    return null;
+  }
+
+  return new Date(profile.birthYear, profile.birthMonth - 1, profile.birthDay);
+}
+
+function formatBirthdayLabel(profile: Pick<LearnerProfile, 'birthDay' | 'birthMonth' | 'birthYear'>) {
+  const birthDate = getBirthDate(profile);
+  if (!birthDate) return 'Choose birthday';
+
+  return new Intl.DateTimeFormat('en-GB', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+  }).format(birthDate);
+}
+
+function normalizeCalendarDay(date: Date) {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+}
+
+function getMonthStart(date: Date) {
+  return new Date(date.getFullYear(), date.getMonth(), 1);
+}
+
+function shiftMonth(date: Date, offset: number) {
+  return new Date(date.getFullYear(), date.getMonth() + offset, 1);
+}
+
+function isSameCalendarDay(left: Date | null, right: Date | null) {
+  if (!left || !right) return false;
+
+  return (
+    left.getFullYear() === right.getFullYear() &&
+    left.getMonth() === right.getMonth() &&
+    left.getDate() === right.getDate()
+  );
+}
+
+function buildBirthdayCalendar(viewDate: Date, selectedDate: Date | null) {
+  const monthStart = getMonthStart(viewDate);
+  const firstWeekdayOffset = (monthStart.getDay() + 6) % 7;
+  const gridStart = new Date(monthStart);
+  gridStart.setDate(monthStart.getDate() - firstWeekdayOffset);
+  const minDate = normalizeCalendarDay(BIRTHDAY_MIN_DATE);
+  const maxDate = normalizeCalendarDay(new Date());
+
+  return Array.from({ length: 42 }, (_, index) => {
+    const nextDate = new Date(gridStart);
+    nextDate.setDate(gridStart.getDate() + index);
+    const date = normalizeCalendarDay(nextDate);
+
+    return {
+      key: date.toISOString(),
+      date,
+      label: date.getDate(),
+      inMonth: date.getMonth() === monthStart.getMonth(),
+      isDisabled: date < minDate || date > maxDate,
+      isSelected: isSameCalendarDay(date, selectedDate),
+      isToday: isSameCalendarDay(date, maxDate),
+    };
+  });
 }
 
 function getTodayKey() {
@@ -1226,7 +1305,10 @@ function App() {
     password: string;
   } | null>(null);
   const [authScene] = useState(() => AUTH_SCENES[Math.floor(Math.random() * AUTH_SCENES.length)]);
+  const [showBirthdayPicker, setShowBirthdayPicker] = useState(false);
+  const [birthdayCalendarDate, setBirthdayCalendarDate] = useState(() => getMonthStart(new Date()));
   const speechKeyRef = useRef<string | null>(null);
+  const birthdayPickerRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (!supabase) return;
@@ -1254,6 +1336,38 @@ function App() {
       subscription.unsubscribe();
     };
   }, []);
+
+  useEffect(() => {
+    if (authMode !== 'signup') {
+      setShowBirthdayPicker(false);
+    }
+  }, [authMode]);
+
+  useEffect(() => {
+    if (!showBirthdayPicker) return;
+
+    const handlePointerDown = (event: MouseEvent | TouchEvent) => {
+      if (!birthdayPickerRef.current?.contains(event.target as Node)) {
+        setShowBirthdayPicker(false);
+      }
+    };
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setShowBirthdayPicker(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handlePointerDown);
+    document.addEventListener('touchstart', handlePointerDown);
+    window.addEventListener('keydown', handleEscape);
+
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown);
+      document.removeEventListener('touchstart', handlePointerDown);
+      window.removeEventListener('keydown', handleEscape);
+    };
+  }, [showBirthdayPicker]);
 
   useEffect(() => {
     const raw = window.localStorage.getItem(STORAGE_KEY);
@@ -1652,6 +1766,12 @@ function App() {
     submittedFeedbackKeys.includes(feedbackUserKey) ||
     feedbackEntries.some((entry) => entry.userKey === feedbackUserKey);
   const progressSnapshot = getProgressSnapshot(attempts);
+  const selectedBirthday = getBirthDate(profile);
+  const birthdayCalendarDays = buildBirthdayCalendar(birthdayCalendarDate, selectedBirthday);
+  const minBirthdayMonth = getMonthStart(BIRTHDAY_MIN_DATE);
+  const maxBirthdayMonth = getMonthStart(new Date());
+  const canMoveBirthdayBackward = birthdayCalendarDate.getTime() > minBirthdayMonth.getTime();
+  const canMoveBirthdayForward = birthdayCalendarDate.getTime() < maxBirthdayMonth.getTime();
   const filteredLearners = learnerRegistrations.filter((entry) => {
     const query = learnerSearch.trim().toLowerCase();
     if (!query) return true;
@@ -1787,6 +1907,28 @@ function App() {
       birthMonth: month,
       birthYear: year,
     }));
+  }
+
+  function openBirthdayPicker() {
+    const focusDate = getBirthDate(profile) ?? new Date();
+    setBirthdayCalendarDate(getMonthStart(focusDate));
+    setShowBirthdayPicker(true);
+  }
+
+  function selectBirthday(date: Date) {
+    handleBirthDateChange(
+      formatBirthDateInput({
+        birthDay: date.getDate(),
+        birthMonth: date.getMonth() + 1,
+        birthYear: date.getFullYear(),
+      }),
+    );
+    setShowBirthdayPicker(false);
+  }
+
+  function clearBirthday() {
+    handleBirthDateChange('');
+    setShowBirthdayPicker(false);
   }
 
   function applySharedState(
@@ -2092,6 +2234,7 @@ function App() {
     setRecoveryPassword('');
     setRecoveryConfirmPassword('');
     setIsRecoveryMode(false);
+    setShowBirthdayPicker(false);
     setShowTutorial(false);
     setStreakNotice('');
   }
@@ -3373,13 +3516,105 @@ function App() {
                   </label>
                   <label className="field-span-2">
                     Birthday
-                    <input
-                      type="date"
-                      min="1990-01-01"
-                      max={new Date().toISOString().slice(0, 10)}
-                      value={formatBirthDateInput(profile)}
-                      onChange={(event) => handleBirthDateChange(event.target.value)}
-                    />
+                    <div
+                      className={`birthday-picker${showBirthdayPicker ? ' birthday-picker-open' : ''}`}
+                      ref={birthdayPickerRef}
+                    >
+                      <button
+                        type="button"
+                        className="birthday-picker-trigger"
+                        data-birthday-picker-trigger="true"
+                        onClick={() => {
+                          if (showBirthdayPicker) {
+                            setShowBirthdayPicker(false);
+                            return;
+                          }
+
+                          openBirthdayPicker();
+                        }}
+                        aria-haspopup="dialog"
+                        aria-expanded={showBirthdayPicker}
+                      >
+                        <span className={`birthday-picker-value${selectedBirthday ? '' : ' birthday-picker-placeholder'}`}>
+                          {formatBirthdayLabel(profile)}
+                        </span>
+                        <CalendarIcon className="birthday-picker-icon" aria-hidden="true" />
+                      </button>
+                      {showBirthdayPicker && (
+                        <div className="birthday-calendar" role="dialog" aria-label="Choose birthday">
+                          <div className="birthday-calendar-header">
+                            <button
+                              type="button"
+                              className="birthday-calendar-nav"
+                              onClick={() => setBirthdayCalendarDate((current) => shiftMonth(current, -1))}
+                              disabled={!canMoveBirthdayBackward}
+                              aria-label="Previous month"
+                            >
+                              ‹
+                            </button>
+                            <div className="birthday-calendar-heading">
+                              <strong>
+                                {new Intl.DateTimeFormat('en-US', {
+                                  month: 'long',
+                                  year: 'numeric',
+                                }).format(birthdayCalendarDate)}
+                              </strong>
+                              <span>Choose a past date in one polished view.</span>
+                            </div>
+                            <button
+                              type="button"
+                              className="birthday-calendar-nav"
+                              onClick={() => setBirthdayCalendarDate((current) => shiftMonth(current, 1))}
+                              disabled={!canMoveBirthdayForward}
+                              aria-label="Next month"
+                            >
+                              ›
+                            </button>
+                          </div>
+                          <div className="birthday-calendar-weekdays" aria-hidden="true">
+                            {BIRTHDAY_WEEKDAY_LABELS.map((label) => (
+                              <span key={label}>{label}</span>
+                            ))}
+                          </div>
+                          <div className="birthday-calendar-grid">
+                            {birthdayCalendarDays.map((day) => (
+                              <button
+                                key={day.key}
+                                type="button"
+                                className={[
+                                  'birthday-calendar-day',
+                                  day.inMonth ? '' : ' birthday-calendar-day-muted',
+                                  day.isSelected ? ' birthday-calendar-day-selected' : '',
+                                  day.isToday ? ' birthday-calendar-day-today' : '',
+                                ].join('')}
+                                data-birthday-day={formatBirthDateInput({
+                                  birthDay: day.date.getDate(),
+                                  birthMonth: day.date.getMonth() + 1,
+                                  birthYear: day.date.getFullYear(),
+                                })}
+                                disabled={day.isDisabled}
+                                onClick={() => selectBirthday(day.date)}
+                              >
+                                {day.label}
+                              </button>
+                            ))}
+                          </div>
+                          <div className="birthday-calendar-footer">
+                            <span className="birthday-calendar-summary">
+                              {selectedBirthday ? `Selected ${formatBirthdayLabel(profile)}` : 'Pick day, month, and year together.'}
+                            </span>
+                            <button
+                              type="button"
+                              className="ghost-button birthday-calendar-clear"
+                              onClick={clearBirthday}
+                              disabled={!selectedBirthday}
+                            >
+                              Clear
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
                   </label>
                   </div>
                 </div>
@@ -5931,17 +6166,18 @@ function App() {
           <strong>Review Buddy</strong>
           <p>{MOTTO}</p>
         </div>
-        <div className="footer-center">
-          <span className="footer-pill">Version: {APP_DISPLAY_VERSION}</span>
-          <span className="footer-pill">{APP_CREATED_ON}</span>
-        </div>
-        <div className="footer-meta">
-          <span>Review Buddy</span>
-          <div className="footer-link-row">
-            <button type="button" className="footer-link-button" onClick={() => setShowTermsModal(true)}>
-              Terms
-            </button>
+        <div className="footer-release">
+          <p className="eyebrow">Current release</p>
+          <strong>Review Buddy Beta</strong>
+          <div className="footer-release-row">
+            <span className="footer-pill footer-pill-highlight">{APP_DISPLAY_VERSION}</span>
+            <span className="footer-release-date">{APP_CREATED_ON}</span>
           </div>
+        </div>
+        <div className="footer-actions">
+          <button type="button" className="footer-link-button footer-link-button-strong" onClick={() => setShowTermsModal(true)}>
+            Terms &amp; conditions
+          </button>
         </div>
       </footer>
     </div>

@@ -11,11 +11,10 @@ import type {
 import { getCountryByCode } from '../data';
 import { supabase } from './supabase';
 
-const STORAGE_KEY = 'review-buddy-state';
+const STORAGE_KEY = 'review-buddy-state-clean';
 const DEFAULT_ADMIN_EMAIL = 'admin@reviewbuddy.app';
 const DEFAULT_ADMIN_PASSWORD = 'admin';
 const DEFAULT_STAFF_EMAIL = 'staff@reviewbuddy.app';
-const DEFAULT_STAFF_PASSWORD = 'staff';
 
 type StoredState = {
   registeredUsers?: RegisteredUser[];
@@ -190,13 +189,7 @@ function withFallbackLocalUsers(users: RegisteredUser[]) {
       user.email.toLowerCase() === DEFAULT_ADMIN_EMAIL ||
       user.username.toLowerCase() === 'admin',
   );
-  const hasStaff = nextUsers.some(
-    (user) =>
-      user.email.toLowerCase() === DEFAULT_STAFF_EMAIL ||
-      user.username.toLowerCase() === 'staff',
-  );
 
-  if (!hasStaff) nextUsers.unshift(createStaffFallbackUser());
   if (!hasAdmin) nextUsers.unshift(createAdminFallbackUser());
 
   return nextUsers;
@@ -279,28 +272,6 @@ function createAdminFallbackUser(): RegisteredUser {
     level: 'Year 10',
     mode: 'solo',
     subject: 'Mathematics',
-    createdAt: new Date('2026-03-31T00:00:00.000Z').toISOString(),
-    lastLoginAt: new Date().toISOString(),
-  };
-}
-
-function createStaffFallbackUser(): RegisteredUser {
-  return {
-    id: 'default-staff',
-    username: 'Staff',
-    fullName: 'Review Buddy Staff',
-    email: DEFAULT_STAFF_EMAIL,
-    password: DEFAULT_STAFF_PASSWORD,
-    role: 'staff',
-    gender: 'girl',
-    avatarMode: 'generated',
-    avatarEmoji: '🧑🏽‍🏫',
-    countryCode: 'TZ',
-    plan: 'elite',
-    stage: 'primary',
-    level: 'Grade 4',
-    mode: 'solo',
-    subject: 'Communication Skills',
     createdAt: new Date('2026-03-31T00:00:00.000Z').toISOString(),
     lastLoginAt: new Date().toISOString(),
   };
@@ -628,8 +599,6 @@ async function requestPasswordReset(identifier: string) {
 
   if (email === 'admin') {
     email = DEFAULT_ADMIN_EMAIL;
-  } else if (email === 'staff') {
-    email = DEFAULT_STAFF_EMAIL;
   }
 
   if (!email.includes('@')) {
@@ -682,12 +651,9 @@ async function signIn(identifier: string, password: string) {
 
   let email = normalizedIdentifier.toLowerCase();
   const isAdminShortcut = email === 'admin' && password === DEFAULT_ADMIN_PASSWORD;
-  const isStaffShortcut = email === 'staff' && password === DEFAULT_STAFF_PASSWORD;
 
   if (email === 'admin') {
     email = DEFAULT_ADMIN_EMAIL;
-  } else if (email === 'staff') {
-    email = DEFAULT_STAFF_EMAIL;
   }
 
   if (!email.includes('@')) {
@@ -711,9 +677,6 @@ async function signIn(identifier: string, password: string) {
   if (error || !data.user) {
     if (isAdminShortcut) {
       return createAdminFallbackUser();
-    }
-    if (isStaffShortcut) {
-      return createStaffFallbackUser();
     }
 
     return findLocalUser(normalizedIdentifier, password);
@@ -776,11 +739,11 @@ async function signIn(identifier: string, password: string) {
 
   if (
     resolvedProfileRow &&
-    (isAdminShortcut || isStaffShortcut) &&
-    resolvedProfileRow.role !== (isAdminShortcut ? 'admin' : 'staff')
+    isAdminShortcut &&
+    resolvedProfileRow.role !== 'admin'
   ) {
-    const role = isAdminShortcut ? 'admin' : 'staff';
-    const avatarEmoji = role === 'admin' ? '🛡️' : '🧑🏽‍🏫';
+    const role = 'admin';
+    const avatarEmoji = '🛡️';
     const { data: repairedRow } = await supabase
       .from('learner_profiles')
       .upsert({
@@ -801,9 +764,6 @@ async function signIn(identifier: string, password: string) {
   if (profileError || !resolvedProfileRow) {
     if (isAdminShortcut) {
       return createAdminFallbackUser();
-    }
-    if (isStaffShortcut) {
-      return createStaffFallbackUser();
     }
 
     return findLocalUser(normalizedIdentifier, password);

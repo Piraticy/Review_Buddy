@@ -276,6 +276,75 @@ const TEEN_SUBJECTS = [
 
 export const MOTTO = 'Learn, practise, and grow after school.';
 
+const COUNTRY_CODE_SET = new Set([
+  'KE',
+  'TZ',
+  'UG',
+  'RW',
+  'NG',
+  'GH',
+  'ZA',
+  'ZM',
+  'MW',
+  'ET',
+  'BW',
+  'AE',
+  'GB',
+  'US',
+  'IN',
+]);
+
+const TIMEZONE_COUNTRY_MAP: Record<string, string> = {
+  'Africa/Nairobi': 'KE',
+  'Africa/Dar_es_Salaam': 'TZ',
+  'Africa/Kampala': 'UG',
+  'Africa/Kigali': 'RW',
+  'Africa/Lagos': 'NG',
+  'Africa/Accra': 'GH',
+  'Africa/Johannesburg': 'ZA',
+  'Africa/Lusaka': 'ZM',
+  'Africa/Blantyre': 'MW',
+  'Africa/Addis_Ababa': 'ET',
+  'Africa/Gaborone': 'BW',
+  'Asia/Dubai': 'AE',
+  'Europe/London': 'GB',
+  'Asia/Kolkata': 'IN',
+  'Asia/Calcutta': 'IN',
+  'America/New_York': 'US',
+  'America/Detroit': 'US',
+  'America/Kentucky/Louisville': 'US',
+  'America/Indiana/Indianapolis': 'US',
+  'America/Chicago': 'US',
+  'America/Denver': 'US',
+  'America/Phoenix': 'US',
+  'America/Los_Angeles': 'US',
+  'America/Anchorage': 'US',
+  'Pacific/Honolulu': 'US',
+};
+
+let inferredCountryCodeCache: string | null = null;
+
+function getSupportedCountryCode(code?: string | null) {
+  const normalizedCode = code?.toUpperCase();
+  if (!normalizedCode || !COUNTRY_CODE_SET.has(normalizedCode)) {
+    return undefined;
+  }
+
+  return normalizedCode;
+}
+
+function inferCountryCodeFromLocales(locales: readonly string[]) {
+  for (const locale of locales) {
+    const match = locale.match(/[-_]([A-Za-z]{2})(?:$|[-_])/);
+    const region = getSupportedCountryCode(match?.[1] ?? '');
+    if (region) {
+      return region;
+    }
+  }
+
+  return undefined;
+}
+
 export const SUBJECT_META: Record<string, SubjectMeta> = {
   Colouring: {
     icon: '🎨',
@@ -696,19 +765,37 @@ export function getStageLabel(stage: Stage) {
 }
 
 export function inferCountryCode() {
+  if (inferredCountryCodeCache) {
+    return inferredCountryCodeCache;
+  }
+
   if (typeof navigator === 'undefined') {
     return COUNTRIES[0].code;
   }
 
-  const locale = navigator.language;
-  const parts = locale.split('-');
-  const region = parts[1]?.toUpperCase();
+  const timeZone =
+    typeof Intl !== 'undefined'
+      ? Intl.DateTimeFormat().resolvedOptions().timeZone
+      : undefined;
+  const timezoneCountryCode = timeZone ? TIMEZONE_COUNTRY_MAP[timeZone] : undefined;
 
-  if (region && COUNTRIES.some((country) => country.code === region)) {
-    return region;
+  if (timezoneCountryCode) {
+    inferredCountryCodeCache = timezoneCountryCode;
+    return timezoneCountryCode;
   }
 
-  return COUNTRIES[0].code;
+  const localeCountryCode = inferCountryCodeFromLocales([
+    ...(navigator.languages ?? []),
+    navigator.language,
+  ].filter(Boolean));
+
+  if (localeCountryCode) {
+    inferredCountryCodeCache = localeCountryCode;
+    return localeCountryCode;
+  }
+
+  inferredCountryCodeCache = COUNTRIES[0].code;
+  return inferredCountryCodeCache;
 }
 
 export function getAvailableSubjects(countryCode: string, stage: Stage, _plan: Plan) {

@@ -200,7 +200,26 @@ type GeneratedAvatarOption = {
   label: string;
 };
 
-const STORAGE_KEY = 'review-buddy-state';
+type MaterialViewerPayload = {
+  material: StaffMaterial;
+  audienceLabel: string;
+};
+
+type EmbeddedVideoConfig = {
+  kind: 'native' | 'iframe';
+  src: string;
+  helperLabel: string;
+};
+
+type MaterialDocumentPreview =
+  | { kind: 'pdf'; src: string }
+  | { kind: 'image'; src: string }
+  | { kind: 'text'; content: string }
+  | { kind: 'embed'; src: string; extension?: string }
+  | { kind: 'download'; extension?: string };
+
+const STORAGE_KEY = 'review-buddy-state-clean';
+const LEGACY_STORAGE_KEYS = ['review-buddy-state'];
 const INSTALL_DISMISS_KEY = 'review-buddy-install-dismissed';
 const APP_VERSION = '1.11.1';
 const APP_DISPLAY_VERSION = 'Updated often';
@@ -224,7 +243,6 @@ const BIRTHDAY_MONTH_LABELS = [
 const DEFAULT_ADMIN_USERNAME = 'Admin';
 const DEFAULT_ADMIN_PASSWORD = 'admin';
 const DEFAULT_STAFF_USERNAME = 'Staff';
-const DEFAULT_STAFF_PASSWORD = 'staff';
 const TERMS_UPDATED_ON = 'April 21, 2026';
 const GENERATED_AVATARS: Record<LearnerGender, GeneratedAvatarOption[]> = {
   boy: [
@@ -538,6 +556,156 @@ function normalizePrompt(text: string) {
   return text.trim().toLowerCase().replace(/\s+/g, ' ');
 }
 
+function getAttachmentMimeType(dataUrl?: string) {
+  const match = dataUrl?.match(/^data:([^;,]+)[;,]/i);
+  return match?.[1]?.toLowerCase();
+}
+
+function getAttachmentExtension(fileName?: string) {
+  const match = fileName?.toLowerCase().match(/\.([a-z0-9]+)$/i);
+  return match?.[1];
+}
+
+function decodeDataUrlText(dataUrl: string) {
+  const commaIndex = dataUrl.indexOf(',');
+  if (commaIndex < 0) {
+    return '';
+  }
+
+  const header = dataUrl.slice(0, commaIndex);
+  const body = dataUrl.slice(commaIndex + 1);
+
+  try {
+    if (header.includes(';base64')) {
+      const binary = atob(body);
+      const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
+      return new TextDecoder().decode(bytes);
+    }
+
+    return decodeURIComponent(body);
+  } catch {
+    return '';
+  }
+}
+
+function getDocumentPreview(material: StaffMaterial): MaterialDocumentPreview {
+  const attachmentData = material.attachmentData;
+  const mimeType = getAttachmentMimeType(attachmentData);
+  const extension = getAttachmentExtension(material.attachmentName);
+
+  if (!attachmentData) {
+    return { kind: 'download', extension };
+  }
+
+  if (mimeType === 'application/pdf') {
+    return { kind: 'pdf', src: attachmentData };
+  }
+
+  if (mimeType?.startsWith('image/')) {
+    return { kind: 'image', src: attachmentData };
+  }
+
+  if (
+    mimeType?.startsWith('text/') ||
+    mimeType === 'application/json' ||
+    mimeType === 'application/xml' ||
+    mimeType === 'application/javascript'
+  ) {
+    const content = decodeDataUrlText(attachmentData);
+    if (content.trim()) {
+      return { kind: 'text', content };
+    }
+  }
+
+  return { kind: 'embed', src: attachmentData, extension };
+}
+
+function getEmbeddedVideoConfig(videoUrl?: string): EmbeddedVideoConfig | null {
+  const trimmedUrl = videoUrl?.trim();
+  if (!trimmedUrl) {
+    return null;
+  }
+
+  if (trimmedUrl.startsWith('data:video/')) {
+    return {
+      kind: 'native',
+      src: trimmedUrl,
+      helperLabel: 'Uploaded video',
+    };
+  }
+
+  if (/\.(mp4|webm|ogg|mov|m4v)(?:[?#].*)?$/i.test(trimmedUrl)) {
+    return {
+      kind: 'native',
+      src: trimmedUrl,
+      helperLabel: 'Direct lesson video',
+    };
+  }
+
+  try {
+    const parsedUrl = new URL(trimmedUrl);
+    const host = parsedUrl.hostname.replace(/^www\./, '').toLowerCase();
+
+    if (host === 'youtu.be') {
+      const videoId = parsedUrl.pathname.split('/').filter(Boolean)[0];
+      if (videoId) {
+        return {
+          kind: 'iframe',
+          src: `https://www.youtube.com/embed/${videoId}?rel=0`,
+          helperLabel: 'YouTube lesson',
+        };
+      }
+    }
+
+    if (host.includes('youtube.com')) {
+      const videoId =
+        parsedUrl.searchParams.get('v') ||
+        parsedUrl.pathname.match(/\/(?:embed|shorts)\/([^/?]+)/)?.[1];
+      if (videoId) {
+        return {
+          kind: 'iframe',
+          src: `https://www.youtube.com/embed/${videoId}?rel=0`,
+          helperLabel: 'YouTube lesson',
+        };
+      }
+    }
+
+    if (host === 'vimeo.com' || host === 'player.vimeo.com') {
+      const videoId = parsedUrl.pathname.match(/\/(?:video\/)?(\d+)/)?.[1];
+      if (videoId) {
+        return {
+          kind: 'iframe',
+          src: `https://player.vimeo.com/video/${videoId}`,
+          helperLabel: 'Vimeo lesson',
+        };
+      }
+    }
+
+    if (host === 'drive.google.com') {
+      const fileId = parsedUrl.pathname.match(/\/file\/d\/([^/]+)/)?.[1];
+      if (fileId) {
+        return {
+          kind: 'iframe',
+          src: `https://drive.google.com/file/d/${fileId}/preview`,
+          helperLabel: 'Drive lesson',
+        };
+      }
+    }
+
+    return {
+      kind: 'iframe',
+      src: trimmedUrl,
+      helperLabel: 'Embedded lesson',
+    };
+  } catch {
+    return null;
+  }
+}
+
+function shouldShowInlineMaterialText(material: StaffMaterial) {
+  return material.resourceType === 'text' && material.body.trim();
+}
+
 function shuffleList<T>(items: T[]) {
   const next = [...items];
   for (let index = next.length - 1; index > 0; index -= 1) {
@@ -569,32 +737,6 @@ function createDefaultAdminUser(): RegisteredUser {
     createdAt: new Date('2026-03-31T00:00:00.000Z').toISOString(),
     lastLoginAt: undefined,
     tutorialSeen: true,
-  };
-}
-
-function createDefaultStaffUser(): RegisteredUser {
-  return {
-    id: 'default-staff',
-    username: DEFAULT_STAFF_USERNAME,
-    fullName: 'Review Buddy Staff',
-    email: 'staff@reviewbuddy.app',
-    password: DEFAULT_STAFF_PASSWORD,
-    role: 'staff',
-    gender: 'girl',
-    avatarMode: 'generated',
-    avatarEmoji: '🧑🏽‍🏫',
-    countryCode: 'TZ',
-    plan: 'elite',
-    stage: 'primary',
-    level: 'Grade 4',
-    mode: 'solo',
-    subject: 'Communication Skills',
-    createdAt: new Date('2026-03-31T00:00:00.000Z').toISOString(),
-    lastLoginAt: undefined,
-    tutorialSeen: true,
-    qualifications: 'Curriculum coach',
-    eligibility: 'Verified school partner',
-    supportFocus: 'Teacher support and review',
   };
 }
 
@@ -647,7 +789,6 @@ function normalizeRegisteredUser(user: Partial<RegisteredUser>): RegisteredUser 
 
 function ensureRegisteredUsers(users?: RegisteredUser[]) {
   const adminUser = createDefaultAdminUser();
-  const staffUser = createDefaultStaffUser();
   const safeUsers = (users ?? []).map((user) => normalizeRegisteredUser(user));
   const hasAdmin = safeUsers.some(
     (user) =>
@@ -655,15 +796,8 @@ function ensureRegisteredUsers(users?: RegisteredUser[]) {
       (user.username.toLowerCase() === DEFAULT_ADMIN_USERNAME.toLowerCase() ||
         user.email.toLowerCase() === adminUser.email.toLowerCase()),
   );
-  const hasStaff = safeUsers.some(
-    (user) =>
-      user.role === 'staff' &&
-      (user.username.toLowerCase() === DEFAULT_STAFF_USERNAME.toLowerCase() ||
-        user.email.toLowerCase() === staffUser.email.toLowerCase()),
-  );
 
   const seededUsers = [...safeUsers];
-  if (!hasStaff) seededUsers.unshift(staffUser);
   if (!hasAdmin) seededUsers.unshift(adminUser);
 
   return seededUsers;
@@ -911,7 +1045,7 @@ function buildFeedbackSummary(entries: FeedbackEntry[]): FeedbackSummarySnapshot
   };
 }
 
-function createInitialStaffAccountDraft(countryCode = 'US'): StaffAccountDraft {
+function createInitialStaffAccountDraft(countryCode = inferCountryCode()): StaffAccountDraft {
   return {
     name: '',
     role: STAFF_ROLE_OPTIONS[0],
@@ -939,15 +1073,7 @@ function createInitialAnnouncementDraft(): AnnouncementDraft {
 }
 
 function defaultAnnouncements(): Announcement[] {
-  return [
-    {
-      id: 'welcome-board',
-      title: 'Welcome to Review Buddy',
-      message: 'Use the guide, practise a subject, and share a quick note so we can keep improving this for learners and families.',
-      audience: 'all',
-      createdAt: new Date('2026-04-21T08:00:00.000Z').toISOString(),
-    },
-  ];
+  return [];
 }
 
 function createAnnouncementKey(entry: Pick<Announcement, 'title' | 'message' | 'audience'>) {
@@ -1388,6 +1514,7 @@ function App() {
   const [showVersionPrompt, setShowVersionPrompt] = useState(false);
   const [streakNotice, setStreakNotice] = useState('');
   const [isAuthBusy, setIsAuthBusy] = useState(false);
+  const [activeMaterialViewer, setActiveMaterialViewer] = useState<MaterialViewerPayload | null>(null);
   const [generatedStaffAccount, setGeneratedStaffAccount] = useState<{
     name: string;
     email: string;
@@ -1396,9 +1523,11 @@ function App() {
   const [authScene] = useState(() => AUTH_SCENES[Math.floor(Math.random() * AUTH_SCENES.length)]);
   const [showBirthdayPicker, setShowBirthdayPicker] = useState(false);
   const [birthdayCalendarDate, setBirthdayCalendarDate] = useState(() => getMonthStart(new Date()));
+  const [hasChosenSignupCountry, setHasChosenSignupCountry] = useState(false);
   const speechKeyRef = useRef<string | null>(null);
   const birthdayPickerRef = useRef<HTMLDivElement | null>(null);
   const sharedRefreshPromiseRef = useRef<Promise<void> | null>(null);
+  const detectedCountryCodeRef = useRef(inferCountryCode());
 
   useEffect(() => {
     if (!supabase) return;
@@ -1426,6 +1555,24 @@ function App() {
       subscription.unsubscribe();
     };
   }, []);
+
+  useEffect(() => {
+    if (authMode !== 'signup' || hasChosenSignupCountry) {
+      return;
+    }
+
+    const detectedCountryCode = detectedCountryCodeRef.current;
+    setProfile((current) => {
+      if (current.countryCode === detectedCountryCode) {
+        return current;
+      }
+
+      return normalizeLearnerProfile({
+        ...current,
+        countryCode: detectedCountryCode,
+      });
+    });
+  }, [authMode, hasChosenSignupCountry]);
 
   useEffect(() => {
     if (authMode !== 'signup') {
@@ -1460,6 +1607,12 @@ function App() {
   }, [showBirthdayPicker]);
 
   useEffect(() => {
+    LEGACY_STORAGE_KEYS.forEach((key) => {
+      if (key !== STORAGE_KEY) {
+        window.localStorage.removeItem(key);
+      }
+    });
+
     const raw = window.localStorage.getItem(STORAGE_KEY);
 
     if (!raw) {
@@ -1824,6 +1977,7 @@ function App() {
   const readingMaterials = matchingStaffMaterials.filter((material) => material.category === 'reading');
   const quizMaterials = matchingStaffMaterials.filter((material) => material.category === 'quiz');
   const examMaterials = matchingStaffMaterials.filter((material) => material.category === 'exam');
+  const featuredVideoMaterial = readingMaterials.find((material) => material.resourceType === 'video' && material.videoUrl);
   const duplicateQuestionPrompts = staffMaterialDraft.resourceType === 'question-bank' ? findDuplicateQuestionPrompts() : [];
   const feedbackUserKey = `${profile.role}:${(profile.email || profile.fullName || firstName).trim().toLowerCase()}`;
   const hasSubmittedFeedback =
@@ -1883,6 +2037,15 @@ function App() {
   const assignedSupportRequests = openSupportRequests.filter(
     (request) => (request.assignedToEmail ?? '').toLowerCase() === profile.email.toLowerCase(),
   );
+  const activeViewerMaterial = activeMaterialViewer?.material ?? null;
+  const activeViewerDocumentPreview =
+    activeViewerMaterial?.resourceType === 'document'
+      ? getDocumentPreview(activeViewerMaterial)
+      : null;
+  const activeViewerVideoConfig =
+    activeViewerMaterial?.resourceType === 'video'
+      ? getEmbeddedVideoConfig(activeViewerMaterial.videoUrl)
+      : null;
   const learnerCommentEntries = learnerFeedbackEntries.filter((entry) => entry.comment.trim());
   const reviewPriorityCards = [
     {
@@ -1996,6 +2159,10 @@ function App() {
   ];
 
   function updateProfile<Key extends keyof LearnerProfile>(key: Key, value: LearnerProfile[Key]) {
+    if (key === 'countryCode' && authMode === 'signup') {
+      setHasChosenSignupCountry(true);
+    }
+
     setProfile((current) => ({
       ...current,
       [key]: value,
@@ -2090,7 +2257,7 @@ function App() {
       setStaffMaterials(repoMaterials);
       setFeedbackEntries(repoFeedback);
       setSupportRequests(repoSupportRequests.map(normalizeSupportRequestEntry));
-      setAnnouncements(repoAnnouncements.length > 0 ? repoAnnouncements : defaultAnnouncements());
+      setAnnouncements(repoAnnouncements);
     });
   }
 
@@ -2380,10 +2547,8 @@ function App() {
     setAuthMode('signin');
     setAuthNotice('');
     setSigninIdentifier('');
-    setProfile((current) => ({
-      ...createInitialProfile(),
-      countryCode: current.countryCode,
-    }));
+    setHasChosenSignupCountry(false);
+    setProfile(createInitialProfile());
     setScreen('auth');
     setStudentView('home');
     setAdminView('overview');
@@ -2399,6 +2564,7 @@ function App() {
     setShowBirthdayPicker(false);
     setShowTutorial(false);
     setStreakNotice('');
+    setActiveMaterialViewer(null);
   }
 
   async function handleInstallApp() {
@@ -3069,6 +3235,17 @@ function App() {
     });
   }
 
+  function openMaterialViewer(material: StaffMaterial, audienceLabel: string) {
+    setActiveMaterialViewer({
+      material,
+      audienceLabel,
+    });
+  }
+
+  function closeMaterialViewer() {
+    setActiveMaterialViewer(null);
+  }
+
   function openLearningNotes(subject: string) {
     setSelectedSubject(subject);
     startTransition(() => {
@@ -3636,6 +3813,9 @@ function App() {
                             password: '',
                           }),
                         );
+                        if (!profile.fullName.trim() && !profile.email.trim()) {
+                          setHasChosenSignupCountry(false);
+                        }
                       }}
                     >
                       Register
@@ -4492,19 +4672,27 @@ function App() {
                             </div>
                             <p>{material.summary}</p>
                             <div className="teacher-material-body">
-                              {material.resourceType === 'text' &&
+                              {shouldShowInlineMaterialText(material) &&
                                 material.body.split('\n').filter(Boolean).map((line, index) => (
                                   <p key={`${material.id}-${index}`}>{line}</p>
                                 ))}
                               {material.resourceType === 'document' && material.attachmentData && (
-                                <a className="ghost-button ghost-button-small inline-link-button" href={material.attachmentData} download={material.attachmentName ?? `${material.title}.file`}>
-                                  Open {material.attachmentName ?? 'document'}
-                                </a>
+                                <button
+                                  type="button"
+                                  className="ghost-button ghost-button-small inline-link-button"
+                                  onClick={() => openMaterialViewer(material, 'Learner reading')}
+                                >
+                                  Open {material.attachmentName ?? 'document'} in app
+                                </button>
                               )}
                               {material.resourceType === 'video' && material.videoUrl && (
-                                <a className="ghost-button ghost-button-small inline-link-button" href={material.videoUrl} target="_blank" rel="noreferrer">
-                                  Watch video lesson
-                                </a>
+                                <button
+                                  type="button"
+                                  className="ghost-button ghost-button-small inline-link-button"
+                                  onClick={() => openMaterialViewer(material, 'Learner reading')}
+                                >
+                                  Watch video in app
+                                </button>
                               )}
                             </div>
                             <span className="teacher-material-meta">Added by {material.uploadedBy}</span>
@@ -4615,16 +4803,15 @@ function App() {
                       </article>
                     ))}
                   </div>
-                  {readingMaterials.find((material) => material.resourceType === 'video' && material.videoUrl) && (
+                  {featuredVideoMaterial && (
                     <div className="banner-actions">
-                      <a
+                      <button
+                        type="button"
                         className="primary-button inline-link-button"
-                        href={readingMaterials.find((material) => material.resourceType === 'video' && material.videoUrl)?.videoUrl}
-                        target="_blank"
-                        rel="noreferrer"
+                        onClick={() => openMaterialViewer(featuredVideoMaterial, 'Learner video lesson')}
                       >
                         Open approved lesson video
-                      </a>
+                      </button>
                     </div>
                   )}
                 </section>
@@ -5269,6 +5456,13 @@ function App() {
                     <div className="row-actions">
                       <strong>{material.uploadedBy}</strong>
                       <div className="row-actions">
+                        <button
+                          type="button"
+                          className="ghost-button ghost-button-small"
+                          onClick={() => openMaterialViewer(material, 'Staff preview')}
+                        >
+                          Preview
+                        </button>
                         <button
                           type="button"
                           className="ghost-button ghost-button-small"
@@ -6091,6 +6285,13 @@ function App() {
                           <button
                             type="button"
                             className="ghost-button ghost-button-small"
+                            onClick={() => openMaterialViewer(item, 'School team review')}
+                          >
+                            Preview
+                          </button>
+                          <button
+                            type="button"
+                            className="ghost-button ghost-button-small"
                             onClick={() => reviewPendingMaterial(item.id, 'approved')}
                           >
                             Approve
@@ -6425,6 +6626,150 @@ function App() {
             </>
           )}
         </main>
+      )}
+
+      {activeViewerMaterial && (
+        <div className="modal-backdrop" role="presentation">
+          <section className="modal-card modal-card-wide material-viewer-modal" role="dialog" aria-label="Learning material viewer">
+            <div className="material-viewer-header">
+              <div className="panel-heading">
+                <p className="eyebrow">{activeMaterialViewer?.audienceLabel ?? 'Material viewer'}</p>
+                <h2>{activeViewerMaterial.title}</h2>
+                <p>{activeViewerMaterial.summary}</p>
+              </div>
+              <div className="material-viewer-actions">
+                <span className="mini-badge">
+                  {getFlagEmoji(activeViewerMaterial.countryCode)} {getCountryByCode(activeViewerMaterial.countryCode).name}
+                </span>
+                <span className="mini-badge">{activeViewerMaterial.subject}</span>
+                <span className="mini-badge">
+                  {activeViewerMaterial.resourceType === 'document'
+                    ? 'Document'
+                    : activeViewerMaterial.resourceType === 'video'
+                      ? 'Video'
+                      : activeViewerMaterial.resourceType === 'question-bank'
+                        ? 'Question set'
+                        : 'Reading note'}
+                </span>
+                <button type="button" className="ghost-button" onClick={closeMaterialViewer}>
+                  Back
+                </button>
+              </div>
+            </div>
+
+            <div className="material-viewer-shell">
+              {activeViewerMaterial.resourceType === 'text' && (
+                <article className="material-viewer-article">
+                  {activeViewerMaterial.body.split('\n').filter(Boolean).map((line, index) => (
+                    <p key={`${activeViewerMaterial.id}-line-${index}`}>{line}</p>
+                  ))}
+                </article>
+              )}
+
+              {activeViewerMaterial.resourceType === 'question-bank' && (
+                <section className="material-viewer-questions">
+                  <div className="panel-heading">
+                    <p className="eyebrow">Question set</p>
+                    <h2>{(activeViewerMaterial.questions?.length ?? 0)} guided questions</h2>
+                    <p>Use this preview to check the material without leaving the app.</p>
+                  </div>
+                  <div className="history-list">
+                    {(activeViewerMaterial.questions ?? []).map((question, index) => (
+                      <article key={question.id} className="history-row">
+                        <div>
+                          <strong>{index + 1}. {question.prompt}</strong>
+                          <span>{question.choices.join(' • ')}</span>
+                          <span>{question.explanation}</span>
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                </section>
+              )}
+
+              {activeViewerMaterial.resourceType === 'document' && activeViewerDocumentPreview?.kind === 'pdf' && (
+                <iframe
+                  className="material-viewer-frame"
+                  src={activeViewerDocumentPreview.src}
+                  title={activeViewerMaterial.title}
+                />
+              )}
+
+              {activeViewerMaterial.resourceType === 'document' && activeViewerDocumentPreview?.kind === 'image' && (
+                <div className="material-viewer-image-wrap">
+                  <img
+                    className="material-viewer-image"
+                    src={activeViewerDocumentPreview.src}
+                    alt={activeViewerMaterial.title}
+                  />
+                </div>
+              )}
+
+              {activeViewerMaterial.resourceType === 'document' && activeViewerDocumentPreview?.kind === 'text' && (
+                <pre className="material-viewer-text">{activeViewerDocumentPreview.content}</pre>
+              )}
+
+              {activeViewerMaterial.resourceType === 'document' && activeViewerDocumentPreview?.kind === 'embed' && (
+                <div className="material-viewer-fallback">
+                  <iframe
+                    className="material-viewer-frame"
+                    src={activeViewerDocumentPreview.src}
+                    title={activeViewerMaterial.title}
+                  />
+                  <p>This file is opening inside Review Buddy. If your device cannot render it fully, save a copy below.</p>
+                </div>
+              )}
+
+              {activeViewerMaterial.resourceType === 'document' && activeViewerDocumentPreview?.kind === 'download' && (
+                <div className="material-viewer-fallback">
+                  <strong>Preview not ready for this file type yet.</strong>
+                  <p>This item stays inside Review Buddy, but this file needs a saved copy to open on the device.</p>
+                </div>
+              )}
+
+              {activeViewerMaterial.resourceType === 'video' && activeViewerVideoConfig?.kind === 'native' && (
+                <video className="material-viewer-video" controls preload="metadata" src={activeViewerVideoConfig.src}>
+                  Your browser could not play this lesson video.
+                </video>
+              )}
+
+              {activeViewerMaterial.resourceType === 'video' && activeViewerVideoConfig?.kind === 'iframe' && (
+                <iframe
+                  className="material-viewer-frame material-viewer-video-frame"
+                  src={activeViewerVideoConfig.src}
+                  title={activeViewerMaterial.title}
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                  allowFullScreen
+                />
+              )}
+
+              {activeViewerMaterial.resourceType === 'video' && !activeViewerVideoConfig && (
+                <div className="material-viewer-fallback">
+                  <strong>This video link is not ready to play.</strong>
+                  <p>Update the lesson link and try again.</p>
+                </div>
+              )}
+            </div>
+
+            <div className="material-viewer-footer">
+              <span className="teacher-material-meta">Shared by {activeViewerMaterial.uploadedBy}</span>
+              {activeViewerMaterial.resourceType === 'document' && activeViewerMaterial.attachmentData && (
+                <a
+                  className="ghost-button inline-link-button"
+                  href={activeViewerMaterial.attachmentData}
+                  download={activeViewerMaterial.attachmentName ?? `${activeViewerMaterial.title}.file`}
+                >
+                  Save a copy
+                </a>
+              )}
+              {activeViewerMaterial.resourceType === 'video' && activeViewerMaterial.videoUrl && (
+                <a className="ghost-button inline-link-button" href={activeViewerMaterial.videoUrl} rel="noreferrer">
+                  Open source link
+                </a>
+              )}
+            </div>
+          </section>
+        </div>
       )}
 
       {showTutorial && (

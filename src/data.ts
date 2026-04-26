@@ -205,7 +205,12 @@ export type SupportRequest = {
   title: string;
   detail: string;
   category: 'topic' | 'mentor' | 'technical' | 'material' | 'approval' | 'wellbeing' | 'general';
-  status: 'new' | 'in-review' | 'resolved';
+  status: 'new' | 'in-review' | 'assigned' | 'done' | 'resolved';
+  assignedToName?: string;
+  assignedToEmail?: string;
+  assignedToRole?: 'admin' | 'staff';
+  completedAt?: string;
+  completedBy?: string;
   relatedMaterialId?: string;
 };
 

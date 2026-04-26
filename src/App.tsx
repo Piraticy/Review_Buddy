@@ -1120,6 +1120,37 @@ function getSupportCategoryLabel(category: SupportRequest['category']) {
   return 'General help';
 }
 
+function normalizeSupportRequestEntry(request: SupportRequest): SupportRequest {
+  return {
+    ...request,
+    status: request.status === 'resolved' ? 'done' : request.status,
+  };
+}
+
+function isClosedSupportRequest(request: SupportRequest) {
+  return request.status === 'done' || request.status === 'resolved';
+}
+
+function getSupportRequestStatusLabel(request: SupportRequest) {
+  if (isClosedSupportRequest(request)) return 'Done';
+  if (request.status === 'assigned') return 'Assigned';
+  if (request.status === 'in-review') return 'School team';
+  return 'New';
+}
+
+function getSupportRequestOwnerLabel(request: SupportRequest) {
+  if (isClosedSupportRequest(request) && request.completedBy) {
+    return `Done by ${request.completedBy}`;
+  }
+  if (request.assignedToRole === 'staff' && request.assignedToName) {
+    return `Assigned to ${request.assignedToName}`;
+  }
+  if (request.assignedToRole === 'admin') {
+    return 'Handled by the school team';
+  }
+  return 'Waiting for the school team';
+}
+
 function getRoleLabel(role: LearnerProfile['role']) {
   if (role === 'admin') return 'School team';
   if (role === 'staff') return 'Staff';
@@ -1348,6 +1379,7 @@ function App() {
   const [feedbackRatings, setFeedbackRatings] = useState<Record<FeedbackQuestionKey, number>>(createEmptyFeedbackRatings);
   const [feedbackComment, setFeedbackComment] = useState('');
   const [supportRequestDraft, setSupportRequestDraft] = useState<SupportRequestDraft>(createInitialSupportRequestDraft);
+  const [requestAssignmentSelections, setRequestAssignmentSelections] = useState<Record<string, string>>({});
   const [announcementDraft, setAnnouncementDraft] = useState<AnnouncementDraft>(createInitialAnnouncementDraft);
   const [learnerSearch, setLearnerSearch] = useState('');
   const [staffSearch, setStaffSearch] = useState('');
@@ -1366,6 +1398,7 @@ function App() {
   const [birthdayCalendarDate, setBirthdayCalendarDate] = useState(() => getMonthStart(new Date()));
   const speechKeyRef = useRef<string | null>(null);
   const birthdayPickerRef = useRef<HTMLDivElement | null>(null);
+  const sharedRefreshPromiseRef = useRef<Promise<void> | null>(null);
 
   useEffect(() => {
     if (!supabase) return;
@@ -1459,7 +1492,7 @@ function App() {
       if (saved.followUpsByCountry) setFollowUpsByCountry(saved.followUpsByCountry);
       if (saved.feedbackEntries) setFeedbackEntries(saved.feedbackEntries);
       if (saved.submittedFeedbackKeys) setSubmittedFeedbackKeys(saved.submittedFeedbackKeys);
-      if (saved.supportRequests) setSupportRequests(saved.supportRequests);
+      if (saved.supportRequests) setSupportRequests(saved.supportRequests.map(normalizeSupportRequestEntry));
       if (saved.announcements) setAnnouncements(saved.announcements);
     } catch {
       window.localStorage.removeItem(STORAGE_KEY);
@@ -1508,35 +1541,7 @@ function App() {
   }, []);
 
   useEffect(() => {
-    let cancelled = false;
-
-    async function hydrateSharedData() {
-      const [repoUsers, repoStaff, repoMaterials, repoFeedback, repoSupportRequests, repoAnnouncements] = await Promise.all([
-        appRepository.listRegisteredUsers(),
-        appRepository.listStaffMembers(),
-        appRepository.listStaffMaterials(),
-        appRepository.listFeedbackEntries(),
-        appRepository.listSupportRequests(),
-        appRepository.listAnnouncements(),
-      ]);
-
-      if (cancelled) return;
-
-      applySharedState(
-        repoUsers,
-        repoStaff,
-        repoMaterials,
-        repoFeedback,
-        repoSupportRequests,
-        repoAnnouncements,
-      );
-    }
-
-    void hydrateSharedData();
-
-    return () => {
-      cancelled = true;
-    };
+    void refreshSharedState();
   }, []);
 
   useEffect(() => {
@@ -1673,6 +1678,7 @@ function App() {
     .slice(0, 8);
   const countryRegistrationCards = registrationsByCountry;
   const focusedStaffMembers = staffMembers.filter((member) => !member.countryCode || member.countryCode === adminMetricsCode);
+  const focusedStaffAccounts = staffRegistrations.filter((entry) => entry.countryCode === adminMetricsCode);
   const feedbackSummary = buildFeedbackSummary(feedbackEntries);
   const learnerFeedbackEntries = feedbackEntries.filter((entry) => entry.role === 'student');
   const learnerFeedbackSummary = buildFeedbackSummary(learnerFeedbackEntries);
@@ -1684,6 +1690,9 @@ function App() {
   );
   const announcementFeed = buildAnnouncementFeed(announcements);
   const focusCountryRequests = supportRequestsForAdmin.filter((request) => request.countryCode === adminMetricsCode);
+  const focusCountryOpenRequestCount = focusCountryRequests.filter(
+    (request) => !isClosedSupportRequest(normalizeSupportRequestEntry(request)),
+  ).length;
   const activeFeedbackQuestions = profile.role === 'staff' ? STAFF_FEEDBACK_QUESTIONS : LEARNER_FEEDBACK_QUESTIONS;
   const recentActiveLearners = focusedLearners.filter((entry) => {
     if (!entry.lastLoginAt) return false;
@@ -1732,11 +1741,11 @@ function App() {
           },
         ]
       : []),
-    ...(focusCountryRequests.length > 0
+    ...(focusCountryOpenRequestCount > 0
       ? [
           {
             title: 'Learner and staff requests',
-            detail: `${focusCountryRequests.length} support request${focusCountryRequests.length === 1 ? '' : 's'} need attention in ${adminCountry.name}.`,
+            detail: `${focusCountryOpenRequestCount} support request${focusCountryOpenRequestCount === 1 ? '' : 's'} need attention in ${adminCountry.name}.`,
           },
         ]
       : []),
@@ -1863,11 +1872,17 @@ function App() {
   const hiddenAdminAnnouncementCount = Math.max(0, announcementFeed.length - adminAnnouncementPreview.length);
   const learnerSummaryQuestions = learnerFeedbackSummary.questionAverages.slice(0, 4);
   const learnerQuestionBreakdown = learnerFeedbackSummary.questionAverages;
-  const mySupportRequests = supportRequestsForAdmin.filter(
-    (request) => request.createdBy.toLowerCase() === (profile.email || profile.fullName).toLowerCase(),
-  );
+  const mySupportRequests = supportRequestsForAdmin
+    .filter((request) => request.createdBy.toLowerCase() === (profile.email || profile.fullName).toLowerCase())
+    .map(normalizeSupportRequestEntry);
   const birthdayLearners = learnerRegistrations.filter((entry) => isBirthdayToday(entry));
-  const openSupportRequests = supportRequestsForAdmin.filter((request) => request.status !== 'resolved');
+  const openSupportRequests = supportRequestsForAdmin
+    .map(normalizeSupportRequestEntry)
+    .filter((request) => !isClosedSupportRequest(request));
+  const focusCountryOpenRequests = openSupportRequests.filter((request) => request.countryCode === adminMetricsCode);
+  const assignedSupportRequests = openSupportRequests.filter(
+    (request) => (request.assignedToEmail ?? '').toLowerCase() === profile.email.toLowerCase(),
+  );
   const learnerCommentEntries = learnerFeedbackEntries.filter((entry) => entry.comment.trim());
   const reviewPriorityCards = [
     {
@@ -2074,29 +2089,43 @@ function App() {
       setStaffMembers(repoStaff);
       setStaffMaterials(repoMaterials);
       setFeedbackEntries(repoFeedback);
-      setSupportRequests(repoSupportRequests);
+      setSupportRequests(repoSupportRequests.map(normalizeSupportRequestEntry));
       setAnnouncements(repoAnnouncements.length > 0 ? repoAnnouncements : defaultAnnouncements());
     });
   }
 
   async function refreshSharedState() {
-    const [repoUsers, repoStaff, repoMaterials, repoFeedback, repoSupportRequests, repoAnnouncements] = await Promise.all([
-      appRepository.listRegisteredUsers(),
-      appRepository.listStaffMembers(),
-      appRepository.listStaffMaterials(),
-      appRepository.listFeedbackEntries(),
-      appRepository.listSupportRequests(),
-      appRepository.listAnnouncements(),
-    ]);
+    if (sharedRefreshPromiseRef.current) {
+      return sharedRefreshPromiseRef.current;
+    }
 
-    applySharedState(
-      repoUsers,
-      repoStaff,
-      repoMaterials,
-      repoFeedback,
-      repoSupportRequests,
-      repoAnnouncements,
-    );
+    const refreshTask = (async () => {
+      const [repoUsers, repoStaff, repoMaterials, repoFeedback, repoSupportRequests, repoAnnouncements] = await Promise.all([
+        appRepository.listRegisteredUsers(),
+        appRepository.listStaffMembers(),
+        appRepository.listStaffMaterials(),
+        appRepository.listFeedbackEntries(),
+        appRepository.listSupportRequests(),
+        appRepository.listAnnouncements(),
+      ]);
+
+      applySharedState(
+        repoUsers,
+        repoStaff,
+        repoMaterials,
+        repoFeedback,
+        repoSupportRequests,
+        repoAnnouncements,
+      );
+    })();
+
+    sharedRefreshPromiseRef.current = refreshTask;
+
+    try {
+      await refreshTask;
+    } finally {
+      sharedRefreshPromiseRef.current = null;
+    }
   }
 
   function getLearnerRecordLabel(entry: RegisteredUser) {
@@ -2261,8 +2290,10 @@ function App() {
   }
 
   function openAdminView(view: AdminView) {
-    setAdminView(view);
     setAdminNotice('');
+    startTransition(() => {
+      setAdminView(view);
+    });
   }
 
   async function handleAuthSubmit(event: FormEvent) {
@@ -2821,16 +2852,77 @@ function App() {
     }
   }
 
-  async function resolveSupportRequest(requestId: string, status: SupportRequest['status']) {
+  function getAssignableStaffForRequest(request: SupportRequest) {
+    const matchingCountry = focusedStaffAccounts.filter((entry) => entry.email && entry.countryCode === request.countryCode);
+    return matchingCountry.length > 0
+      ? matchingCountry
+      : staffRegistrations.filter((entry) => entry.email);
+  }
+
+  async function saveSupportRequest(nextRequest: SupportRequest, successMessage: string) {
     try {
-      await appRepository.updateSupportRequestStatus(requestId, status);
+      await appRepository.updateSupportRequest(nextRequest);
       setSupportRequests((current) =>
-        current.map((request) => (request.id === requestId ? { ...request, status } : request)),
+        current.map((request) => (request.id === nextRequest.id ? normalizeSupportRequestEntry(nextRequest) : request)),
       );
-      setAdminNotice(status === 'resolved' ? 'That request was marked as resolved.' : 'That request is now under review.');
+      setAdminNotice(successMessage);
     } catch (error) {
       setAdminNotice(getErrorMessage(error, 'We could not update that request just now.'));
     }
+  }
+
+  async function assignSupportRequestToAdmin(request: SupportRequest) {
+    const nextRequest: SupportRequest = {
+      ...request,
+      status: 'in-review',
+      assignedToRole: 'admin',
+      assignedToName: profile.fullName,
+      assignedToEmail: profile.email || undefined,
+      completedAt: undefined,
+      completedBy: undefined,
+    };
+
+    await saveSupportRequest(nextRequest, 'That request now stays with the school team for follow-up.');
+  }
+
+  async function assignSupportRequestToStaff(request: SupportRequest) {
+    const selectedEmail =
+      requestAssignmentSelections[request.id] ||
+      request.assignedToEmail ||
+      getAssignableStaffForRequest(request)[0]?.email ||
+      '';
+
+    const assignee = getAssignableStaffForRequest(request).find(
+      (entry) => (entry.email ?? '').toLowerCase() === selectedEmail.toLowerCase(),
+    );
+
+    if (!assignee?.email) {
+      setAdminNotice('Choose a staff member first.');
+      return;
+    }
+
+    const nextRequest: SupportRequest = {
+      ...request,
+      status: 'assigned',
+      assignedToRole: 'staff',
+      assignedToName: assignee.fullName,
+      assignedToEmail: assignee.email,
+      completedAt: undefined,
+      completedBy: undefined,
+    };
+
+    await saveSupportRequest(nextRequest, `${assignee.fullName} was assigned to follow up on that request.`);
+  }
+
+  async function markSupportRequestDone(request: SupportRequest) {
+    const nextRequest: SupportRequest = {
+      ...request,
+      status: 'done',
+      completedAt: new Date().toISOString(),
+      completedBy: profile.fullName,
+    };
+
+    await saveSupportRequest(nextRequest, 'That request was marked as done and moved to request history.');
   }
 
   async function addAnnouncement() {
@@ -2972,17 +3064,23 @@ function App() {
 
   function openSubject(subject: string) {
     setSelectedSubject(subject);
-    setStudentView('subject');
+    startTransition(() => {
+      setStudentView('subject');
+    });
   }
 
   function openLearningNotes(subject: string) {
     setSelectedSubject(subject);
-    setStudentView('notes');
+    startTransition(() => {
+      setStudentView('notes');
+    });
   }
 
   function openVideoLesson(subject: string) {
     setSelectedSubject(subject);
-    setStudentView('video');
+    startTransition(() => {
+      setStudentView('video');
+    });
   }
 
   function openFeedbackPage() {
@@ -2992,10 +3090,14 @@ function App() {
       return;
     }
     if (profile.role === 'staff') {
-      setStaffView('feedback');
+      startTransition(() => {
+        setStaffView('feedback');
+      });
       return;
     }
-    setStudentView('feedback');
+    startTransition(() => {
+      setStudentView('feedback');
+    });
   }
 
   async function submitFeedback() {
@@ -4176,6 +4278,19 @@ function App() {
                       Send request
                     </button>
                   </div>
+                  <div className="history-list">
+                    {mySupportRequests.slice(0, 3).map((entry) => (
+                      <article key={entry.id} className="history-row">
+                        <div>
+                          <strong>{entry.title}</strong>
+                          <span>{getSupportRequestStatusLabel(entry)} · {getSupportRequestOwnerLabel(entry)}</span>
+                        </div>
+                      </article>
+                    ))}
+                    {mySupportRequests.length === 0 ? (
+                      <p className="empty-state">Your request history will appear here after the first message.</p>
+                    ) : null}
+                  </div>
                 </section>
               </aside>
             </>
@@ -4824,7 +4939,7 @@ function App() {
                   <article key={entry.id} className="history-row">
                     <div>
                       <strong>{entry.title}</strong>
-                      <span>{entry.status}</span>
+                      <span>{getSupportRequestStatusLabel(entry)} · {getSupportRequestOwnerLabel(entry)}</span>
                     </div>
                   </article>
                 )) : (
@@ -5234,6 +5349,47 @@ function App() {
                 <button type="button" className="ghost-button ghost-button-small" onClick={submitSupportRequest}>
                   Send request
                 </button>
+              </div>
+              <div className="history-list">
+                {mySupportRequests.slice(0, 3).map((entry) => (
+                  <article key={entry.id} className="history-row">
+                    <div>
+                      <strong>{entry.title}</strong>
+                      <span>{getSupportRequestStatusLabel(entry)} · {getSupportRequestOwnerLabel(entry)}</span>
+                    </div>
+                  </article>
+                ))}
+                {mySupportRequests.length === 0 ? (
+                  <p className="empty-state">Your request history will appear here after the first message.</p>
+                ) : null}
+              </div>
+            </section>
+            <section className="side-card">
+              <div className="panel-heading">
+                <p className="eyebrow">My follow-ups</p>
+                <h2>{assignedSupportRequests.length} active</h2>
+                <p>Short task list from the school team.</p>
+              </div>
+              <div className="history-list">
+                {assignedSupportRequests.slice(0, 4).map((entry) => (
+                  <article key={entry.id} className="history-row">
+                    <div>
+                      <strong>{entry.title}</strong>
+                      <span>{getSupportCategoryLabel(entry.category)} · {getFlagEmoji(entry.countryCode)} {getCountryByCode(entry.countryCode).name}</span>
+                      <span>{entry.detail}</span>
+                    </div>
+                    <button
+                      type="button"
+                      className="ghost-button ghost-button-small"
+                      onClick={() => void markSupportRequestDone(entry)}
+                    >
+                      Done
+                    </button>
+                  </article>
+                ))}
+                {assignedSupportRequests.length === 0 ? (
+                  <p className="empty-state">Assigned follow-ups from the school team will appear here.</p>
+                ) : null}
               </div>
             </section>
           </aside>
@@ -5949,31 +6105,70 @@ function App() {
                         </div>
                       </article>
                     ))}
-                    {focusCountryRequests.map((item) => (
-                      <article key={item.id} className="history-row">
-                        <div>
-                          <strong>{item.title}</strong>
-                          <span>{getRoleLabel(item.createdByRole)} · {getSupportCategoryLabel(item.category)} · {getFlagEmoji(item.countryCode)} {getCountryByCode(item.countryCode).name}</span>
-                          <span>{item.detail}</span>
-                        </div>
-                        <div className="row-actions">
-                          <button
-                            type="button"
-                            className="ghost-button ghost-button-small"
-                            onClick={() => resolveSupportRequest(item.id, 'in-review')}
-                          >
-                            Review
-                          </button>
-                          <button
-                            type="button"
-                            className="ghost-button ghost-button-small"
-                            onClick={() => resolveSupportRequest(item.id, 'resolved')}
-                          >
-                            Done
-                          </button>
-                        </div>
-                      </article>
-                    ))}
+                    {focusCountryOpenRequests.map((item) => {
+                      const assignableStaff = getAssignableStaffForRequest(item);
+                      const selectedStaffEmail =
+                        requestAssignmentSelections[item.id] ||
+                        item.assignedToEmail ||
+                        assignableStaff[0]?.email ||
+                        '';
+
+                      return (
+                        <article key={item.id} className="support-request-card">
+                          <div className="support-request-copy">
+                            <strong>{item.title}</strong>
+                            <span>{getRoleLabel(item.createdByRole)} · {getSupportCategoryLabel(item.category)} · {getFlagEmoji(item.countryCode)} {getCountryByCode(item.countryCode).name}</span>
+                            <span>{getSupportRequestOwnerLabel(item)}</span>
+                            <span>{item.detail}</span>
+                          </div>
+                          <div className="support-request-actions">
+                            <span className="mini-badge">{getSupportRequestStatusLabel(item)}</span>
+                            <div className="request-action-group">
+                              <button
+                                type="button"
+                                className="ghost-button ghost-button-small"
+                                onClick={() => void assignSupportRequestToAdmin(item)}
+                              >
+                                Keep here
+                              </button>
+                              {assignableStaff.length > 0 ? (
+                                <>
+                                  <select
+                                    className="compact-select"
+                                    value={selectedStaffEmail}
+                                    onChange={(event) =>
+                                      setRequestAssignmentSelections((current) => ({
+                                        ...current,
+                                        [item.id]: event.target.value,
+                                      }))}
+                                  >
+                                    {assignableStaff.map((entry) => (
+                                      <option key={entry.email} value={entry.email}>
+                                        {entry.fullName}
+                                      </option>
+                                    ))}
+                                  </select>
+                                  <button
+                                    type="button"
+                                    className="ghost-button ghost-button-small"
+                                    onClick={() => void assignSupportRequestToStaff(item)}
+                                  >
+                                    Assign
+                                  </button>
+                                </>
+                              ) : null}
+                              <button
+                                type="button"
+                                className="ghost-button ghost-button-small"
+                                onClick={() => void markSupportRequestDone(item)}
+                              >
+                                Done
+                              </button>
+                            </div>
+                          </div>
+                        </article>
+                      );
+                    })}
                     {followUpItems.map((item) => (
                       <article key={item.title} className="history-row">
                         <div>
@@ -5991,7 +6186,7 @@ function App() {
                         </div>
                       </article>
                     ))}
-                    {pendingMaterials.length === 0 && focusCountryRequests.length === 0 && followUpItems.length === 0 ? (
+                    {pendingMaterials.length === 0 && focusCountryOpenRequests.length === 0 && followUpItems.length === 0 ? (
                       <p className="empty-state">Follow-up items will appear here when real learner activity needs support.</p>
                     ) : null}
                   </div>
@@ -6157,7 +6352,7 @@ function App() {
                           <strong>{item.title}</strong>
                           <span>{getRoleLabel(item.createdByRole)} · {getSupportCategoryLabel(item.category)}</span>
                         </div>
-                        <strong>{item.status}</strong>
+                        <strong>{getSupportRequestStatusLabel(item)}</strong>
                       </article>
                     ))}
                     {openSupportRequests.length === 0 ? (

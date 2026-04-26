@@ -95,6 +95,11 @@ create table if not exists public.support_requests (
   detail text not null,
   category text not null,
   status text not null default 'new',
+  assigned_to_name text,
+  assigned_to_email text,
+  assigned_to_role text,
+  completed_at timestamptz,
+  completed_by text,
   related_material_id text
 );
 
@@ -148,12 +153,18 @@ alter table public.feedback_entries add column if not exists comment text not nu
 alter table public.feedback_entries add column if not exists created_at timestamptz not null default now();
 
 alter table public.support_requests add column if not exists created_by_email text not null default '';
+alter table public.support_requests add column if not exists assigned_to_name text;
+alter table public.support_requests add column if not exists assigned_to_email text;
+alter table public.support_requests add column if not exists assigned_to_role text;
+alter table public.support_requests add column if not exists completed_at timestamptz;
+alter table public.support_requests add column if not exists completed_by text;
 alter table public.announcements add column if not exists published_by_email text not null default '';
 
 create unique index if not exists feedback_entries_user_key_idx on public.feedback_entries (user_key);
 create index if not exists staff_materials_uploaded_by_email_idx on public.staff_materials (uploaded_by_email);
 create index if not exists staff_materials_status_idx on public.staff_materials (approval_status, updated_at desc);
 create index if not exists support_requests_created_by_email_idx on public.support_requests (created_by_email);
+create index if not exists support_requests_assigned_to_email_idx on public.support_requests (assigned_to_email);
 create index if not exists support_requests_status_idx on public.support_requests (status, created_at desc);
 create index if not exists announcements_created_at_idx on public.announcements (created_at desc);
 
@@ -336,6 +347,7 @@ using (
 drop policy if exists "Owners and admins can read support requests" on public.support_requests;
 drop policy if exists "Authenticated users can create support requests" on public.support_requests;
 drop policy if exists "Admins can update support requests" on public.support_requests;
+drop policy if exists "Admins and assigned staff can update support requests" on public.support_requests;
 drop policy if exists "Admins can delete support requests" on public.support_requests;
 create policy "Owners and admins can read support requests"
 on public.support_requests
@@ -344,6 +356,7 @@ using (
   auth.role() = 'authenticated'
   and (
     lower(coalesce(created_by_email, '')) = lower(coalesce(auth.jwt() ->> 'email', ''))
+    or lower(coalesce(assigned_to_email, '')) = lower(coalesce(auth.jwt() ->> 'email', ''))
     or exists (
       select 1
       from public.learner_profiles
@@ -361,7 +374,7 @@ with check (
   and lower(coalesce(created_by_email, '')) = lower(coalesce(auth.jwt() ->> 'email', ''))
 );
 
-create policy "Admins can update support requests"
+create policy "Admins and assigned staff can update support requests"
 on public.support_requests
 for update
 using (
@@ -371,6 +384,7 @@ using (
     where learner_profiles.id = auth.uid()
       and learner_profiles.role = 'admin'
   )
+  or lower(coalesce(assigned_to_email, '')) = lower(coalesce(auth.jwt() ->> 'email', ''))
 )
 with check (
   exists (
@@ -379,6 +393,7 @@ with check (
     where learner_profiles.id = auth.uid()
       and learner_profiles.role = 'admin'
   )
+  or lower(coalesce(assigned_to_email, '')) = lower(coalesce(auth.jwt() ->> 'email', ''))
 );
 
 create policy "Admins can delete support requests"

@@ -46,9 +46,26 @@ const OPTIONAL_LEARNER_PROFILE_COLUMNS = new Set([
   'support_focus',
 ]);
 
+const OPTIONAL_SUPPORT_REQUEST_COLUMNS = new Set([
+  'assigned_to_name',
+  'assigned_to_email',
+  'assigned_to_role',
+  'completed_at',
+  'completed_by',
+]);
+
+const CACHE_TTL_MS = 15000;
+const listCache = new Map<string, { timestamp: number; data: unknown }>();
+
 function getMissingLearnerProfileColumn(error: { message?: string } | null | undefined) {
   const message = error?.message ?? '';
   const match = /Could not find the '([^']+)' column of 'learner_profiles' in the schema cache/i.exec(message);
+  return match?.[1] ?? null;
+}
+
+function getMissingSupportRequestColumn(error: { message?: string } | null | undefined) {
+  const message = error?.message ?? '';
+  const match = /Could not find the '([^']+)' column of 'support_requests' in the schema cache/i.exec(message);
   return match?.[1] ?? null;
 }
 
@@ -71,6 +88,48 @@ async function writeLearnerProfileWithSchemaFallback(
 
     delete nextRow[missingColumn];
   }
+}
+
+async function writeSupportRequestWithSchemaFallback(
+  write: (row: Record<string, unknown>) => Promise<{ error: { message?: string } | null; data?: unknown }>,
+  initialRow: Record<string, unknown>,
+) {
+  const nextRow = { ...initialRow };
+
+  while (true) {
+    const result = await write(nextRow);
+    if (!result.error) {
+      return { ...result, error: null, row: nextRow };
+    }
+
+    const missingColumn = getMissingSupportRequestColumn(result.error);
+    if (!missingColumn || !OPTIONAL_SUPPORT_REQUEST_COLUMNS.has(missingColumn) || !(missingColumn in nextRow)) {
+      return { ...result, row: nextRow };
+    }
+
+    delete nextRow[missingColumn];
+  }
+}
+
+function readListCache<T>(key: string) {
+  const cached = listCache.get(key);
+  if (!cached || Date.now() - cached.timestamp > CACHE_TTL_MS) {
+    if (cached) {
+      listCache.delete(key);
+    }
+    return null;
+  }
+
+  return cached.data as T;
+}
+
+function writeListCache<T>(key: string, data: T) {
+  listCache.set(key, { timestamp: Date.now(), data });
+  return data;
+}
+
+function invalidateListCache(...keys: string[]) {
+  keys.forEach((key) => listCache.delete(key));
 }
 
 function readStoredState(): StoredState {
@@ -348,6 +407,22 @@ function mapFeedbackRow(row: Record<string, unknown>): FeedbackEntry {
   };
 }
 
+function normalizeSupportRequestStatus(
+  status: unknown,
+): SupportRequest['status'] {
+  if (status === 'assigned' || status === 'in-review' || status === 'done' || status === 'resolved') {
+    return status;
+  }
+  return 'new';
+}
+
+function normalizeSupportRequest(entry: SupportRequest): SupportRequest {
+  return {
+    ...entry,
+    status: normalizeSupportRequestStatus(entry.status),
+  };
+}
+
 function mapSupportRequestRow(row: Record<string, unknown>): SupportRequest {
   return {
     id: String(row.id ?? ''),
@@ -358,7 +433,15 @@ function mapSupportRequestRow(row: Record<string, unknown>): SupportRequest {
     title: String(row.title ?? ''),
     detail: String(row.detail ?? ''),
     category: (row.category as SupportRequest['category']) ?? 'general',
-    status: (row.status as SupportRequest['status']) ?? 'new',
+    status: normalizeSupportRequestStatus(row.status),
+    assignedToName: row.assigned_to_name ? String(row.assigned_to_name) : undefined,
+    assignedToEmail: row.assigned_to_email ? String(row.assigned_to_email) : undefined,
+    assignedToRole:
+      row.assigned_to_role === 'admin' || row.assigned_to_role === 'staff'
+        ? row.assigned_to_role
+        : undefined,
+    completedAt: row.completed_at ? String(row.completed_at) : undefined,
+    completedBy: row.completed_by ? String(row.completed_by) : undefined,
     relatedMaterialId: row.related_material_id ? String(row.related_material_id) : undefined,
   };
 }
@@ -378,6 +461,7 @@ async function registerLearner(user: RegisteredUser) {
 
   if (!supabaseClient) {
     saveLocalUser(user);
+    invalidateListCache('registeredUsers');
     return user;
   }
 
@@ -417,6 +501,7 @@ async function registerLearner(user: RegisteredUser) {
     lastLoginAt: new Date().toISOString(),
   };
   saveLocalUser(savedUser);
+  invalidateListCache('registeredUsers');
   return savedUser;
 }
 
@@ -740,8 +825,13 @@ async function signIn(identifier: string, password: string) {
 }
 
 async function listRegisteredUsers() {
+  const cached = readListCache<RegisteredUser[]>('registeredUsers');
+  if (cached) {
+    return cached;
+  }
+
   if (!supabase) {
-    return withFallbackLocalUsers(getLocalUsers());
+    return writeListCache('registeredUsers', withFallbackLocalUsers(getLocalUsers()));
   }
 
   const { data, error } = await supabase
@@ -752,7 +842,7 @@ async function listRegisteredUsers() {
   const localUsers = getLocalUsers();
 
   if (error || !data) {
-    return localUsers;
+    return writeListCache('registeredUsers', localUsers);
   }
 
   const remoteUsers = data.map((row) => mergeRemoteUserWithLocalState(mapProfileRow(row)));
@@ -764,12 +854,17 @@ async function listRegisteredUsers() {
     ),
   ];
 
-  return mergedUsers;
+  return writeListCache('registeredUsers', mergedUsers);
 }
 
 async function listStaffMembers() {
+  const cached = readListCache<AdminStaffMember[]>('staffMembers');
+  if (cached) {
+    return cached;
+  }
+
   if (!supabase) {
-    return readStoredState().staffMembers ?? [];
+    return writeListCache('staffMembers', readStoredState().staffMembers ?? []);
   }
 
   const { data, error } = await supabase
@@ -780,7 +875,7 @@ async function listStaffMembers() {
   const localStaff = readStoredState().staffMembers ?? [];
 
   if (error || !data) {
-    return localStaff;
+    return writeListCache('staffMembers', localStaff);
   }
 
   const remoteStaff = data.map((row) => mapStaffRow(row));
@@ -796,14 +891,19 @@ async function listStaffMembers() {
     ),
   ];
 
-  return mergedStaff;
+  return writeListCache('staffMembers', mergedStaff);
 }
 
 async function listStaffMaterials() {
+  const cached = readListCache<StaffMaterial[]>('staffMaterials');
+  if (cached) {
+    return cached;
+  }
+
   const localMaterials = readStoredState().staffMaterials ?? [];
 
   if (!supabase) {
-    return localMaterials;
+    return writeListCache('staffMaterials', localMaterials);
   }
 
   const { data, error } = await supabase
@@ -812,23 +912,28 @@ async function listStaffMaterials() {
     .order('created_at', { ascending: false });
 
   if (error || !data) {
-    return localMaterials;
+    return writeListCache('staffMaterials', localMaterials);
   }
 
   const remoteMaterials = data.map((row) => mapStaffMaterialRow(row));
-  return [
+  return writeListCache('staffMaterials', [
     ...remoteMaterials,
     ...localMaterials.filter(
       (localMaterial) => !remoteMaterials.some((remoteMaterial) => remoteMaterial.id === localMaterial.id),
     ),
-  ];
+  ]);
 }
 
 async function listFeedbackEntries() {
+  const cached = readListCache<FeedbackEntry[]>('feedbackEntries');
+  if (cached) {
+    return cached;
+  }
+
   const localFeedback = readStoredState().feedbackEntries ?? [];
 
   if (!supabase) {
-    return localFeedback;
+    return writeListCache('feedbackEntries', localFeedback);
   }
 
   const { data, error } = await supabase
@@ -837,23 +942,42 @@ async function listFeedbackEntries() {
     .order('created_at', { ascending: false });
 
   if (error || !data) {
-    return localFeedback;
+    return writeListCache('feedbackEntries', localFeedback);
   }
 
   const remoteFeedback = data.map((row) => mapFeedbackRow(row));
-  return [
+  return writeListCache('feedbackEntries', [
     ...remoteFeedback,
     ...localFeedback.filter(
       (localEntry) => !remoteFeedback.some((remoteEntry) => remoteEntry.id === localEntry.id),
     ),
-  ];
+  ]);
 }
 
 async function listSupportRequests() {
-  const localRequests = readStoredState().supportRequests ?? [];
+  const localRequests = (readStoredState().supportRequests ?? []).map(normalizeSupportRequest);
 
   if (!supabase) {
     return localRequests;
+  }
+
+  const token = await getAccessToken();
+  if (token) {
+    const response = await fetch('/api/support-requests', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ action: 'list' }),
+    });
+
+    if (response.ok) {
+      const payload = (await response.json().catch(() => null)) as { requests?: Record<string, unknown>[] } | null;
+      if (payload?.requests) {
+        return payload.requests.map((row) => mapSupportRequestRow(row));
+      }
+    }
   }
 
   const { data, error } = await supabase
@@ -875,10 +999,15 @@ async function listSupportRequests() {
 }
 
 async function listAnnouncements() {
+  const cached = readListCache<Announcement[]>('announcements');
+  if (cached) {
+    return cached;
+  }
+
   const localAnnouncements = readStoredState().announcements ?? [];
 
   if (!supabase) {
-    return localAnnouncements;
+    return writeListCache('announcements', localAnnouncements);
   }
 
   const { data, error } = await supabase
@@ -887,16 +1016,16 @@ async function listAnnouncements() {
     .order('created_at', { ascending: false });
 
   if (error || !data) {
-    return localAnnouncements;
+    return writeListCache('announcements', localAnnouncements);
   }
 
   const remoteAnnouncements = data.map((row) => mapAnnouncementRow(row));
-  return [
+  return writeListCache('announcements', [
     ...remoteAnnouncements,
     ...localAnnouncements.filter(
       (localAnnouncement) => !remoteAnnouncements.some((remoteAnnouncement) => remoteAnnouncement.id === localAnnouncement.id),
     ),
-  ];
+  ]);
 }
 
 async function addStaffMember(member: AdminStaffMember) {
@@ -907,6 +1036,7 @@ async function addStaffMember(member: AdminStaffMember) {
       id: member.id ?? `staff-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
     };
     mergeStoredState({ staffMembers: [...localStaff, nextMember] });
+    invalidateListCache('staffMembers', 'registeredUsers');
     return nextMember;
   }
 
@@ -918,6 +1048,7 @@ async function addStaffMember(member: AdminStaffMember) {
     };
     const localStaff = readStoredState().staffMembers ?? [];
     mergeStoredState({ staffMembers: [...localStaff, nextMember] });
+    invalidateListCache('staffMembers', 'registeredUsers');
     return nextMember;
   }
 
@@ -941,6 +1072,7 @@ async function addStaffMember(member: AdminStaffMember) {
     throw new Error(payload?.error ?? 'We could not create that staff account just now.');
   }
 
+  invalidateListCache('staffMembers', 'registeredUsers');
   return mapStaffRow(payload.staffMember);
 }
 
@@ -949,6 +1081,7 @@ async function addStaffMaterial(material: StaffMaterial) {
 
   if (!supabase) {
     mergeStoredState({ staffMaterials: [material, ...localMaterials] });
+    invalidateListCache('staffMaterials');
     return material;
   }
 
@@ -978,6 +1111,7 @@ async function addStaffMaterial(material: StaffMaterial) {
       throw new Error(payload?.error ?? 'We could not upload that document just now.');
     }
 
+    invalidateListCache('staffMaterials');
     return mapStaffMaterialRow(payload.material);
   }
 
@@ -1012,9 +1146,11 @@ async function addStaffMaterial(material: StaffMaterial) {
 
   if (error || !data) {
     mergeStoredState({ staffMaterials: [material, ...localMaterials] });
+    invalidateListCache('staffMaterials');
     return material;
   }
 
+  invalidateListCache('staffMaterials');
   return mapStaffMaterialRow(data);
 }
 
@@ -1023,6 +1159,7 @@ async function addFeedbackEntry(entry: FeedbackEntry) {
 
   if (!supabase) {
     mergeStoredState({ feedbackEntries: [entry, ...localFeedback].slice(0, 120) });
+    invalidateListCache('feedbackEntries');
     return entry;
   }
 
@@ -1047,75 +1184,121 @@ async function addFeedbackEntry(entry: FeedbackEntry) {
 
   if (error || !data) {
     mergeStoredState({ feedbackEntries: [entry, ...localFeedback].slice(0, 120) });
+    invalidateListCache('feedbackEntries');
     return entry;
   }
 
+  invalidateListCache('feedbackEntries');
   return mapFeedbackRow(data);
 }
 
 async function addSupportRequest(request: SupportRequest) {
-  const localRequests = readStoredState().supportRequests ?? [];
+  const localRequests = (readStoredState().supportRequests ?? []).map(normalizeSupportRequest);
+  const nextRequest = normalizeSupportRequest(request);
+  const supabaseClient = supabase;
 
-  if (!supabase) {
-    mergeStoredState({ supportRequests: [request, ...localRequests] });
-    return request;
+  if (!supabaseClient) {
+    mergeStoredState({ supportRequests: [nextRequest, ...localRequests] });
+    invalidateListCache('supportRequests');
+    return nextRequest;
   }
 
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await supabaseClient.auth.getUser();
   const createdByEmail = user?.email?.trim().toLowerCase() ?? request.createdBy.trim().toLowerCase();
 
   const insertRow = {
-    id: request.id,
-    created_at: request.createdAt,
-    created_by: request.createdBy,
-    created_by_role: request.createdByRole,
+    id: nextRequest.id,
+    created_at: nextRequest.createdAt,
+    created_by: nextRequest.createdBy,
+    created_by_role: nextRequest.createdByRole,
     created_by_email: createdByEmail,
-    country_code: request.countryCode,
-    title: request.title,
-    detail: request.detail,
-    category: request.category,
-    status: request.status,
-    related_material_id: request.relatedMaterialId ?? null,
+    country_code: nextRequest.countryCode,
+    title: nextRequest.title,
+    detail: nextRequest.detail,
+    category: nextRequest.category,
+    status: nextRequest.status,
+    assigned_to_name: nextRequest.assignedToName ?? null,
+    assigned_to_email: nextRequest.assignedToEmail ?? null,
+    assigned_to_role: nextRequest.assignedToRole ?? null,
+    completed_at: nextRequest.completedAt ?? null,
+    completed_by: nextRequest.completedBy ?? null,
+    related_material_id: nextRequest.relatedMaterialId ?? null,
   };
 
-  const { data, error } = await supabase
-    .from('support_requests')
-    .insert(insertRow)
-    .select('*')
-    .single();
+  const { data, error } = await writeSupportRequestWithSchemaFallback(
+    async (row) => await supabaseClient.from('support_requests').insert(row).select('*').single(),
+    insertRow,
+  );
 
   if (error || !data) {
-    mergeStoredState({ supportRequests: [request, ...localRequests] });
-    return request;
+    mergeStoredState({ supportRequests: [nextRequest, ...localRequests] });
+    invalidateListCache('supportRequests');
+    return nextRequest;
   }
 
-  return mapSupportRequestRow(data);
+  invalidateListCache('supportRequests');
+  return mapSupportRequestRow(data as Record<string, unknown>);
 }
 
-async function updateSupportRequestStatus(requestId: string, status: SupportRequest['status']) {
-  const localRequests = readStoredState().supportRequests ?? [];
+async function updateSupportRequest(request: SupportRequest) {
+  const localRequests = (readStoredState().supportRequests ?? []).map(normalizeSupportRequest);
+  const nextRequest = normalizeSupportRequest(request);
+  const supabaseClient = supabase;
 
-  if (!supabase) {
+  if (!supabaseClient) {
     mergeStoredState({
-      supportRequests: localRequests.map((entry) => (entry.id === requestId ? { ...entry, status } : entry)),
+      supportRequests: localRequests.map((entry) => (entry.id === nextRequest.id ? nextRequest : entry)),
     });
+    invalidateListCache('supportRequests');
     return;
   }
 
-  const { error } = await supabase
-    .from('support_requests')
-    .update({ status })
-    .eq('id', requestId);
+  const token = await getAccessToken();
+  if (token) {
+    const response = await fetch('/api/support-requests', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ action: 'update', request: nextRequest }),
+    });
+
+    if (response.ok) {
+      invalidateListCache('supportRequests');
+      return;
+    }
+  }
+
+  const updateRow = {
+    title: nextRequest.title,
+    detail: nextRequest.detail,
+    category: nextRequest.category,
+    status: nextRequest.status,
+    assigned_to_name: nextRequest.assignedToName ?? null,
+    assigned_to_email: nextRequest.assignedToEmail ?? null,
+    assigned_to_role: nextRequest.assignedToRole ?? null,
+    completed_at: nextRequest.completedAt ?? null,
+    completed_by: nextRequest.completedBy ?? null,
+    related_material_id: nextRequest.relatedMaterialId ?? null,
+  };
+
+  const { error } = await writeSupportRequestWithSchemaFallback(
+    async (row) => await supabaseClient.from('support_requests').update(row).eq('id', nextRequest.id),
+    updateRow,
+  );
 
   if (!error) {
+    invalidateListCache('supportRequests');
     return;
   }
 
   mergeStoredState({
-    supportRequests: localRequests.map((entry) => (entry.id === requestId ? { ...entry, status } : entry)),
+    supportRequests: localRequests.map((entry) => (entry.id === nextRequest.id ? nextRequest : entry)),
   });
+  invalidateListCache('supportRequests');
 }
 
 async function addAnnouncement(announcement: Announcement) {
@@ -1123,6 +1306,7 @@ async function addAnnouncement(announcement: Announcement) {
 
   if (!supabase) {
     mergeStoredState({ announcements: [announcement, ...localAnnouncements] });
+    invalidateListCache('announcements');
     return announcement;
   }
 
@@ -1147,9 +1331,11 @@ async function addAnnouncement(announcement: Announcement) {
 
   if (error || !data) {
     mergeStoredState({ announcements: [announcement, ...localAnnouncements] });
+    invalidateListCache('announcements');
     return announcement;
   }
 
+  invalidateListCache('announcements');
   return mapAnnouncementRow(data);
 }
 
@@ -1160,6 +1346,7 @@ async function deleteFeedbackEntry(feedbackId: string) {
     mergeStoredState({
       feedbackEntries: localFeedback.filter((entry) => entry.id !== feedbackId),
     });
+    invalidateListCache('feedbackEntries');
     return;
   }
 
@@ -1185,6 +1372,7 @@ async function deleteFeedbackEntry(feedbackId: string) {
   mergeStoredState({
     feedbackEntries: localFeedback.filter((entry) => entry.id !== feedbackId),
   });
+  invalidateListCache('feedbackEntries');
 }
 
 async function updateStaffMaterial(material: StaffMaterial) {
@@ -1194,6 +1382,7 @@ async function updateStaffMaterial(material: StaffMaterial) {
     mergeStoredState({
       staffMaterials: [material, ...localMaterials.filter((entry) => entry.id !== material.id)],
     });
+    invalidateListCache('staffMaterials');
     return material;
   }
 
@@ -1223,6 +1412,7 @@ async function updateStaffMaterial(material: StaffMaterial) {
       throw new Error(payload?.error ?? 'We could not update that document just now.');
     }
 
+    invalidateListCache('staffMaterials');
     return mapStaffMaterialRow(payload.material);
   }
 
@@ -1262,9 +1452,11 @@ async function updateStaffMaterial(material: StaffMaterial) {
     mergeStoredState({
       staffMaterials: [material, ...localMaterials.filter((entry) => entry.id !== material.id)],
     });
+    invalidateListCache('staffMaterials');
     return material;
   }
 
+  invalidateListCache('staffMaterials');
   return mapStaffMaterialRow(data);
 }
 
@@ -1274,6 +1466,7 @@ async function removeStaffMember(memberIdOrName: string) {
     mergeStoredState({
       staffMembers: localStaff.filter((member) => member.id !== memberIdOrName && member.name !== memberIdOrName),
     });
+    invalidateListCache('staffMembers', 'registeredUsers');
     return;
   }
 
@@ -1283,6 +1476,7 @@ async function removeStaffMember(memberIdOrName: string) {
     mergeStoredState({
       staffMembers: localStaff.filter((member) => member.id !== memberIdOrName && member.name !== memberIdOrName),
     });
+    invalidateListCache('staffMembers', 'registeredUsers');
     return;
   }
 
@@ -1299,6 +1493,8 @@ async function removeStaffMember(memberIdOrName: string) {
     const payload = (await response.json().catch(() => null)) as { error?: string } | null;
     throw new Error(payload?.error ?? 'We could not remove that staff account just now.');
   }
+
+  invalidateListCache('staffMembers', 'registeredUsers');
 }
 
 async function removeStaffMaterial(materialId: string) {
@@ -1308,15 +1504,20 @@ async function removeStaffMaterial(materialId: string) {
     mergeStoredState({
       staffMaterials: localMaterials.filter((material) => material.id !== materialId),
     });
+    invalidateListCache('staffMaterials');
     return;
   }
 
   const { error } = await supabase.from('staff_materials').delete().eq('id', materialId);
-  if (!error) return;
+  if (!error) {
+    invalidateListCache('staffMaterials');
+    return;
+  }
 
   mergeStoredState({
     staffMaterials: localMaterials.filter((material) => material.id !== materialId),
   });
+  invalidateListCache('staffMaterials');
 }
 
 async function removeRegisteredLearner(userId: string) {
@@ -1325,6 +1526,7 @@ async function removeRegisteredLearner(userId: string) {
     mergeStoredState({
       registeredUsers: localUsers.filter((entry) => entry.id !== userId),
     });
+    invalidateListCache('registeredUsers');
     return;
   }
 
@@ -1340,6 +1542,7 @@ async function removeRegisteredLearner(userId: string) {
     });
 
     if (response.ok) {
+      invalidateListCache('registeredUsers');
       return;
     }
 
@@ -1349,6 +1552,7 @@ async function removeRegisteredLearner(userId: string) {
 
   const localUsers = getLocalUsers();
   saveLocalUsers(localUsers.filter((entry) => entry.id !== userId));
+  invalidateListCache('registeredUsers');
 }
 
 async function syncLearnerProfile(
@@ -1379,6 +1583,7 @@ async function syncLearnerProfile(
       tutorialSeen: user.tutorialSeen ?? entry.tutorialSeen,
       lastLoginAt: new Date().toISOString(),
     }));
+    invalidateListCache('registeredUsers');
     return;
   }
 
@@ -1404,6 +1609,7 @@ async function syncLearnerProfile(
   );
 
   if (!error) {
+    invalidateListCache('registeredUsers');
     return;
   }
 
@@ -1423,6 +1629,7 @@ async function syncLearnerProfile(
     tutorialSeen: user.tutorialSeen ?? entry.tutorialSeen,
     lastLoginAt: new Date().toISOString(),
   }));
+  invalidateListCache('registeredUsers');
 }
 
 function buildCountrySummary(users: RegisteredUser[]) {
@@ -1481,7 +1688,7 @@ export const appRepository = {
   addAnnouncement,
   deleteFeedbackEntry,
   updateStaffMaterial,
-  updateSupportRequestStatus,
+  updateSupportRequest,
   removeStaffMember,
   removeStaffMaterial,
   removeRegisteredLearner,

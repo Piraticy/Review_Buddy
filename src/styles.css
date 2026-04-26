@@ -2248,6 +2248,39 @@ button:disabled {
   gap: 10px;
 }
 
+.support-request-card {
+  display: grid;
+  gap: 14px;
+  padding: 16px 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--theme-primary) 10%, white);
+}
+
+.support-request-card:last-child {
+  border-bottom: none;
+}
+
+.support-request-copy {
+  display: grid;
+  gap: 4px;
+}
+
+.support-request-actions {
+  display: grid;
+  gap: 10px;
+  justify-items: start;
+}
+
+.request-action-group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.compact-select {
+  min-width: 170px;
+}
+
 .field-span-2 {
   grid-column: span 2;
 }
@@ -2701,7 +2734,8 @@ button:disabled {
   }
 
   .summary-score-row,
-  .announcement-preview-meta {
+  .announcement-preview-meta,
+  .request-action-group {
     align-items: flex-start;
     flex-direction: column;
   }

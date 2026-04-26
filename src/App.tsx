@@ -203,7 +203,7 @@ type GeneratedAvatarOption = {
 const STORAGE_KEY = 'review-buddy-state';
 const INSTALL_DISMISS_KEY = 'review-buddy-install-dismissed';
 const APP_VERSION = '1.11.1';
-const APP_DISPLAY_VERSION = 'Beta';
+const APP_DISPLAY_VERSION = 'Updated often';
 const APP_CREATED_ON = 'March 26';
 const BIRTHDAY_MIN_DATE = new Date(1990, 0, 1);
 const BIRTHDAY_WEEKDAY_LABELS = ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'];
@@ -759,7 +759,7 @@ const ADMIN_TABS: { view: AdminView; label: string; icon: string }[] = [
   { view: 'staff', label: 'Staff', icon: '👥' },
   { view: 'learners', label: 'Learners', icon: '🧒' },
   { view: 'followups', label: 'Follow-ups', icon: '📌' },
-  { view: 'reports', label: 'Reports', icon: '📊' },
+  { view: 'reports', label: 'Progress', icon: '📊' },
 ];
 
 const FEEDBACK_CHOICES = [
@@ -877,7 +877,7 @@ function buildFeedbackSummary(entries: FeedbackEntry[]): FeedbackSummarySnapshot
       average: 0,
       lowCount: 0,
       headline: 'No feedback yet',
-      detail: 'Survey replies will appear here after learners share them.',
+      detail: 'Replies will appear here after learners start sharing them.',
       questionAverages: FEEDBACK_SUMMARY_QUESTIONS.map((question) => ({
         key: question.key,
         label: question.label,
@@ -942,8 +942,8 @@ function defaultAnnouncements(): Announcement[] {
   return [
     {
       id: 'welcome-board',
-      title: 'Welcome to Review Buddy beta',
-      message: 'Use the tutorial card, practise a subject, and share quick feedback so we can improve before full launch.',
+      title: 'Welcome to Review Buddy',
+      message: 'Use the guide, practise a subject, and share a quick note so we can keep improving this for learners and families.',
       audience: 'all',
       createdAt: new Date('2026-04-21T08:00:00.000Z').toISOString(),
     },
@@ -1054,18 +1054,18 @@ function reviewMaterialSafety(material: StaffMaterial) {
   const found = riskyWords.find((word) => combined.includes(word));
 
   if (found) {
-    return `Needs admin review carefully because it mentions "${found}" and may not suit children yet.`;
+    return `This needs a closer check because it mentions "${found}" and may not suit children yet.`;
   }
 
   if (material.resourceType === 'video') {
-    return 'Looks suitable for review. Confirm the video link is age-appropriate before approval.';
+    return 'This looks suitable so far. Please check that the video is right for the learner age group.';
   }
 
   if (material.resourceType === 'question-bank' && (material.questions?.length ?? 0) < 3) {
     return 'Safe tone so far, but add a few more questions before publishing to learners.';
   }
 
-  return 'Looks child-friendly and ready for admin approval after a quick final check.';
+  return 'This looks child-friendly and ready after one final check.';
 }
 
 function getMaterialStatusLabel(status?: StaffMaterial['approvalStatus']) {
@@ -1078,6 +1078,22 @@ function getMaterialStatusBadge(status?: StaffMaterial['approvalStatus']) {
   if (status === 'approved') return '✅ Approved';
   if (status === 'denied') return '🛠️ Changes needed';
   return '🕒 Pending';
+}
+
+function getSupportCategoryLabel(category: SupportRequest['category']) {
+  if (category === 'topic') return 'Topic help';
+  if (category === 'mentor') return 'Learning support';
+  if (category === 'technical') return 'Sign-in or device help';
+  if (category === 'material') return 'Learning material';
+  if (category === 'approval') return 'Waiting for review';
+  if (category === 'wellbeing') return 'Wellbeing';
+  return 'General help';
+}
+
+function getRoleLabel(role: LearnerProfile['role']) {
+  if (role === 'admin') return 'School team';
+  if (role === 'staff') return 'Staff';
+  return 'Learner';
 }
 
 function getProgressSnapshot(attempts: AttemptRecord[]) {
@@ -1116,23 +1132,23 @@ function isBirthdayToday(user: RegisteredUser) {
 function tutorialStepsFor(role: LearnerProfile['role']) {
   if (role === 'admin') {
     return [
-      'Open Staff to create staff accounts and share easy passwords.',
-      'Use Follow-ups to review uploads, requests, and approvals.',
-      'Use Reports for feedback trends, approvals, and activity.',
+      'Open Staff to create staff accounts and share simple first passwords.',
+      'Use Follow-ups to review uploads, requests, and anything that needs attention.',
+      'Use Progress to see feedback and daily activity.',
     ];
   }
 
   if (role === 'staff') {
     return [
-      'Upload a material and wait for admin approval before it reaches learners.',
+      'Send learning materials for review before they reach learners.',
       'Use Recent uploads to edit or remove your own work.',
-      'Open Review lounge only when you want to send your own feedback.',
+      'Open Share thoughts when you want to leave your own feedback.',
     ];
   }
 
   return [
     'Pick a subject from Learning home and open notes, video, quiz, or exam.',
-    'Use Request support to ask for topics, mentors, or technical help.',
+    'Use Ask for help when you want another topic, extra support, or sign-in help.',
     'Watch your streak and progress cards to see how you are improving.',
   ];
 }
@@ -1289,7 +1305,7 @@ function App() {
   const [submittedFeedbackKeys, setSubmittedFeedbackKeys] = useState<string[]>([]);
   const [supportRequests, setSupportRequests] = useState<SupportRequest[]>([]);
   const [announcements, setAnnouncements] = useState<Announcement[]>(defaultAnnouncements);
-  const [adminNotice, setAdminNotice] = useState('Choose a tool to manage staff, countries, or reports.');
+  const [adminNotice, setAdminNotice] = useState('Choose a page to manage people, countries, or progress.');
   const [staffDraft, setStaffDraft] = useState<StaffAccountDraft>(() => createInitialStaffAccountDraft());
   const [staffMaterialDraft, setStaffMaterialDraft] = useState<StaffMaterialDraft>(() =>
     createInitialMaterialDraft(createInitialProfile().countryCode),
@@ -1684,7 +1700,7 @@ function App() {
       ? [
           {
             title: 'Staff uploads waiting for approval',
-            detail: `${pendingMaterials.length} material${pendingMaterials.length === 1 ? '' : 's'} need admin review before publishing to learners.`,
+            detail: `${pendingMaterials.length} material${pendingMaterials.length === 1 ? '' : 's'} need a school team review before publishing to learners.`,
           },
         ]
       : []),
@@ -1699,8 +1715,8 @@ function App() {
     ...(trialLearners.length > 0
       ? [
           {
-            title: 'Trial learners to follow up',
-            detail: `${trialLearners.length} learner${trialLearners.length === 1 ? '' : 's'} in ${adminCountry.name} are using the trial plan and may need guidance.`,
+            title: 'More practice learners to follow up',
+            detail: `${trialLearners.length} learner${trialLearners.length === 1 ? '' : 's'} in ${adminCountry.name} are using the more practice plan and may need guidance.`,
           },
         ]
       : []),
@@ -2219,7 +2235,7 @@ function App() {
         try {
           const savedUser = await appRepository.registerLearner(newUser);
           setSigninIdentifier(savedUser.email);
-          setAdminNotice(`${savedUser.fullName} joined registered learners.`);
+          setAdminNotice(`${savedUser.fullName} is now on the learner list.`);
           setConfirmPassword('');
           enterWorkspace(savedUser);
           void refreshSharedState().catch(() => undefined);
@@ -2247,7 +2263,7 @@ function App() {
   }
 
   async function handleForgotPassword() {
-    setAuthNotice('Password reset is paused for now. Admin-created accounts should use the shared starter password from admin.');
+    setAuthNotice('Password reset is not open yet. If your account was created by the school team, use the first password they shared with you.');
   }
 
   function logout() {
@@ -2309,7 +2325,7 @@ function App() {
       !staffDraft.qualifications.trim() ||
       !staffDraft.eligibility.trim()
     ) {
-      setAdminNotice('Add name, role, support focus, qualifications, and eligibility before saving.');
+      setAdminNotice('Add a name, role, support area, qualifications, and status before saving.');
       return;
     }
 
@@ -2372,7 +2388,7 @@ function App() {
 
     setGeneratedStaffAccount({ name: fullName, email, password });
     setStaffDraft(createInitialStaffAccountDraft(staffDraft.countryCode));
-    setAdminNotice(`A new staff account was created for ${focusCountry.name}. Share the starter password with ${fullName}.`);
+    setAdminNotice(`A new staff account was created for ${focusCountry.name}. Share the first password with ${fullName}.`);
   }
 
   function updateStaffMaterialDraft<Key extends keyof StaffMaterialDraft>(key: Key, value: StaffMaterialDraft[Key]) {
@@ -2645,7 +2661,7 @@ function App() {
         uploadedBy: profile.fullName.trim() || DEFAULT_STAFF_USERNAME,
         createdAt: new Date().toISOString(),
       }),
-      adminReviewNote: profile.role === 'admin' ? 'Published by admin.' : 'Waiting for admin review.',
+      adminReviewNote: profile.role === 'admin' ? 'Published by the school team.' : 'Waiting for school team review.',
       reviewedAt: profile.role === 'admin' ? new Date().toISOString() : undefined,
       reviewedBy: profile.role === 'admin' ? profile.fullName : undefined,
     };
@@ -2665,7 +2681,7 @@ function App() {
     setAdminNotice(
       profile.role === 'admin'
         ? `${savedMaterial.title} was published for ${getFlagEmoji(savedMaterial.countryCode)} ${getCountryByCode(savedMaterial.countryCode).name}, ${savedMaterial.level}, ${savedMaterial.subject}.`
-        : `${savedMaterial.title} was sent to admin for approval before learners can see it.`,
+        : `${savedMaterial.title} was sent to the school team for review before learners can see it.`,
     );
   }
 
@@ -2724,7 +2740,7 @@ function App() {
       const savedRequest = await appRepository.addSupportRequest(nextRequest);
       setSupportRequests((current) => [savedRequest, ...current.filter((entry) => entry.id !== savedRequest.id)]);
       setSupportRequestDraft(createInitialSupportRequestDraft());
-      setAdminNotice('Your request was sent to admin follow-ups.');
+      setAdminNotice('Your request was sent to the school team.');
     } catch (error) {
       setAdminNotice(getErrorMessage(error, 'We could not send that request just now.'));
     }
@@ -2778,7 +2794,7 @@ function App() {
         reviewedBy: profile.fullName,
         adminReviewNote:
           status === 'approved'
-            ? 'Approved for learners after admin review.'
+            ? 'Approved for learners after a school team review.'
             : 'Please revise this upload and resubmit after edits.',
       });
 
@@ -2830,7 +2846,7 @@ function App() {
   function exportCountryReport() {
     const focusCountry = getCountryByCode(adminFocusCode);
     const reportLines = [
-      'Review Buddy report',
+      'Review Buddy summary',
       `Country: ${focusCountry.name}`,
       `Curriculum: ${focusCountry.curriculum}`,
       '',
@@ -2847,10 +2863,10 @@ function App() {
     const url = window.URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `review-buddy-${focusCountry.code.toLowerCase()}-report.txt`;
+    link.download = `review-buddy-${focusCountry.code.toLowerCase()}-summary.txt`;
     link.click();
     window.URL.revokeObjectURL(url);
-    setAdminNotice(`A country report was downloaded for ${focusCountry.name}.`);
+    setAdminNotice(`A country summary was downloaded for ${focusCountry.name}.`);
   }
 
   async function removeRegisteredLearner(userId: string) {
@@ -2939,7 +2955,7 @@ function App() {
     setFeedbackRatings(createEmptyFeedbackRatings());
     setFeedbackComment('');
     setAuthNotice('');
-    setAdminNotice('New feedback was added for admin review.');
+    setAdminNotice('New feedback was saved for the school team.');
     if (profile.role === 'staff') {
       setStaffView('lounge');
       return;
@@ -3214,7 +3230,7 @@ function App() {
             <div class="brand">
               <div class="mark">RB</div>
               <div>
-                <div class="eyebrow">Elite certificate</div>
+                <div class="eyebrow">Achievement certificate</div>
                 <h1>Review Buddy Achievement Certificate</h1>
               </div>
             </div>
@@ -3305,7 +3321,7 @@ function App() {
           <div>
             <p className="eyebrow">Install app</p>
             <h2>Add Review Buddy to this device</h2>
-            <p>Open learning faster from your home screen with fewer browser steps.</p>
+            <p>Open learning faster from your home screen with fewer steps.</p>
           </div>
           <div className="install-actions">
             <button type="button" className="ghost-button ghost-button-small" onClick={dismissInstallPrompt}>
@@ -3329,9 +3345,9 @@ function App() {
                 : screen === 'quiz'
                   ? quizState?.activeSubject ?? profile.subject
                   : screen === 'admin'
-                    ? 'Admin'
+                    ? 'School team'
                     : screen === 'staff'
-                      ? 'Staff lounge'
+                      ? 'Staff room'
                       : studentView === 'subject' && selectedSubject
                         ? selectedSubject
                         : `Welcome, ${firstName}`}
@@ -3373,7 +3389,7 @@ function App() {
                     {isRecoveryMode
                       ? 'Choose a fresh password and get back in.'
                       : authMode === 'signin'
-                        ? 'Use your email, learner account, or staff login.'
+                        ? 'Use your email or the sign-in name shared with you.'
                         : 'Create your learning space in a few quick steps.'}
                   </p>
                 </div>
@@ -3679,12 +3695,12 @@ function App() {
               {authMode === 'signin' && !isRecoveryMode && (
                 <>
                   <label>
-                    Email or username
+                    Email or sign-in name
                     <input
                       type="text"
                       value={signinIdentifier}
                       onChange={(event) => setSigninIdentifier(event.target.value)}
-                      placeholder="Email, Admin, or Staff"
+                      placeholder="Email or shared sign-in name"
                       required
                     />
                   </label>
@@ -3693,7 +3709,7 @@ function App() {
                     <span className="field-label-row">
                       <span>Password</span>
                       <button type="button" className="auth-inline-link" onClick={handleForgotPassword}>
-                        Password reset paused
+                        Need help signing in?
                       </button>
                     </span>
                     <div className="password-field">
@@ -3767,17 +3783,17 @@ function App() {
                     </select>
                   </label>
 
-                  <label>
-                    Plan
-                    <select
-                      value={profile.plan}
-                      onChange={(event) => updateProfile('plan', event.target.value as Plan)}
-                    >
-                      <option value="free">Free</option>
-                      <option value="trial">Trial</option>
-                      <option value="elite">Elite</option>
-                    </select>
-                  </label>
+                    <label>
+                      Plan
+                      <select
+                        value={profile.plan}
+                        onChange={(event) => updateProfile('plan', event.target.value as Plan)}
+                      >
+                        <option value="free">Starter</option>
+                        <option value="trial">More practice</option>
+                        <option value="elite">Full access</option>
+                      </select>
+                    </label>
                 </div>
               )}
 
@@ -3928,9 +3944,9 @@ function App() {
                         value={profile.plan}
                         onChange={(event) => updateProfile('plan', event.target.value as Plan)}
                       >
-                        <option value="free">Free</option>
-                        <option value="trial">Elite Trial</option>
-                        <option value="elite">Elite</option>
+                        <option value="free">Starter</option>
+                        <option value="trial">More practice</option>
+                        <option value="elite">Full access</option>
                       </select>
                     </label>
 
@@ -3976,11 +3992,11 @@ function App() {
                 <section className="side-card accent-side-card">
                   <div className="panel-heading">
                     <p className="eyebrow">Quick feedback</p>
-                    <h2>Tell us how it feels</h2>
-                    <p>One short survey helps us make lessons and pages better.</p>
+                    <h2>Tell us what you think</h2>
+                    <p>One short check-in helps us make lessons and pages better.</p>
                   </div>
                   <button type="button" className="primary-button" onClick={openFeedbackPage}>
-                    Open feedback
+                    Share thoughts
                   </button>
                 </section>
 
@@ -3988,7 +4004,7 @@ function App() {
                   <div className="panel-heading">
                     <p className="eyebrow">Announcement board</p>
                     <h2>Latest updates</h2>
-                    <p>Breaks, new versions, and quick messages from the admin team.</p>
+                    <p>Breaks, new changes, and quick messages from the school team.</p>
                   </div>
                   <div className="history-list">
                     {visibleAnnouncements.length > 0 ? visibleAnnouncements.slice(0, 3).map((announcement) => (
@@ -3999,7 +4015,7 @@ function App() {
                         </div>
                       </article>
                     )) : (
-                      <p className="empty-state">Announcements will appear here when the admin team posts them.</p>
+                      <p className="empty-state">Announcements will appear here when the school team posts them.</p>
                     )}
                   </div>
                 </section>
@@ -4054,7 +4070,7 @@ function App() {
                         rows={3}
                         value={supportRequestDraft.detail}
                         onChange={(event) => setSupportRequestDraft((current) => ({ ...current, detail: event.target.value }))}
-                        placeholder="Tell admin what would help you next."
+                        placeholder="Tell the school team what would help you next."
                       />
                     </label>
                   </div>
@@ -4108,8 +4124,8 @@ function App() {
                     </button>
                     <button type="button" className="subject-card" onClick={openFeedbackPage}>
                       <span className="subject-icon">💡</span>
-                      <strong>{hasSubmittedFeedback ? 'Feedback sent' : 'Feedback survey'}</strong>
-                      <span>{hasSubmittedFeedback ? 'Thanks for sharing your review.' : 'Quick rating and comment.'}</span>
+                      <strong>{hasSubmittedFeedback ? 'Thoughts shared' : 'Share your thoughts'}</strong>
+                      <span>{hasSubmittedFeedback ? 'Thanks for sharing your thoughts.' : 'Quick rating and comment.'}</span>
                     </button>
                     <button type="button" className="subject-card" onClick={() => startQuiz(activeStudentSubject, 'quiz')}>
                       <span className="subject-icon">📝</span>
@@ -4166,7 +4182,7 @@ function App() {
                   <div className="panel-heading">
                     <p className="eyebrow">Lesson request</p>
                     <h2>Need extra help?</h2>
-                    <p>Ask admin for a mentor, another topic, or a clearer lesson.</p>
+                    <p>Ask the school team for extra support, another topic, or a clearer lesson.</p>
                   </div>
                   <div className="field-grid">
                     <label className="field-span-2">
@@ -4174,7 +4190,7 @@ function App() {
                       <input
                         value={supportRequestDraft.title}
                         onChange={(event) => setSupportRequestDraft((current) => ({ ...current, title: event.target.value }))}
-                        placeholder="Example: Need fractions mentor"
+                        placeholder="Example: Need more help with fractions"
                       />
                     </label>
                     <label className="field-span-2">
@@ -4183,7 +4199,7 @@ function App() {
                         rows={3}
                         value={supportRequestDraft.detail}
                         onChange={(event) => setSupportRequestDraft((current) => ({ ...current, detail: event.target.value }))}
-                        placeholder="Tell admin what topic or support you want."
+                        placeholder="Tell the school team what topic or support you want."
                       />
                     </label>
                   </div>
@@ -4429,7 +4445,7 @@ function App() {
                   <div>
                     <p className="eyebrow">Review page</p>
                     <h2>{reviewSnapshot?.subject ?? activeStudentSubject}</h2>
-                    <p>Elite learners can revisit each answer and compare it with the correct one.</p>
+                    <p>Full access learners can revisit each answer and compare it with the correct one.</p>
                   </div>
                   <div className="banner-actions">
                     <button
@@ -4499,7 +4515,7 @@ function App() {
               <section className="dashboard-main">
                 <section className="welcome-banner">
                   <div>
-                    <p className="eyebrow">Feedback survey</p>
+                    <p className="eyebrow">Share your thoughts</p>
                     <h2>Tell us how this page feels</h2>
                     <p>{getFlagEmoji(country.code)} {activeStudentSubject} · {profile.level}</p>
                   </div>
@@ -4519,14 +4535,14 @@ function App() {
 
                 <section className="setup-panel feedback-panel">
                   <div className="panel-heading">
-                    <p className="eyebrow">Quick survey</p>
-                    <h2>{hasSubmittedFeedback ? 'Thanks for your review' : 'Rate this page'}</h2>
-                    <p>{hasSubmittedFeedback ? 'Your review is already saved for this account.' : 'Five quick ratings and one optional comment.'}</p>
+                    <p className="eyebrow">Quick check-in</p>
+                    <h2>{hasSubmittedFeedback ? 'Thanks for your thoughts' : 'Rate this page'}</h2>
+                    <p>{hasSubmittedFeedback ? 'Your thoughts are already saved for this account.' : 'Five quick ratings and one optional comment.'}</p>
                   </div>
                   {hasSubmittedFeedback ? (
                     <article className="feedback-card">
-                      <strong>Review received.</strong>
-                      <p>This temporary survey stays hidden after one submission so the same account does not send it twice.</p>
+                      <strong>Thoughts received.</strong>
+                      <p>This short check-in closes after one reply so the same account does not send it twice.</p>
                       <div className="sample-buttons">
                         <button type="button" className="primary-button" onClick={() => setStudentView('subject')}>
                           Back to subject
@@ -4563,7 +4579,7 @@ function App() {
                       {authNotice && <p className="auth-notice auth-notice-inline">{authNotice}</p>}
                       <div className="sample-buttons">
                         <button type="button" className="primary-button" onClick={submitFeedback}>
-                          Send feedback
+                          Send my thoughts
                         </button>
                         <button type="button" className="ghost-button" onClick={() => setStudentView('subject')}>
                           Not now
@@ -4627,7 +4643,7 @@ function App() {
             <section className="welcome-banner">
               <div>
                 <p className="eyebrow">Staff review</p>
-                <h2>Tell us how the staff lounge feels</h2>
+                <h2>Tell us how the staff room feels</h2>
                 <p>{getFlagEmoji(country.code)} {country.name} · {profile.subject}</p>
               </div>
               <div className="banner-actions">
@@ -4642,14 +4658,14 @@ function App() {
 
             <section className="setup-panel feedback-panel">
               <div className="panel-heading">
-                <p className="eyebrow">Quick survey</p>
-                <h2>Staff and learner review</h2>
-                <p>Five short ratings and one optional comment. One review per account.</p>
+                <p className="eyebrow">Quick check-in</p>
+                <h2>Staff and learner thoughts</h2>
+                <p>Five short ratings and one optional comment. One reply per account.</p>
               </div>
               {hasSubmittedFeedback ? (
                 <article className="feedback-card">
                   <strong>Thanks for sharing.</strong>
-                  <p>Your review is already saved, so this survey now stays closed for your account.</p>
+                  <p>Your thoughts are already saved, so this check-in now stays closed for your account.</p>
                   <div className="sample-buttons">
                     <button type="button" className="primary-button" onClick={() => setStaffView('lounge')}>
                       Back to lounge
@@ -4686,7 +4702,7 @@ function App() {
                   {authNotice && <p className="auth-notice auth-notice-inline">{authNotice}</p>}
                   <div className="sample-buttons">
                     <button type="button" className="primary-button" onClick={submitFeedback}>
-                      Send review
+                      Send my thoughts
                     </button>
                     <button type="button" className="ghost-button" onClick={() => setStaffView('lounge')}>
                       Not now
@@ -4698,12 +4714,12 @@ function App() {
           </section>
 
           <aside className="dashboard-side">
-            <section className="side-card accent-side-card">
-              <div className="panel-heading">
-                <p className="eyebrow">Staff note</p>
-                <h2>Your review goes to admin only</h2>
-                <p>Staff can submit feedback, but only admin can read the full shared feedback board.</p>
-              </div>
+                <section className="side-card accent-side-card">
+                  <div className="panel-heading">
+                    <p className="eyebrow">Staff note</p>
+                    <h2>Your thoughts go to the school team</h2>
+                    <p>Staff can share feedback, and the school team can read the full shared feedback board.</p>
+                  </div>
               <div className="history-list">
                 {mySupportRequests.length > 0 ? mySupportRequests.map((entry) => (
                   <article key={entry.id} className="history-row">
@@ -4724,13 +4740,13 @@ function App() {
           <section className="dashboard-main">
             <section className="welcome-banner">
                   <div>
-                    <p className="eyebrow">Staff lounge</p>
+                <p className="eyebrow">Staff lounge</p>
                     <h2>{firstName}, support today&apos;s learners</h2>
                     <p>{getFlagEmoji(country.code)} {country.name} · {profile.subject}</p>
                   </div>
               <div className="banner-actions">
                 <button type="button" className="ghost-button" onClick={openFeedbackPage}>
-                  Review lounge
+                  Share thoughts
                 </button>
                 <button type="button" className="primary-button action-button-prominent" onClick={logout}>
                   Sign out
@@ -4760,8 +4776,8 @@ function App() {
             <section className="setup-panel">
               <div className="panel-heading">
                 <p className="eyebrow">Today</p>
-                <h2>Staff workspace</h2>
-                <p>Keep an eye on announcements, activity, and admin decisions on your uploads.</p>
+                <h2>Staff room</h2>
+                <p>Keep an eye on announcements, activity, and school team decisions on your materials.</p>
               </div>
               <div className="history-list">
                 {visibleAnnouncements.length > 0 ? visibleAnnouncements.slice(0, 3).map((entry) => (
@@ -4772,16 +4788,16 @@ function App() {
                     </div>
                   </article>
                 )) : (
-                  <p className="empty-state">Announcements and admin updates will appear here.</p>
+                  <p className="empty-state">Announcements and school team updates will appear here.</p>
                 )}
               </div>
             </section>
 
             <section className="setup-panel">
               <div className="panel-heading">
-                <p className="eyebrow">Staff archive</p>
-                <h2>{staffMaterialDraft.editingId ? 'Edit learner material' : 'Send material for approval'}</h2>
-                <p>Choose the right country, class, subject, and content type, then send it to admin review.</p>
+                <p className="eyebrow">Your materials</p>
+                <h2>{staffMaterialDraft.editingId ? 'Edit learner material' : 'Send material for review'}</h2>
+                <p>Choose the right country, class, subject, and content type, then send it to the school team for a final check.</p>
               </div>
               <div className="field-grid">
                 <label>
@@ -4998,7 +5014,7 @@ function App() {
               </div>
               <div className="banner-actions">
                 <button type="button" className="primary-button" onClick={addStaffMaterial}>
-                  {staffMaterialDraft.editingId ? 'Save changes' : 'Send to admin'}
+                  {staffMaterialDraft.editingId ? 'Save changes' : 'Send for review'}
                 </button>
                 {staffMaterialDraft.editingId && (
                   <button
@@ -5048,19 +5064,19 @@ function App() {
                     </div>
                   </article>
                 )) : (
-                  <p className="empty-state">Your uploads will appear here after you send material to admin.</p>
+                  <p className="empty-state">Your uploads will appear here after you send material for review.</p>
                 )}
               </div>
             </section>
           </section>
 
           <aside className="dashboard-side">
-            <section className="side-card accent-side-card">
-              <div className="panel-heading">
-                <p className="eyebrow">Upload performance</p>
-                <h2>{myStaffMaterials.filter((material) => material.approvalStatus === 'approved').length} published</h2>
-                <p>Approved uploads are visible to learners. Pending and denied items stay with staff and admin only.</p>
-              </div>
+                <section className="side-card accent-side-card">
+                  <div className="panel-heading">
+                    <p className="eyebrow">Your materials</p>
+                    <h2>{myStaffMaterials.filter((material) => material.approvalStatus === 'approved').length} published</h2>
+                    <p>Approved items are visible to learners. Waiting and returned items stay with staff and the school team only.</p>
+                  </div>
               <div className="mini-stat-list">
                 <article className="mini-stat-card">
                   <span>🕒</span>
@@ -5076,12 +5092,12 @@ function App() {
                 </article>
               </div>
               <button type="button" className="ghost-button" onClick={openFeedbackPage}>
-                {hasSubmittedFeedback ? 'Review sent' : 'Leave a review'}
+                {hasSubmittedFeedback ? 'Thoughts sent' : 'Share thoughts'}
               </button>
             </section>
             <section className="side-card">
               <div className="panel-heading">
-                <p className="eyebrow">Request admin help</p>
+                <p className="eyebrow">Ask the school team</p>
                 <h2>Need support?</h2>
                 <p>Ask for upload approval help, learner follow-up, or topic planning.</p>
               </div>
@@ -5100,7 +5116,7 @@ function App() {
                     rows={3}
                     value={supportRequestDraft.detail}
                     onChange={(event) => setSupportRequestDraft((current) => ({ ...current, detail: event.target.value }))}
-                    placeholder="Tell admin what help you need next."
+                    placeholder="Tell the school team what help you need next."
                   />
                 </label>
               </div>
@@ -5276,30 +5292,35 @@ function App() {
 
                 <section className="setup-panel">
                   <div className="panel-heading">
-                    <p className="eyebrow">Admin pages</p>
+                    <p className="eyebrow">School team pages</p>
                     <h2>Open a page</h2>
+                    <p>Choose the area you want to work in next.</p>
                   </div>
-                  <AdminTabs active={adminView} onChange={openAdminView} />
                   <div className="option-grid">
                     <button type="button" className="subject-card" onClick={() => openAdminView('countries')}>
                       <span className="subject-icon">🌍</span>
                       <strong>Countries</strong>
+                      <span>See where learners and families have joined.</span>
                     </button>
                     <button type="button" className="subject-card" onClick={() => openAdminView('staff')}>
                       <span className="subject-icon">👥</span>
                       <strong>Staff</strong>
+                      <span>Create accounts and manage your school team.</span>
                     </button>
                     <button type="button" className="subject-card" onClick={() => openAdminView('learners')}>
                       <span className="subject-icon">🧾</span>
                       <strong>Learners</strong>
+                      <span>Search learner records and recent sign-ups.</span>
                     </button>
                     <button type="button" className="subject-card" onClick={() => openAdminView('followups')}>
                       <span className="subject-icon">📌</span>
                       <strong>Follow-ups</strong>
+                      <span>Open the list of tasks and requests that need attention.</span>
                     </button>
                     <button type="button" className="subject-card" onClick={() => openAdminView('reports')}>
                       <span className="subject-icon">📊</span>
-                      <strong>Reports</strong>
+                      <strong>Progress</strong>
+                      <span>Check ratings, activity, and overall learning progress.</span>
                     </button>
                   </div>
                 </section>
@@ -5332,7 +5353,7 @@ function App() {
                 </section>
                 <section className="side-card">
                   <div className="panel-heading">
-                    <p className="eyebrow">AI summary</p>
+                    <p className="eyebrow">Quick summary</p>
                     <h2>Feedback overview</h2>
                     <p>See how learners rated each question.</p>
                   </div>
@@ -5423,7 +5444,7 @@ function App() {
               <section className="dashboard-main">
                 <section className="welcome-banner">
                   <div>
-                    <p className="eyebrow">Admin page</p>
+                    <p className="eyebrow">School team page</p>
                     <h2>Registered countries</h2>
                     <p>Pick a flag.</p>
                   </div>
@@ -5489,9 +5510,9 @@ function App() {
               <section className="dashboard-main">
                 <section className="welcome-banner">
                   <div>
-                    <p className="eyebrow">Admin page</p>
+                    <p className="eyebrow">School team page</p>
                     <h2>Staff</h2>
-                    <p>Team.</p>
+                    <p>Create helpers and teachers.</p>
                   </div>
                   <div className="banner-actions">
                     <button type="button" className="ghost-button" onClick={() => openAdminView('overview')}>
@@ -5609,7 +5630,7 @@ function App() {
                         </div>
                       </article>
                     )) : (
-                      <p className="empty-state">Add staff records here to start building your live admin team.</p>
+                      <p className="empty-state">Add staff records here to start building your school team.</p>
                     )}
                   </div>
                 </section>
@@ -5619,7 +5640,7 @@ function App() {
                 <section className="side-card">
                   <div className="panel-heading">
                     <p className="eyebrow">New account</p>
-                    <h2>Starter password</h2>
+                    <h2>First password</h2>
                   </div>
                   {generatedStaffAccount ? (
                     <div className="history-list">
@@ -5627,30 +5648,30 @@ function App() {
                         <div>
                           <strong>{generatedStaffAccount.name}</strong>
                           <span>{generatedStaffAccount.email}</span>
-                          <span>Password: {generatedStaffAccount.password}</span>
+                          <span>Password to share: {generatedStaffAccount.password}</span>
                         </div>
                       </article>
                     </div>
                   ) : (
-                    <p className="empty-state">Create a staff account to generate an easy starter password.</p>
+                    <p className="empty-state">Create a staff account to get a simple first password.</p>
                   )}
                 </section>
                 <section className="side-card">
                   <div className="panel-heading">
-                    <p className="eyebrow">Recommendations</p>
-                    <h2>Admin checklist</h2>
+                    <p className="eyebrow">Helpful reminders</p>
+                    <h2>School team checklist</h2>
                   </div>
                   <div className="history-list">
                     <article className="history-row">
                       <div>
-                        <strong>Use role-based focus</strong>
-                        <span>Set a clear subject or country focus so large test groups stay easy to manage.</span>
+                        <strong>Give each person a clear focus</strong>
+                        <span>Set a clear subject or country focus so large groups stay easy to support.</span>
                       </div>
                     </article>
                     <article className="history-row">
                       <div>
-                        <strong>Refresh starter passwords later</strong>
-                        <span>Keep generated passwords easy for onboarding, then rotate them in a later auth update.</span>
+                        <strong>Change first passwords later</strong>
+                        <span>Start with easy-to-share passwords, then replace them with private ones later.</span>
                       </div>
                     </article>
                   </div>
@@ -5662,9 +5683,9 @@ function App() {
               <section className="dashboard-main">
                 <section className="welcome-banner">
                   <div>
-                    <p className="eyebrow">Admin page</p>
+                    <p className="eyebrow">School team page</p>
                     <h2>Registered learners</h2>
-                    <p>Live sign-ups.</p>
+                    <p>People who have joined.</p>
                   </div>
                   <div className="banner-actions">
                     <button type="button" className="ghost-button" onClick={() => openAdminView('overview')}>
@@ -5763,9 +5784,9 @@ function App() {
               <section className="dashboard-main">
                 <section className="welcome-banner">
                   <div>
-                    <p className="eyebrow">Admin page</p>
-                    <h2>Follow-up queue</h2>
-                    <p>Support list.</p>
+                    <p className="eyebrow">School team page</p>
+                    <h2>Follow-up list</h2>
+                    <p>Things that need attention.</p>
                   </div>
                   <div className="banner-actions">
                     <button type="button" className="ghost-button" onClick={() => openAdminView('overview')}>
@@ -5776,17 +5797,17 @@ function App() {
 
                 <section className="setup-panel">
                   <div className="panel-heading">
-                    <p className="eyebrow">Queue actions</p>
+                    <p className="eyebrow">To-do actions</p>
                     <h2>Follow-ups</h2>
                     {adminNotice && <p>{adminNotice}</p>}
                   </div>
                   <AdminTabs active={adminView} onChange={openAdminView} />
                   <div className="banner-actions">
                     <button type="button" className="ghost-button ghost-button-small" onClick={addCountryFollowUp}>
-                      Add follow-up
+                      Add reminder
                     </button>
                     <button type="button" className="ghost-button ghost-button-small" onClick={exportCountryReport}>
-                      Export report
+                      Save summary
                     </button>
                   </div>
                   <div className="history-list">
@@ -5794,7 +5815,7 @@ function App() {
                       <article key={item.id} className="history-row">
                         <div>
                           <strong>{item.title}</strong>
-                          <span>Upload approval · {item.uploadedBy} · {getFlagEmoji(item.countryCode)} {item.subject}</span>
+                          <span>Waiting for review · {item.uploadedBy} · {getFlagEmoji(item.countryCode)} {item.subject}</span>
                           <span>{item.aiReviewSummary}</span>
                         </div>
                         <div className="row-actions">
@@ -5819,7 +5840,7 @@ function App() {
                       <article key={item.id} className="history-row">
                         <div>
                           <strong>{item.title}</strong>
-                          <span>{item.createdByRole} · {item.category} · {getFlagEmoji(item.countryCode)} {getCountryByCode(item.countryCode).name}</span>
+                          <span>{getRoleLabel(item.createdByRole)} · {getSupportCategoryLabel(item.category)} · {getFlagEmoji(item.countryCode)} {getCountryByCode(item.countryCode).name}</span>
                           <span>{item.detail}</span>
                         </div>
                         <div className="row-actions">
@@ -5835,7 +5856,7 @@ function App() {
                             className="ghost-button ghost-button-small"
                             onClick={() => resolveSupportRequest(item.id, 'resolved')}
                           >
-                            Resolve
+                            Done
                           </button>
                         </div>
                       </article>
@@ -5899,9 +5920,9 @@ function App() {
               <section className="dashboard-main">
                 <section className="welcome-banner">
                   <div>
-                    <p className="eyebrow">Admin page</p>
-                    <h2>Reports</h2>
-                    <p>Testing feedback, approvals, and learner activity in one place.</p>
+                    <p className="eyebrow">School team page</p>
+                    <h2>Progress</h2>
+                    <p>Ratings, reviews, and learner activity in one place.</p>
                   </div>
                   <div className="banner-actions">
                     <button type="button" className="ghost-button" onClick={() => openAdminView('overview')}>
@@ -5912,8 +5933,8 @@ function App() {
 
                 <section className="setup-panel">
                   <div className="panel-heading">
-                    <p className="eyebrow">Reporting center</p>
-                    <h2>Testing and learning insights</h2>
+                    <p className="eyebrow">Progress center</p>
+                    <h2>Learning and support insights</h2>
                     {adminNotice && <p>{adminNotice}</p>}
                   </div>
                   <AdminTabs active={adminView} onChange={openAdminView} />
@@ -5937,7 +5958,7 @@ function App() {
                   </div>
                   <div className="banner-actions">
                     <button type="button" className="ghost-button ghost-button-small" onClick={exportCountryReport}>
-                      Download report
+                      Download summary
                     </button>
                   </div>
                   <div className="country-groups">
@@ -5986,7 +6007,7 @@ function App() {
                           </article>
                         ))}
                         {learnerFeedbackEntries.filter((entry) => entry.comment).length === 0 ? (
-                          <p className="empty-state">Comment feedback will appear here once testers start sharing notes.</p>
+                          <p className="empty-state">Comments will appear here once people start sharing notes.</p>
                         ) : null}
                       </div>
                     </section>
@@ -6024,7 +6045,7 @@ function App() {
                       <article key={item.id} className="history-row">
                         <div>
                           <strong>{item.title}</strong>
-                          <span>{item.createdByRole} · {item.category}</span>
+                          <span>{getRoleLabel(item.createdByRole)} · {getSupportCategoryLabel(item.category)}</span>
                         </div>
                         <strong>{item.status}</strong>
                       </article>
@@ -6037,7 +6058,7 @@ function App() {
 
                 <section className="side-card">
                   <div className="panel-heading">
-                    <p className="eyebrow">AI summary</p>
+                    <p className="eyebrow">Quick summary</p>
                     <h2>Question overview</h2>
                     <p>{learnerFeedbackSummary.detail}</p>
                   </div>
@@ -6080,7 +6101,7 @@ function App() {
 
                 <section className="side-card">
                   <div className="panel-heading">
-                    <p className="eyebrow">Testing overview</p>
+                    <p className="eyebrow">Learning plans</p>
                     <h2>Plan mix</h2>
                   </div>
                   <div className="history-list">
@@ -6107,7 +6128,7 @@ function App() {
             <div className="panel-heading">
               <p className="eyebrow">Welcome guide</p>
               <h2>How to use Review Buddy</h2>
-              <p>{profile.role === 'student' ? 'A quick tour for new learners.' : profile.role === 'staff' ? 'A quick tour for staff.' : 'A quick tour for admin.'}</p>
+              <p>{profile.role === 'student' ? 'A quick tour for new learners.' : profile.role === 'staff' ? 'A quick tour for staff.' : 'A quick tour for the school team.'}</p>
             </div>
             <div className="history-list">
               {tutorialStepsFor(profile.role).map((step) => (
@@ -6129,15 +6150,15 @@ function App() {
 
       {showVersionPrompt && (
         <div className="modal-backdrop" role="presentation">
-          <section className="modal-card" role="dialog" aria-label="Version update">
+          <section className="modal-card" role="dialog" aria-label="Latest changes">
             <div className="panel-heading">
-              <p className="eyebrow">New version</p>
-              <h2>Your app is ready to update</h2>
+              <p className="eyebrow">Latest changes</p>
+              <h2>Refresh to see the newest updates</h2>
               <p>Refresh now to get the latest improvements and fixes.</p>
             </div>
             <div className="sample-buttons">
               <button type="button" className="primary-button" onClick={() => window.location.reload()}>
-                Refresh to update
+                Refresh now
               </button>
               <button type="button" className="ghost-button" onClick={dismissVersionPrompt}>
                 Later
@@ -6149,17 +6170,17 @@ function App() {
 
       {showTermsModal && (
         <div className="modal-backdrop" role="presentation">
-          <section className="modal-card modal-card-wide" role="dialog" aria-label="Terms and conditions">
+          <section className="modal-card modal-card-wide" role="dialog" aria-label="How Review Buddy should be used">
             <div className="terms-hero">
               <div className="panel-heading">
-                <p className="eyebrow">Terms and conditions</p>
-                <h2>Review Buddy beta terms</h2>
-                <p>Updated {TERMS_UPDATED_ON}. These terms explain how Review Buddy should be used during this beta period.</p>
+                <p className="eyebrow">How Review Buddy should be used</p>
+                <h2>Important guidance for families and schools</h2>
+                <p>Updated {TERMS_UPDATED_ON}. These notes explain how Review Buddy should be used right now.</p>
               </div>
               <div className="terms-hero-badges">
-                <span className="mini-badge">Beta service</span>
-                <span className="mini-badge">Education support</span>
-                <span className="mini-badge">Admin-reviewed content</span>
+                <span className="mini-badge">Early access</span>
+                <span className="mini-badge">Learning support</span>
+                <span className="mini-badge">Checked by the school team</span>
               </div>
             </div>
             <div className="terms-section-grid">
@@ -6168,20 +6189,20 @@ function App() {
                 <span>Review Buddy provides practice, revision, progress guidance, and learning support. It does not replace a school, teacher judgment, therapy, legal advice, medical care, or emergency services.</span>
               </article>
               <article className="terms-section-card">
-                <strong>Beta testing notice</strong>
-                <span>This is a live beta environment. Features, designs, scoring models, approvals, AI summaries, and material flows may change as the product improves.</span>
+                <strong>Early access notice</strong>
+                <span>This is an early version of Review Buddy. Pages, scores, approvals, quick summaries, and learning materials may change as we keep improving it.</span>
               </article>
               <article className="terms-section-card">
                 <strong>Account responsibility</strong>
-                <span>Users are responsible for keeping their sign-in details private, using approved access only, and notifying the admin team if they believe an account has been used incorrectly.</span>
+                <span>Users are responsible for keeping their sign-in details private, using approved access only, and notifying the school team if they believe an account has been used incorrectly.</span>
               </article>
               <article className="terms-section-card">
                 <strong>Content moderation and approvals</strong>
-                <span>Staff uploads, learner requests, announcements, and feedback may be reviewed, delayed, edited, denied, or removed when needed to keep the platform safe and appropriate.</span>
+                <span>Staff uploads, learner requests, announcements, and feedback may be reviewed, delayed, edited, denied, or removed when needed to keep the app safe and appropriate.</span>
               </article>
               <article className="terms-section-card">
                 <strong>Data and privacy</strong>
-                <span>Profile details, progress scores, birthdays, uploads, requests, and feedback may be stored and used to operate the service, improve product quality, and support onboarding and learning decisions.</span>
+                <span>Profile details, progress scores, birthdays, uploads, requests, and feedback may be stored and used to keep the app running well, improve quality, and support learning decisions.</span>
               </article>
               <article className="terms-section-card">
                 <strong>Children and guardian awareness</strong>
@@ -6197,20 +6218,20 @@ function App() {
               </article>
               <article className="terms-section-card">
                 <strong>Availability and product changes</strong>
-                <span>We may update, pause, limit, or remove parts of the platform at any time during beta use, including plans, features, and country-specific learning tools.</span>
+                <span>We may update, pause, limit, or remove parts of the app at any time while it is still growing, including plans, features, and country-specific learning tools.</span>
               </article>
               <article className="terms-section-card">
                 <strong>Limitation of liability</strong>
-                <span>To the fullest extent allowed, Review Buddy is provided as-is during beta use without guarantees of uninterrupted access, perfect accuracy, or suitability for every classroom, learner, or institution.</span>
+                <span>To the fullest extent allowed, Review Buddy is provided as it stands today without guarantees of nonstop access, perfect accuracy, or a perfect fit for every classroom, learner, or school.</span>
               </article>
               <article className="terms-section-card">
-                <strong>Policy updates</strong>
-                <span>Continued use after an update means the latest beta terms apply. Important changes may also be shared in announcements or in the update message inside the app.</span>
+                <strong>Changes to these notes</strong>
+                <span>Continuing to use Review Buddy after an update means the latest notes apply. Important changes may also be shared in announcements or update messages inside the app.</span>
               </article>
             </div>
             <div className="sample-buttons">
               <button type="button" className="primary-button" onClick={() => setShowTermsModal(false)}>
-                Close terms
+                Close
               </button>
             </div>
           </section>
@@ -6223,8 +6244,8 @@ function App() {
           <p>{MOTTO}</p>
         </div>
         <div className="footer-release">
-          <p className="eyebrow">Release</p>
-          <strong>Review Buddy Beta</strong>
+          <p className="eyebrow">About this app</p>
+          <strong>Review Buddy</strong>
           <div className="footer-release-row">
             <span>{APP_DISPLAY_VERSION}</span>
             <span className="footer-dot" aria-hidden="true">•</span>
@@ -6233,7 +6254,7 @@ function App() {
         </div>
         <div className="footer-actions">
           <button type="button" className="footer-link-button footer-link-button-strong" onClick={() => setShowTermsModal(true)}>
-            Terms &amp; conditions
+            Important guidance
           </button>
         </div>
       </footer>

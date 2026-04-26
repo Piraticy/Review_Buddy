@@ -3,6 +3,7 @@ import {
   makeUniqueUsername,
   parseJsonBody,
   setCorsHeaders,
+  writeLearnerProfileWithSchemaFallback,
   type VercelRequest,
   type VercelResponse,
 } from './supabase-server.js';
@@ -141,7 +142,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     last_login_at: new Date().toISOString(),
   };
 
-  const { error: upsertError } = await supabaseAdmin.from('learner_profiles').upsert(profileRow);
+  const { error: upsertError } = await writeLearnerProfileWithSchemaFallback(
+    (row) => supabaseAdmin.from('learner_profiles').upsert(row),
+    profileRow,
+  );
 
   if (upsertError) {
     await supabaseAdmin.auth.admin.deleteUser(createdUserId).catch(() => undefined);

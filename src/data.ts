@@ -1660,29 +1660,29 @@ export function getLeaderboard(subject: string, profile?: LearnerProfile, result
 }
 
 export function getPlanLabel(plan: Plan) {
-  if (plan === 'free') return 'Free';
-  if (plan === 'trial') return 'Elite Trial';
-  return 'Elite';
+  if (plan === 'free') return 'Starter';
+  if (plan === 'trial') return 'More practice';
+  return 'Full access';
 }
 
 export function getPlanDetails(plan: Plan) {
   if (plan === 'free') {
     return {
-      badge: 'Free access',
-      description: 'Open to everyone during live testing, with shorter practice sets for daily learning.',
+      badge: 'Starter access',
+      description: 'A simple start with shorter practice sets for daily learning.',
     };
   }
 
   if (plan === 'trial') {
     return {
-      badge: 'Trial access',
-      description: 'Also open during live testing, with longer quiz sets and a richer review flow.',
+      badge: 'More practice',
+      description: 'Longer practice sets with more room to review answers.',
     };
   }
 
   return {
-    badge: 'Elite access',
-    description: 'Also open during live testing, with the full review page and certificate tools.',
+    badge: 'Full access',
+    description: 'Full answer review, longer practice, and certificate tools.',
   };
 }
 
@@ -1698,15 +1698,15 @@ export function getAdminMetrics(countryCode: string) {
     weeklyGrowth: 14,
     country,
     liveActivity: [
-      { learner: 'Asha M.', subject: 'Mathematics', status: 'Working now', plan: 'Elite', support: 'On track', staff: 'Mr. James' },
+      { learner: 'Asha M.', subject: 'Mathematics', status: 'Working now', plan: 'Full access', support: 'On track', staff: 'Mr. James' },
       { learner: 'Noah R.', subject: 'History', status: 'Finished', plan: 'Free', support: 'Review tomorrow', staff: 'Ms. Rehema' },
-      { learner: 'Little Star', subject: 'Colouring', status: 'Practising', plan: 'Trial', support: 'Needs a parent check-in', staff: 'Teacher Ada' },
-      { learner: 'Zuri T.', subject: 'Communication Skills', status: 'Reading', plan: 'Elite', support: 'Strong progress', staff: 'Mrs. Njeri' },
+      { learner: 'Little Star', subject: 'Colouring', status: 'Practising', plan: 'More practice', support: 'Needs a parent check-in', staff: 'Teacher Ada' },
+      { learner: 'Zuri T.', subject: 'Communication Skills', status: 'Reading', plan: 'Full access', support: 'Strong progress', staff: 'Mrs. Njeri' },
     ] satisfies AdminSession[],
     supportQueue: [
       {
         title: 'Trial families to follow up',
-        detail: `23 families in ${country.name} are close to the end of their 5-day trial.`,
+        detail: `23 families in ${country.name} are close to the end of their extra-practice period.`,
       },
       {
         title: 'Learners needing encouragement',
@@ -1725,7 +1725,7 @@ export function getAdminMetrics(countryCode: string) {
     planMix: [
       { label: 'Free learners', count: 612, detail: 'Daily practice with starter access' },
       { label: 'Trial learners', count: 146, detail: 'Exploring the full experience' },
-      { label: 'Elite learners', count: 526, detail: 'Using the full learning library' },
+      { label: 'Full access learners', count: 526, detail: 'Using the full learning library' },
     ] satisfies AdminPlanMix[],
     registeredCountries: [
       { code: 'KE', learners: 344, families: 181, staffLead: 'Ms. Njeri' },

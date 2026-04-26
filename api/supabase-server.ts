@@ -48,6 +48,18 @@ const DEFAULT_ROLE_EMAILS = {
   staff: 'staff@reviewbuddy.app',
 } as const;
 
+const OPTIONAL_LEARNER_PROFILE_COLUMNS = new Set([
+  'birth_day',
+  'birth_month',
+  'birth_year',
+  'streak_count',
+  'last_active_on',
+  'tutorial_seen',
+  'qualifications',
+  'eligibility',
+  'support_focus',
+]);
+
 export type SupabaseAdminClient = NonNullable<ReturnType<typeof createSupabaseAdminClient>>;
 
 export async function listAuthUsersByEmail(supabaseAdmin: SupabaseAdminClient, email: string) {
@@ -238,4 +250,31 @@ export function toSafeUsername(value: string) {
       .replace(/^\.+|\.+$/g, '') || 'learner';
 
   return normalized.slice(0, 40);
+}
+
+function getMissingLearnerProfileColumn(error: { message?: string } | null | undefined) {
+  const message = error?.message ?? '';
+  const match = /Could not find the '([^']+)' column of 'learner_profiles' in the schema cache/i.exec(message);
+  return match?.[1] ?? null;
+}
+
+export async function writeLearnerProfileWithSchemaFallback(
+  write: (row: Record<string, unknown>) => Promise<{ error: { message?: string } | null }>,
+  initialRow: Record<string, unknown>,
+) {
+  const nextRow = { ...initialRow };
+
+  while (true) {
+    const { error } = await write(nextRow);
+    if (!error) {
+      return { error: null, row: nextRow };
+    }
+
+    const missingColumn = getMissingLearnerProfileColumn(error);
+    if (!missingColumn || !OPTIONAL_LEARNER_PROFILE_COLUMNS.has(missingColumn) || !(missingColumn in nextRow)) {
+      return { error, row: nextRow };
+    }
+
+    delete nextRow[missingColumn];
+  }
 }

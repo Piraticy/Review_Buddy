@@ -34,6 +34,45 @@ type VerificationRequest = {
   countryCode: string;
 };
 
+const OPTIONAL_LEARNER_PROFILE_COLUMNS = new Set([
+  'birth_day',
+  'birth_month',
+  'birth_year',
+  'streak_count',
+  'last_active_on',
+  'tutorial_seen',
+  'qualifications',
+  'eligibility',
+  'support_focus',
+]);
+
+function getMissingLearnerProfileColumn(error: { message?: string } | null | undefined) {
+  const message = error?.message ?? '';
+  const match = /Could not find the '([^']+)' column of 'learner_profiles' in the schema cache/i.exec(message);
+  return match?.[1] ?? null;
+}
+
+async function writeLearnerProfileWithSchemaFallback(
+  write: (row: Record<string, unknown>) => Promise<{ error: { message?: string } | null }>,
+  initialRow: Record<string, unknown>,
+) {
+  const nextRow = { ...initialRow };
+
+  while (true) {
+    const { error } = await write(nextRow);
+    if (!error) {
+      return { error: null, row: nextRow };
+    }
+
+    const missingColumn = getMissingLearnerProfileColumn(error);
+    if (!missingColumn || !OPTIONAL_LEARNER_PROFILE_COLUMNS.has(missingColumn) || !(missingColumn in nextRow)) {
+      return { error, row: nextRow };
+    }
+
+    delete nextRow[missingColumn];
+  }
+}
+
 function readStoredState(): StoredState {
   if (typeof window === 'undefined') {
     return {};
@@ -309,7 +348,9 @@ function mapAnnouncementRow(row: Record<string, unknown>): Announcement {
 }
 
 async function registerLearner(user: RegisteredUser) {
-  if (!supabase) {
+  const supabaseClient = supabase;
+
+  if (!supabaseClient) {
     saveLocalUser(user);
     return user;
   }
@@ -334,7 +375,7 @@ async function registerLearner(user: RegisteredUser) {
   }
 
   const normalizedEmail = payload.user.email.toLowerCase();
-  const { data: signinData, error: signinError } = await supabase.auth.signInWithPassword({
+  const { data: signinData, error: signinError } = await supabaseClient.auth.signInWithPassword({
     email: normalizedEmail,
     password: user.password,
   });
@@ -382,7 +423,9 @@ async function sendRegistrationCode(request: VerificationRequest) {
 }
 
 async function verifyRegistrationCode(user: RegisteredUser, code: string) {
-  if (!supabase) {
+  const supabaseClient = supabase;
+
+  if (!supabaseClient) {
     saveLocalUser(user);
     return user;
   }
@@ -390,7 +433,7 @@ async function verifyRegistrationCode(user: RegisteredUser, code: string) {
   const normalizedEmail = user.email.trim().toLowerCase();
   const normalizedCode = code.trim();
 
-  const { data: otpData, error: otpError } = await supabase.auth.verifyOtp({
+  const { data: otpData, error: otpError } = await supabaseClient.auth.verifyOtp({
     email: normalizedEmail,
     token: normalizedCode,
     type: 'email',
@@ -401,7 +444,7 @@ async function verifyRegistrationCode(user: RegisteredUser, code: string) {
   }
 
   const authUserId = otpData.user.id;
-  const { error: updateError } = await supabase.auth.updateUser({
+  const { error: updateError } = await supabaseClient.auth.updateUser({
     password: user.password,
   });
 
@@ -427,7 +470,10 @@ async function verifyRegistrationCode(user: RegisteredUser, code: string) {
     last_login_at: new Date().toISOString(),
   };
 
-  const { error: upsertError } = await supabase.from('learner_profiles').upsert(profileRow);
+  const { error: upsertError } = await writeLearnerProfileWithSchemaFallback(
+    async (row) => await supabaseClient.from('learner_profiles').upsert(row),
+    profileRow,
+  );
   if (upsertError) {
     throw upsertError;
   }
@@ -1281,12 +1327,13 @@ async function syncLearnerProfile(
     & Partial<Pick<LearnerProfile, 'birthDay' | 'birthMonth' | 'birthYear' | 'streakCount' | 'lastActiveOn' | 'tutorialSeen'>>,
 ) {
   const normalizedEmail = user.email.trim().toLowerCase();
+  const supabaseClient = supabase;
 
   if (!normalizedEmail) {
     return;
   }
 
-  if (!supabase) {
+  if (!supabaseClient) {
     updateLocalUserByEmail(normalizedEmail, (entry) => ({
       ...entry,
       countryCode: user.countryCode,
@@ -1306,9 +1353,7 @@ async function syncLearnerProfile(
     return;
   }
 
-  const { error } = await supabase
-    .from('learner_profiles')
-    .update({
+  const profileUpdate = {
       country_code: user.countryCode,
       plan: user.plan,
       stage: user.stage,
@@ -1322,8 +1367,12 @@ async function syncLearnerProfile(
       last_active_on: user.lastActiveOn ?? null,
       tutorial_seen: user.tutorialSeen ?? false,
       last_login_at: new Date().toISOString(),
-    })
-    .eq('email', normalizedEmail);
+    };
+
+  const { error } = await writeLearnerProfileWithSchemaFallback(
+    async (row) => await supabaseClient.from('learner_profiles').update(row).eq('email', normalizedEmail),
+    profileUpdate,
+  );
 
   if (!error) {
     return;

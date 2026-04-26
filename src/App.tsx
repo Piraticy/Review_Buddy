@@ -950,6 +950,29 @@ function defaultAnnouncements(): Announcement[] {
   ];
 }
 
+function createAnnouncementKey(entry: Pick<Announcement, 'title' | 'message' | 'audience'>) {
+  return [entry.audience, entry.title.trim().toLowerCase(), entry.message.trim().toLowerCase()].join('::');
+}
+
+function buildAnnouncementFeed(entries: Announcement[]) {
+  const seen = new Set<string>();
+
+  return [...entries]
+    .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())
+    .filter((entry) => {
+      const key = createAnnouncementKey(entry);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+}
+
+function getAnnouncementAudienceLabel(audience: Announcement['audience']) {
+  if (audience === 'learners') return 'Learners';
+  if (audience === 'staff') return 'Staff';
+  return 'Everyone';
+}
+
 function formatBirthDateInput(profile: Pick<LearnerProfile, 'birthDay' | 'birthMonth' | 'birthYear'>) {
   if (!profile.birthDay || !profile.birthMonth || !profile.birthYear) {
     return '';
@@ -1033,6 +1056,13 @@ function getYesterdayKey() {
   const now = new Date();
   now.setDate(now.getDate() - 1);
   return now.toISOString().slice(0, 10);
+}
+
+function buildStreakNotice(lastActiveOn: string | undefined, todayKey: string, yesterdayKey: string, nextStreak: number) {
+  if (lastActiveOn === todayKey) return '';
+  if (!lastActiveOn) return 'Your learning streak starts today.';
+  if (lastActiveOn === yesterdayKey) return `You are on a ${nextStreak}-day learning streak.`;
+  return 'Your learning streak starts again today.';
 }
 
 function generateEasyPassword(name: string) {
@@ -1652,9 +1682,7 @@ function App() {
   const supportRequestsForAdmin = [...supportRequests].sort(
     (left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime(),
   );
-  const announcementFeed = [...announcements].sort(
-    (left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime(),
-  );
+  const announcementFeed = buildAnnouncementFeed(announcements);
   const focusCountryRequests = supportRequestsForAdmin.filter((request) => request.countryCode === adminMetricsCode);
   const activeFeedbackQuestions = profile.role === 'staff' ? STAFF_FEEDBACK_QUESTIONS : LEARNER_FEEDBACK_QUESTIONS;
   const recentActiveLearners = focusedLearners.filter((entry) => {
@@ -1823,18 +1851,52 @@ function App() {
       .toLowerCase()
       .includes(query);
   });
-  const visibleAnnouncements = announcements.filter(
+  const visibleAnnouncements = announcementFeed.filter(
     (announcement) =>
       announcement.audience === 'all' ||
       (profile.role === 'student' && announcement.audience === 'learners') ||
       (profile.role === 'staff' && announcement.audience === 'staff'),
   );
-  const adminAnnouncementPreview = announcementFeed.slice(0, 3);
+  const visibleAnnouncementPreview = visibleAnnouncements.slice(0, 2);
+  const hiddenVisibleAnnouncementCount = Math.max(0, visibleAnnouncements.length - visibleAnnouncementPreview.length);
+  const adminAnnouncementPreview = announcementFeed.slice(0, 2);
+  const hiddenAdminAnnouncementCount = Math.max(0, announcementFeed.length - adminAnnouncementPreview.length);
   const learnerSummaryQuestions = learnerFeedbackSummary.questionAverages.slice(0, 4);
+  const learnerQuestionBreakdown = learnerFeedbackSummary.questionAverages;
   const mySupportRequests = supportRequestsForAdmin.filter(
     (request) => request.createdBy.toLowerCase() === (profile.email || profile.fullName).toLowerCase(),
   );
   const birthdayLearners = learnerRegistrations.filter((entry) => isBirthdayToday(entry));
+  const openSupportRequests = supportRequestsForAdmin.filter((request) => request.status !== 'resolved');
+  const learnerCommentEntries = learnerFeedbackEntries.filter((entry) => entry.comment.trim());
+  const reviewPriorityCards = [
+    {
+      label: 'Needs attention first',
+      value: learnerFeedbackSummary.headline,
+      detail: learnerFeedbackSummary.detail,
+    },
+    {
+      label: 'Waiting for review',
+      value: `${pendingMaterials.length} upload${pendingMaterials.length === 1 ? '' : 's'}`,
+      detail:
+        pendingMaterials.length > 0
+          ? 'Open the follow-up list to approve or return staff work.'
+          : 'No staff uploads are waiting for a school team check.',
+    },
+    {
+      label: 'Open support requests',
+      value: `${openSupportRequests.length} request${openSupportRequests.length === 1 ? '' : 's'}`,
+      detail:
+        openSupportRequests[0]
+          ? `${openSupportRequests[0].title} is the newest item waiting for help.`
+          : 'Learner and staff requests will show here when they come in.',
+    },
+    {
+      label: 'Latest learner note',
+      value: learnerCommentEntries[0]?.choice ?? 'No comment yet',
+      detail: learnerCommentEntries[0]?.comment || 'Written learner notes will appear here after the next feedback reply.',
+    },
+  ];
 
   useEffect(() => {
     if ('speechSynthesis' in window) {
@@ -1843,6 +1905,18 @@ function App() {
     setSpeakingKey(null);
     speechKeyRef.current = null;
   }, [currentQuestion?.id]);
+
+  useEffect(() => {
+    if (!streakNotice) return undefined;
+
+    const timeoutId = window.setTimeout(() => {
+      setStreakNotice('');
+    }, 5000);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [streakNotice]);
 
   const countryTheme: ThemeVars = {
     '--theme-primary': country.palette.primary,
@@ -2148,7 +2222,7 @@ function App() {
     setShowTutorial(!(sessionProfile.tutorialSeen ?? false));
     setStreakNotice(
       sessionProfile.role === 'student'
-        ? `You are on a ${sessionProfile.streakCount ?? 1}-day learning streak.`
+        ? buildStreakNotice(normalized.lastActiveOn, todayKey, yesterdayKey, sessionProfile.streakCount ?? 1)
         : '',
     );
 
@@ -2161,12 +2235,13 @@ function App() {
               lastLoginAt: new Date().toISOString(),
               streakCount: sessionProfile.streakCount,
               lastActiveOn: sessionProfile.lastActiveOn,
+              tutorialSeen: sessionProfile.tutorialSeen,
             }
           : entry,
       ),
     );
 
-    if (sessionProfile.role === 'student') {
+    if (sessionProfile.email) {
       void appRepository.syncLearnerProfile({
         email: sessionProfile.email,
         countryCode: sessionProfile.countryCode,
@@ -2764,6 +2839,17 @@ function App() {
       return;
     }
 
+    const draftKey = createAnnouncementKey({
+      title: announcementDraft.title,
+      message: announcementDraft.message,
+      audience: announcementDraft.audience,
+    });
+
+    if (announcementFeed.some((entry) => createAnnouncementKey(entry) === draftKey)) {
+      setAdminNotice('That update is already on the board. Edit it before posting again.');
+      return;
+    }
+
     const nextAnnouncement: Announcement = {
       id: `announcement-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`,
       title: announcementDraft.title.trim(),
@@ -2819,23 +2905,21 @@ function App() {
             : entry,
         ),
       );
-      if (profile.role === 'student') {
-        void appRepository.syncLearnerProfile({
-          email: profile.email,
-          countryCode: nextProfile.countryCode,
-          plan: nextProfile.plan,
-          stage: nextProfile.stage,
-          level: nextProfile.level,
-          mode: nextProfile.mode,
-          subject: nextProfile.subject,
-          birthDay: nextProfile.birthDay,
-          birthMonth: nextProfile.birthMonth,
-          birthYear: nextProfile.birthYear,
-          streakCount: nextProfile.streakCount,
-          lastActiveOn: nextProfile.lastActiveOn,
-          tutorialSeen: true,
-        });
-      }
+      void appRepository.syncLearnerProfile({
+        email: profile.email,
+        countryCode: nextProfile.countryCode,
+        plan: nextProfile.plan,
+        stage: nextProfile.stage,
+        level: nextProfile.level,
+        mode: nextProfile.mode,
+        subject: nextProfile.subject,
+        birthDay: nextProfile.birthDay,
+        birthMonth: nextProfile.birthMonth,
+        birthYear: nextProfile.birthYear,
+        streakCount: nextProfile.streakCount,
+        lastActiveOn: nextProfile.lastActiveOn,
+        tutorialSeen: true,
+      });
     }
   }
 
@@ -2903,6 +2987,10 @@ function App() {
 
   function openFeedbackPage() {
     setAuthNotice('');
+    if (hasSubmittedFeedback) {
+      setAuthNotice('You already shared feedback. Thank you.');
+      return;
+    }
     if (profile.role === 'staff') {
       setStaffView('feedback');
       return;
@@ -3989,16 +4077,18 @@ function App() {
               </section>
 
               <aside className="dashboard-side">
-                <section className="side-card accent-side-card">
-                  <div className="panel-heading">
-                    <p className="eyebrow">Quick feedback</p>
-                    <h2>Tell us what you think</h2>
-                    <p>One short check-in helps us make lessons and pages better.</p>
-                  </div>
-                  <button type="button" className="primary-button" onClick={openFeedbackPage}>
-                    Share thoughts
-                  </button>
-                </section>
+                {!hasSubmittedFeedback ? (
+                  <section className="side-card accent-side-card">
+                    <div className="panel-heading">
+                      <p className="eyebrow">Quick feedback</p>
+                      <h2>Tell us what you think</h2>
+                      <p>One short check-in helps us make lessons and pages better.</p>
+                    </div>
+                    <button type="button" className="primary-button" onClick={openFeedbackPage}>
+                      Share thoughts
+                    </button>
+                  </section>
+                ) : null}
 
                 <section className="side-card">
                   <div className="panel-heading">
@@ -4006,18 +4096,25 @@ function App() {
                     <h2>Latest updates</h2>
                     <p>Breaks, new changes, and quick messages from the school team.</p>
                   </div>
-                  <div className="history-list">
-                    {visibleAnnouncements.length > 0 ? visibleAnnouncements.slice(0, 3).map((announcement) => (
-                      <article key={announcement.id} className="history-row">
-                        <div>
-                          <strong>{announcement.title}</strong>
-                          <span>{announcement.message}</span>
+                  <div className="announcement-preview-list">
+                    {visibleAnnouncementPreview.length > 0 ? visibleAnnouncementPreview.map((announcement) => (
+                      <article key={announcement.id} className="announcement-preview-card">
+                        <div className="announcement-preview-meta">
+                          <span className="mini-badge">{getAnnouncementAudienceLabel(announcement.audience)}</span>
+                          <span>{new Date(announcement.createdAt).toLocaleDateString()}</span>
                         </div>
+                        <strong>{announcement.title}</strong>
+                        <p>{announcement.message}</p>
                       </article>
                     )) : (
                       <p className="empty-state">Announcements will appear here when the school team posts them.</p>
                     )}
                   </div>
+                  {hiddenVisibleAnnouncementCount > 0 ? (
+                    <p className="announcement-overflow-note">
+                      {hiddenVisibleAnnouncementCount} older update{hiddenVisibleAnnouncementCount === 1 ? '' : 's'} stay on the board.
+                    </p>
+                  ) : null}
                 </section>
 
                 <section className="side-card">
@@ -4036,8 +4133,8 @@ function App() {
                       <strong>{progressSnapshot.passRate}%</strong>
                     </article>
                     <article className="mini-stat-card">
-                      <span>🔥</span>
-                      <strong>{profile.streakCount ?? 0}</strong>
+                      <span>🧩</span>
+                      <strong>{attempts.length}</strong>
                     </article>
                   </div>
                   <div className="history-list">
@@ -4122,11 +4219,13 @@ function App() {
                       <strong>Video lesson</strong>
                       <span>{learningVideo.durationLabel}</span>
                     </button>
-                    <button type="button" className="subject-card" onClick={openFeedbackPage}>
-                      <span className="subject-icon">💡</span>
-                      <strong>{hasSubmittedFeedback ? 'Thoughts shared' : 'Share your thoughts'}</strong>
-                      <span>{hasSubmittedFeedback ? 'Thanks for sharing your thoughts.' : 'Quick rating and comment.'}</span>
-                    </button>
+                    {!hasSubmittedFeedback ? (
+                      <button type="button" className="subject-card" onClick={openFeedbackPage}>
+                        <span className="subject-icon">💡</span>
+                        <strong>Share your thoughts</strong>
+                        <span>Quick rating and comment.</span>
+                      </button>
+                    ) : null}
                     <button type="button" className="subject-card" onClick={() => startQuiz(activeStudentSubject, 'quiz')}>
                       <span className="subject-icon">📝</span>
                       <strong>Quick quiz</strong>
@@ -4745,9 +4844,11 @@ function App() {
                     <p>{getFlagEmoji(country.code)} {country.name} · {profile.subject}</p>
                   </div>
               <div className="banner-actions">
-                <button type="button" className="ghost-button" onClick={openFeedbackPage}>
-                  Share thoughts
-                </button>
+                {!hasSubmittedFeedback ? (
+                  <button type="button" className="ghost-button" onClick={openFeedbackPage}>
+                    Share thoughts
+                  </button>
+                ) : null}
                 <button type="button" className="primary-button action-button-prominent" onClick={logout}>
                   Sign out
                 </button>
@@ -4780,17 +4881,24 @@ function App() {
                 <p>Keep an eye on announcements, activity, and school team decisions on your materials.</p>
               </div>
               <div className="history-list">
-                {visibleAnnouncements.length > 0 ? visibleAnnouncements.slice(0, 3).map((entry) => (
-                  <article key={entry.id} className="history-row">
-                    <div>
-                      <strong>{entry.title}</strong>
-                      <span>{entry.message}</span>
+                {visibleAnnouncementPreview.length > 0 ? visibleAnnouncementPreview.map((entry) => (
+                  <article key={entry.id} className="announcement-preview-card">
+                    <div className="announcement-preview-meta">
+                      <span className="mini-badge">{getAnnouncementAudienceLabel(entry.audience)}</span>
+                      <span>{new Date(entry.createdAt).toLocaleDateString()}</span>
                     </div>
+                    <strong>{entry.title}</strong>
+                    <p>{entry.message}</p>
                   </article>
                 )) : (
                   <p className="empty-state">Announcements and school team updates will appear here.</p>
                 )}
               </div>
+              {hiddenVisibleAnnouncementCount > 0 ? (
+                <p className="announcement-overflow-note">
+                  {hiddenVisibleAnnouncementCount} older update{hiddenVisibleAnnouncementCount === 1 ? '' : 's'} stay on the board.
+                </p>
+              ) : null}
             </section>
 
             <section className="setup-panel">
@@ -5091,9 +5199,11 @@ function App() {
                   <strong>{myStaffMaterials.filter((material) => material.approvalStatus === 'denied').length}</strong>
                 </article>
               </div>
-              <button type="button" className="ghost-button" onClick={openFeedbackPage}>
-                {hasSubmittedFeedback ? 'Thoughts sent' : 'Share thoughts'}
-              </button>
+              {!hasSubmittedFeedback ? (
+                <button type="button" className="ghost-button" onClick={openFeedbackPage}>
+                  Share thoughts
+                </button>
+              ) : null}
             </section>
             <section className="side-card">
               <div className="panel-heading">
@@ -5286,7 +5396,7 @@ function App() {
                   </article>
                   <article className="info-card">
                     <strong>Support requests</strong>
-                    <p>{supportRequestsForAdmin.filter((request) => request.status !== 'resolved').length}</p>
+                    <p>{openSupportRequests.length}</p>
                   </article>
                 </section>
 
@@ -5347,7 +5457,7 @@ function App() {
                     </article>
                     <article className="mini-stat-card">
                       <span>📬</span>
-                      <strong>{supportRequestsForAdmin.filter((request) => request.status !== 'resolved').length}</strong>
+                      <strong>{openSupportRequests.length}</strong>
                     </article>
                   </div>
                 </section>
@@ -5390,9 +5500,7 @@ function App() {
                       {adminAnnouncementPreview.map((announcement) => (
                         <article key={announcement.id} className="announcement-preview-card">
                           <div className="announcement-preview-meta">
-                            <span className="mini-badge">
-                              {announcement.audience === 'all' ? 'Everyone' : announcement.audience === 'learners' ? 'Learners' : 'Staff'}
-                            </span>
+                            <span className="mini-badge">{getAnnouncementAudienceLabel(announcement.audience)}</span>
                             <span>{new Date(announcement.createdAt).toLocaleDateString()}</span>
                           </div>
                           <strong>{announcement.title}</strong>
@@ -5400,6 +5508,11 @@ function App() {
                         </article>
                       ))}
                     </div>
+                    {hiddenAdminAnnouncementCount > 0 ? (
+                      <p className="announcement-overflow-note">
+                        {hiddenAdminAnnouncementCount} older update{hiddenAdminAnnouncementCount === 1 ? '' : 's'} stay on the board.
+                      </p>
+                    ) : null}
                     <div className="field-grid">
                       <label className="field-span-2">
                         Title
@@ -5949,7 +6062,7 @@ function App() {
                     </article>
                     <article className="info-card">
                       <strong>📬 Open requests</strong>
-                      <p>{supportRequestsForAdmin.filter((request) => request.status !== 'resolved').length}</p>
+                      <p>{openSupportRequests.length}</p>
                     </article>
                     <article className="info-card">
                       <strong>📚 Active learners</strong>
@@ -5961,34 +6074,31 @@ function App() {
                       Download summary
                     </button>
                   </div>
+                  <div className="review-priority-grid">
+                    {reviewPriorityCards.map((card) => (
+                      <article key={card.label} className="review-priority-card">
+                        <p className="eyebrow">{card.label}</p>
+                        <strong>{card.value}</strong>
+                        <span>{card.detail}</span>
+                      </article>
+                    ))}
+                  </div>
                   <div className="country-groups">
                     <section className="country-group-card">
                       <div className="panel-heading">
                         <p className="eyebrow">Question ratings</p>
                         <h2>Average by question</h2>
                       </div>
-                      <div className="history-list">
-                        {FEEDBACK_SUMMARY_QUESTIONS.map((question) => {
-                          const avg =
-                            learnerFeedbackEntries.length > 0
-                              ? Math.round(
-                                  (learnerFeedbackEntries.reduce(
-                                    (sum, entry) => sum + (entry.ratings?.[question.key] ?? entry.rating),
-                                    0,
-                                  ) /
-                                    learnerFeedbackEntries.length) *
-                                    10,
-                                ) / 10
-                              : 0;
-                          return (
-                            <article key={question.key} className="history-row">
-                              <div>
-                                <strong>{question.label}</strong>
-                              </div>
-                              <strong>{avg || '-'}</strong>
-                            </article>
-                          );
-                        })}
+                      <div className="summary-score-list">
+                        {learnerQuestionBreakdown.map((question) => (
+                          <article key={question.key} className="summary-score-row">
+                            <div>
+                              <strong>{question.label}</strong>
+                              <span>{question.average > 0 ? `${question.average}/5 average` : 'Waiting for ratings'}</span>
+                            </div>
+                            <strong>{question.average > 0 ? question.average : '-'}</strong>
+                          </article>
+                        ))}
                       </div>
                     </section>
                     <section className="country-group-card">
@@ -5997,7 +6107,7 @@ function App() {
                         <h2>Latest learner notes</h2>
                       </div>
                       <div className="history-list">
-                        {learnerFeedbackEntries.filter((entry) => entry.comment).slice(0, 6).map((entry) => (
+                        {learnerCommentEntries.slice(0, 6).map((entry) => (
                           <article key={entry.id} className="history-row">
                             <div>
                               <strong>{'⭐'.repeat(Math.round(entry.rating))}</strong>
@@ -6006,7 +6116,7 @@ function App() {
                             </div>
                           </article>
                         ))}
-                        {learnerFeedbackEntries.filter((entry) => entry.comment).length === 0 ? (
+                        {learnerCommentEntries.length === 0 ? (
                           <p className="empty-state">Comments will appear here once people start sharing notes.</p>
                         ) : null}
                       </div>
@@ -6041,7 +6151,7 @@ function App() {
                     <h2>Open support items</h2>
                   </div>
                   <div className="history-list">
-                    {supportRequestsForAdmin.filter((request) => request.status !== 'resolved').slice(0, 5).map((item) => (
+                    {openSupportRequests.slice(0, 5).map((item) => (
                       <article key={item.id} className="history-row">
                         <div>
                           <strong>{item.title}</strong>
@@ -6050,7 +6160,7 @@ function App() {
                         <strong>{item.status}</strong>
                       </article>
                     ))}
-                    {supportRequestsForAdmin.filter((request) => request.status !== 'resolved').length === 0 ? (
+                    {openSupportRequests.length === 0 ? (
                       <p className="empty-state">Support requests will appear here after staff or learners submit them.</p>
                     ) : null}
                   </div>

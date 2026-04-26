@@ -98,6 +98,32 @@ function getLocalUsers() {
   return readStoredState().registeredUsers ?? [];
 }
 
+function mergeRemoteUserWithLocalState(user: RegisteredUser) {
+  const localMatch = getLocalUsers().find(
+    (entry) => entry.email.toLowerCase() === user.email.toLowerCase(),
+  );
+
+  if (!localMatch) {
+    return user;
+  }
+
+  return {
+    ...localMatch,
+    ...user,
+    password: localMatch.password || user.password,
+    birthDay: user.birthDay ?? localMatch.birthDay,
+    birthMonth: user.birthMonth ?? localMatch.birthMonth,
+    birthYear: user.birthYear ?? localMatch.birthYear,
+    streakCount: user.streakCount ?? localMatch.streakCount,
+    lastActiveOn: user.lastActiveOn ?? localMatch.lastActiveOn,
+    tutorialSeen: user.tutorialSeen ?? localMatch.tutorialSeen,
+    lastLoginAt: user.lastLoginAt ?? localMatch.lastLoginAt,
+    qualifications: user.qualifications ?? localMatch.qualifications,
+    eligibility: user.eligibility ?? localMatch.eligibility,
+    supportFocus: user.supportFocus ?? localMatch.supportFocus,
+  };
+}
+
 function withFallbackLocalUsers(users: RegisteredUser[]) {
   const nextUsers = [...users];
   const hasAdmin = nextUsers.some(
@@ -698,16 +724,19 @@ async function signIn(identifier: string, password: string) {
     return findLocalUser(normalizedIdentifier, password);
   }
 
-  const nextUser = mapProfileRow(resolvedProfileRow);
+  const nextUser = mergeRemoteUserWithLocalState(mapProfileRow(resolvedProfileRow));
   await supabase
     .from('learner_profiles')
     .update({ last_login_at: new Date().toISOString() })
     .eq('email', email);
 
-  return {
+  const signedInUser = {
     ...nextUser,
     lastLoginAt: new Date().toISOString(),
   };
+
+  saveLocalUser(signedInUser);
+  return signedInUser;
 }
 
 async function listRegisteredUsers() {
@@ -726,7 +755,7 @@ async function listRegisteredUsers() {
     return localUsers;
   }
 
-  const remoteUsers = data.map((row) => mapProfileRow(row));
+  const remoteUsers = data.map((row) => mergeRemoteUserWithLocalState(mapProfileRow(row)));
   const mergedUsers = [
     ...remoteUsers,
     ...localUsers.filter(

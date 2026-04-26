@@ -181,6 +181,12 @@
   gap: 10px;
 }
 
+.announcement-overflow-note {
+  margin: 0;
+  color: color-mix(in srgb, var(--theme-ink) 70%, #64748b);
+  font-size: 0.92rem;
+}
+
 @media (max-width: 720px) {
   .modal-card {
     padding: 20px;
@@ -1223,7 +1229,8 @@ button:disabled {
 }
 
 .auth-form label,
-.setup-panel label {
+.setup-panel label,
+.side-card label {
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -1235,7 +1242,10 @@ button:disabled {
 .auth-form textarea,
 .setup-panel input,
 .setup-panel select,
-.setup-panel textarea {
+.setup-panel textarea,
+.side-card input,
+.side-card select,
+.side-card textarea {
   width: 100%;
   border: 1px solid color-mix(in srgb, var(--theme-primary) 18%, white);
   border-radius: 16px;
@@ -1247,7 +1257,10 @@ button:disabled {
 .app-shell[data-theme='night'] .auth-form input,
 .app-shell[data-theme='night'] .auth-form select,
 .app-shell[data-theme='night'] .setup-panel input,
-.app-shell[data-theme='night'] .setup-panel select {
+.app-shell[data-theme='night'] .setup-panel select,
+.app-shell[data-theme='night'] .side-card input,
+.app-shell[data-theme='night'] .side-card select,
+.app-shell[data-theme='night'] .side-card textarea {
   background: rgba(15, 23, 42, 0.76);
   color: #f8fafc;
   border-color: rgba(148, 163, 184, 0.22);
@@ -1258,10 +1271,18 @@ button:disabled {
 .auth-form textarea:focus,
 .setup-panel input:focus,
 .setup-panel select:focus,
-.setup-panel textarea:focus {
+.setup-panel textarea:focus,
+.side-card input:focus,
+.side-card select:focus,
+.side-card textarea:focus {
   outline: none;
   border-color: var(--theme-primary);
   box-shadow: 0 0 0 4px color-mix(in srgb, var(--theme-primary) 14%, white);
+}
+
+.side-card textarea {
+  min-height: 112px;
+  resize: vertical;
 }
 
 .birthday-picker {
@@ -2168,6 +2189,29 @@ button:disabled {
   align-content: start;
 }
 
+.review-priority-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.review-priority-card {
+  display: grid;
+  gap: 8px;
+  padding: 16px;
+  border-radius: 22px;
+  background: color-mix(in srgb, var(--theme-surface) 95%, white 5%);
+  border: 1px solid color-mix(in srgb, var(--theme-primary) 14%, white);
+}
+
+.review-priority-card strong {
+  font-size: 1.06rem;
+}
+
+.review-priority-card span {
+  color: color-mix(in srgb, var(--theme-ink) 72%, #64748b);
+}
+
 .report-stats-grid {
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
@@ -2398,6 +2442,7 @@ button:disabled {
 
 .dashboard-side .field-grid {
   grid-template-columns: 1fr;
+  gap: 14px;
 }
 
 .dashboard-side .field-span-2 {
@@ -2471,6 +2516,10 @@ button:disabled {
 
   .report-stats-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .review-priority-grid {
+    grid-template-columns: 1fr;
   }
 
   .dashboard-side .field-grid {

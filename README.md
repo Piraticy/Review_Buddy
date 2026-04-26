@@ -3,7 +3,7 @@
 Review Buddy is a responsive after-school learning app for kids and teens.
 It supports country-aware onboarding, age-level learning paths, learner and admin roles, a cleaner public-facing register/sign-in flow, and a shared backend-ready data layer.
 
-Current version: `1.10.4`
+Current version: `1.11.1`
 
 Production URL: `https://review-buddy-gray.vercel.app`
 

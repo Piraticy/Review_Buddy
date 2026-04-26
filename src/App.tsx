@@ -2301,7 +2301,7 @@ function App() {
   }
 
   async function addStaffMember() {
-    const focusCountry = getCountryByCode(adminFocusCode);
+    const focusCountry = getCountryByCode(staffDraft.countryCode);
     if (
       !staffDraft.name.trim() ||
       !staffDraft.role.trim() ||
@@ -2350,15 +2350,28 @@ function App() {
         createdAt: registeredStaffUser.createdAt,
       });
       setStaffMembers((current) => [savedMember, ...current.filter((entry) => entry.email !== email)]);
-      const refreshedUsers = await appRepository.listRegisteredUsers();
-      setRegisteredUsers(ensureRegisteredUsers(refreshedUsers));
+      setRegisteredUsers((current) =>
+        ensureRegisteredUsers([registeredStaffUser, ...current.filter((entry) => entry.email !== email)]),
+      );
+
+      try {
+        const refreshedUsers = await appRepository.listRegisteredUsers();
+        setRegisteredUsers(
+          ensureRegisteredUsers([
+            registeredStaffUser,
+            ...refreshedUsers.filter((entry) => entry.email !== email),
+          ]),
+        );
+      } catch {
+        // Keep the newly created local staff login available even if refresh fails.
+      }
     } catch {
       setAdminNotice(`We could not save that staff profile for ${focusCountry.name} just now.`);
       return;
     }
 
     setGeneratedStaffAccount({ name: fullName, email, password });
-    setStaffDraft(createInitialStaffAccountDraft(adminFocusCode));
+    setStaffDraft(createInitialStaffAccountDraft(staffDraft.countryCode));
     setAdminNotice(`A new staff account was created for ${focusCountry.name}. Share the starter password with ${fullName}.`);
   }
 

@@ -11,6 +11,8 @@ type DeleteStaffPayload = {
   staffId?: string;
 };
 
+const DEFAULT_STAFF_EMAIL = 'staff@reviewbuddy.app';
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   setCorsHeaders(res);
 
@@ -38,6 +40,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return;
   }
 
+  if (staffId.toLowerCase() === 'default-staff') {
+    res.status(400).json({ error: 'The main Staff account stays in the system.' });
+    return;
+  }
+
   const { supabaseAdmin } = authResult;
   const { data: profile, error: profileError } = await supabaseAdmin
     .from('learner_profiles')
@@ -62,6 +69,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   const normalizedEmail = String(profile.email).trim().toLowerCase();
+
+  if (normalizedEmail === DEFAULT_STAFF_EMAIL) {
+    res.status(400).json({ error: 'The main Staff account stays in the system.' });
+    return;
+  }
 
   await supabaseAdmin.from('staff_members').delete().eq('id', staffId);
   await supabaseAdmin.from('learner_profiles').delete().eq('email', normalizedEmail);

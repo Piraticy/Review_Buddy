@@ -200,6 +200,17 @@ type GeneratedAvatarOption = {
   label: string;
 };
 
+type MotivationCard = {
+  icon: string;
+  title: string;
+  detail: string;
+};
+
+type DailyMotivationSet = {
+  cards: MotivationCard[];
+  feature: MotivationCard;
+};
+
 type MaterialViewerPayload = {
   material: StaffMaterial;
   audienceLabel: string;
@@ -243,6 +254,8 @@ const BIRTHDAY_MONTH_LABELS = [
 const DEFAULT_ADMIN_USERNAME = 'Admin';
 const DEFAULT_ADMIN_PASSWORD = 'admin';
 const DEFAULT_STAFF_USERNAME = 'Staff';
+const DEFAULT_STAFF_EMAIL = 'staff@reviewbuddy.app';
+const DEFAULT_STAFF_PASSWORD = 'staff';
 const TERMS_UPDATED_ON = 'April 21, 2026';
 const GENERATED_AVATARS: Record<LearnerGender, GeneratedAvatarOption[]> = {
   boy: [
@@ -311,21 +324,62 @@ const themePresets: Record<Exclude<ThemeMode, 'country'>, ThemeVars> = {
   },
 };
 
-const benefitCards = [
+const DAILY_MOTIVATION_SETS: DailyMotivationSet[] = [
   {
-    icon: '⚡',
-    title: 'Fast start',
-    detail: 'Join quickly',
+    cards: [
+      { icon: '🌟', title: 'One step today', detail: 'Small effort grows into big confidence.' },
+      { icon: '📘', title: 'Keep showing up', detail: 'Each lesson adds something meaningful.' },
+      { icon: '🚀', title: 'You can do this', detail: 'Strong habits begin with one try.' },
+    ],
+    feature: { icon: '💛', title: 'Today is a good day to begin', detail: 'Take one clear step, trust your effort, and let progress grow from there.' },
   },
   {
-    icon: '🧠',
-    title: 'Fresh practice',
-    detail: 'New sets',
+    cards: [
+      { icon: '🌈', title: 'Progress feels good', detail: 'Every page is a fresh chance.' },
+      { icon: '🧠', title: 'Practice brings power', detail: 'The more you return, the stronger you get.' },
+      { icon: '🏆', title: 'Keep your pace', detail: 'Steady learning wins over rushing.' },
+    ],
+    feature: { icon: '☀️', title: 'Bright minds grow daily', detail: 'A little focus today can open tomorrow in a beautiful way.' },
   },
   {
-    icon: '📈',
-    title: 'Clear progress',
-    detail: 'Easy scores',
+    cards: [
+      { icon: '🎯', title: 'Aim for one win', detail: 'One clear goal can change the day.' },
+      { icon: '📚', title: 'Learning is building', detail: 'Each lesson stacks into real strength.' },
+      { icon: '💡', title: 'Your ideas matter', detail: 'Curiosity is part of success.' },
+    ],
+    feature: { icon: '🕊️', title: 'Grow with calm confidence', detail: 'Take your time, stay open, and let each lesson move you forward.' },
+  },
+  {
+    cards: [
+      { icon: '🌱', title: 'Keep growing', detail: 'Good things take practice and patience.' },
+      { icon: '🛤️', title: 'Stay on your path', detail: 'One lesson at a time is enough.' },
+      { icon: '👏', title: 'Celebrate effort', detail: 'Trying again is real progress.' },
+    ],
+    feature: { icon: '✨', title: 'Your effort shines', detail: 'Show up, stay hopeful, and let today become a turning point.' },
+  },
+  {
+    cards: [
+      { icon: '🎉', title: 'New day, new chance', detail: 'Start where you are and keep moving.' },
+      { icon: '🧩', title: 'Every answer teaches', detail: 'Learning grows through practice.' },
+      { icon: '🤝', title: 'You are supported', detail: 'Families, staff, and learners grow together.' },
+    ],
+    feature: { icon: '🌻', title: 'Keep your courage close', detail: 'A brave start today can lead to a proud finish later.' },
+  },
+  {
+    cards: [
+      { icon: '🏁', title: 'Start strong', detail: 'Your next lesson can set the tone.' },
+      { icon: '🔍', title: 'Stay curious', detail: 'Questions help learning come alive.' },
+      { icon: '📈', title: 'Bit by bit', detail: 'Progress adds up faster than you think.' },
+    ],
+    feature: { icon: '🔥', title: 'Momentum starts now', detail: 'A focused few minutes today can spark something lasting.' },
+  },
+  {
+    cards: [
+      { icon: '🌍', title: 'Dream bigger', detail: 'What you learn today can shape tomorrow.' },
+      { icon: '🪄', title: 'Keep believing', detail: 'Confidence grows with every return.' },
+      { icon: '🎓', title: 'You are becoming', detail: 'Each lesson helps build your future.' },
+    ],
+    feature: { icon: '💫', title: 'Make today count', detail: 'Show up with heart, keep learning, and let your future thank you.' },
   },
 ];
 
@@ -556,6 +610,33 @@ function normalizePrompt(text: string) {
   return text.trim().toLowerCase().replace(/\s+/g, ' ');
 }
 
+function getDayRotationIndex(length: number) {
+  const now = new Date();
+  const utcDayNumber = Math.floor(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()) / 86400000);
+  return utcDayNumber % length;
+}
+
+function getDailyMotivationSet() {
+  return DAILY_MOTIVATION_SETS[getDayRotationIndex(DAILY_MOTIVATION_SETS.length)];
+}
+
+function getEligibilityBadgeMeta(eligibility?: string) {
+  switch (eligibility) {
+    case 'Verified teacher':
+      return { icon: '🏅', tone: 'gold', label: eligibility };
+    case 'Teaching assistant':
+      return { icon: '🤝', tone: 'sky', label: eligibility };
+    case 'School mentor':
+      return { icon: '🌟', tone: 'violet', label: eligibility };
+    case 'Curriculum partner':
+      return { icon: '📘', tone: 'mint', label: eligibility };
+    case 'Community tutor':
+      return { icon: '💛', tone: 'rose', label: eligibility };
+    default:
+      return { icon: '✅', tone: 'slate', label: eligibility || 'Ready' };
+  }
+}
+
 function getAttachmentMimeType(dataUrl?: string) {
   const match = dataUrl?.match(/^data:([^;,]+)[;,]/i);
   return match?.[1]?.toLowerCase();
@@ -740,6 +821,32 @@ function createDefaultAdminUser(): RegisteredUser {
   };
 }
 
+function createDefaultStaffUser(): RegisteredUser {
+  return {
+    id: 'default-staff',
+    username: DEFAULT_STAFF_USERNAME,
+    fullName: 'Review Buddy Staff',
+    email: DEFAULT_STAFF_EMAIL,
+    password: DEFAULT_STAFF_PASSWORD,
+    role: 'staff',
+    gender: 'girl',
+    avatarMode: 'generated',
+    avatarEmoji: '🧑🏽‍🏫',
+    countryCode: 'TZ',
+    plan: 'elite',
+    stage: 'primary',
+    level: 'Grade 4',
+    mode: 'solo',
+    subject: 'Communication Skills',
+    createdAt: new Date('2026-03-31T00:00:00.000Z').toISOString(),
+    lastLoginAt: undefined,
+    tutorialSeen: true,
+    qualifications: 'Curriculum coach',
+    eligibility: 'Verified teacher',
+    supportFocus: 'Teacher support and review',
+  };
+}
+
 function normalizeLearnerProfile(input?: Partial<LearnerProfile>): LearnerProfile {
   const base = input?.role === 'admin' ? createDefaultAdminUser() : createInitialProfile();
   const countryCode = input?.countryCode ?? base.countryCode;
@@ -789,6 +896,7 @@ function normalizeRegisteredUser(user: Partial<RegisteredUser>): RegisteredUser 
 
 function ensureRegisteredUsers(users?: RegisteredUser[]) {
   const adminUser = createDefaultAdminUser();
+  const staffUser = createDefaultStaffUser();
   const safeUsers = (users ?? []).map((user) => normalizeRegisteredUser(user));
   const hasAdmin = safeUsers.some(
     (user) =>
@@ -796,8 +904,15 @@ function ensureRegisteredUsers(users?: RegisteredUser[]) {
       (user.username.toLowerCase() === DEFAULT_ADMIN_USERNAME.toLowerCase() ||
         user.email.toLowerCase() === adminUser.email.toLowerCase()),
   );
+  const hasStaff = safeUsers.some(
+    (user) =>
+      user.role === 'staff' &&
+      (user.username.toLowerCase() === DEFAULT_STAFF_USERNAME.toLowerCase() ||
+        user.email.toLowerCase() === staffUser.email.toLowerCase()),
+  );
 
   const seededUsers = [...safeUsers];
+  if (!hasStaff) seededUsers.unshift(staffUser);
   if (!hasAdmin) seededUsers.unshift(adminUser);
 
   return seededUsers;
@@ -1515,6 +1630,10 @@ function App() {
   const [streakNotice, setStreakNotice] = useState('');
   const [isAuthBusy, setIsAuthBusy] = useState(false);
   const [activeMaterialViewer, setActiveMaterialViewer] = useState<MaterialViewerPayload | null>(null);
+  const [showChangePasswordModal, setShowChangePasswordModal] = useState(false);
+  const [accountPassword, setAccountPassword] = useState('');
+  const [accountPasswordConfirm, setAccountPasswordConfirm] = useState('');
+  const [accountPasswordNotice, setAccountPasswordNotice] = useState('');
   const [generatedStaffAccount, setGeneratedStaffAccount] = useState<{
     name: string;
     email: string;
@@ -1528,6 +1647,7 @@ function App() {
   const birthdayPickerRef = useRef<HTMLDivElement | null>(null);
   const sharedRefreshPromiseRef = useRef<Promise<void> | null>(null);
   const detectedCountryCodeRef = useRef(inferCountryCode());
+  const restoredCoreStaffRef = useRef(false);
 
   useEffect(() => {
     if (!supabase) return;
@@ -1555,6 +1675,32 @@ function App() {
       subscription.unsubscribe();
     };
   }, []);
+
+  useEffect(() => {
+    if (profile.role !== 'admin' || screen !== 'admin' || restoredCoreStaffRef.current) {
+      return;
+    }
+
+    restoredCoreStaffRef.current = true;
+    void appRepository.restoreCoreStaffAccount().then((restored) => {
+      if (!restored) {
+        return;
+      }
+
+      setStaffMembers((current) => {
+        const next = [...current.filter((entry) => entry.email?.toLowerCase() !== restored.staffMember.email?.toLowerCase())];
+        return [restored.staffMember, ...next];
+      });
+      setRegisteredUsers((current) =>
+        ensureRegisteredUsers([
+          restored.staffUser,
+          ...current.filter((entry) => entry.email.toLowerCase() !== restored.staffUser.email.toLowerCase()),
+        ]),
+      );
+    }).catch(() => {
+      restoredCoreStaffRef.current = false;
+    });
+  }, [profile.role, screen]);
 
   useEffect(() => {
     if (authMode !== 'signup' || hasChosenSignupCountry) {
@@ -1945,6 +2091,7 @@ function App() {
     };
   });
   const firstName = profile.fullName.trim().split(' ')[0] || 'Learner';
+  const dailyMotivationSet = getDailyMotivationSet();
   const learningMaterial = getLearningMaterial(
     profile.countryCode,
     activeStudentSubject,
@@ -2536,7 +2683,55 @@ function App() {
   }
 
   async function handleForgotPassword() {
-    setAuthNotice('Password reset is not open yet. If your account was created by the school team, use the first password they shared with you.');
+    if (!signinIdentifier.trim()) {
+      setAuthNotice('Enter your email or sign-in name first so we know where to send the reset link.');
+      return;
+    }
+
+    try {
+      await appRepository.requestPasswordReset(signinIdentifier);
+      setAuthNotice('A password reset link was sent. Open it and choose a new password.');
+    } catch (error) {
+      setAuthNotice(getErrorMessage(error, 'We could not send the reset link right now.'));
+    }
+  }
+
+  async function handleChangePassword() {
+    setAccountPasswordNotice('');
+
+    if (!accountPassword.trim() || !accountPasswordConfirm.trim()) {
+      setAccountPasswordNotice('Enter the new password twice first.');
+      return;
+    }
+
+    if (accountPassword !== accountPasswordConfirm) {
+      setAccountPasswordNotice('The new passwords do not match yet.');
+      return;
+    }
+
+    if (!profile.email.trim()) {
+      setAccountPasswordNotice('This account does not have an email to update yet.');
+      return;
+    }
+
+    try {
+      await appRepository.changePassword(profile.email, accountPassword);
+      setRegisteredUsers((current) =>
+        current.map((entry) =>
+          entry.email.toLowerCase() === profile.email.toLowerCase()
+            ? { ...entry, password: accountPassword }
+            : entry,
+        ),
+      );
+      setProfile((current) => ({ ...current, password: accountPassword }));
+      setAccountPassword('');
+      setAccountPasswordConfirm('');
+      setShowChangePasswordModal(false);
+      setAccountPasswordNotice('');
+      setAuthNotice('Password updated successfully.');
+    } catch (error) {
+      setAccountPasswordNotice(getErrorMessage(error, 'We could not update the password just now.'));
+    }
   }
 
   function logout() {
@@ -2565,6 +2760,10 @@ function App() {
     setShowTutorial(false);
     setStreakNotice('');
     setActiveMaterialViewer(null);
+    setShowChangePasswordModal(false);
+    setAccountPassword('');
+    setAccountPasswordConfirm('');
+    setAccountPasswordNotice('');
   }
 
   async function handleInstallApp() {
@@ -2968,6 +3167,16 @@ function App() {
     const member =
       staffMembers.find((entry) => entry.id === memberIdOrName || entry.name === memberIdOrName) ??
       staffRegistrations.find((entry) => entry.id === memberIdOrName || entry.fullName === memberIdOrName);
+    const memberEmail =
+      'email' in (member ?? {}) && typeof (member as { email?: string }).email === 'string'
+        ? (member as { email?: string }).email?.toLowerCase()
+        : undefined;
+
+    if (memberEmail === DEFAULT_STAFF_EMAIL) {
+      setAdminNotice('The main Staff account stays in the system so your school always has a shared staff login.');
+      return;
+    }
+
     const removedName =
       member && 'name' in member ? member.name : (member as RegisteredUser | undefined)?.fullName ?? memberIdOrName;
     await appRepository.removeStaffMember(memberIdOrName);
@@ -3708,7 +3917,7 @@ function App() {
             <p className="eyebrow">Review Buddy</p>
             <h1 className={`brand-title${screen === 'auth' ? '' : ' brand-title-dashboard'}`}>
               {screen === 'auth'
-                ? 'Easy learning made simple.'
+                ? 'Grow with every lesson.'
                 : screen === 'quiz'
                   ? quizState?.activeSubject ?? profile.subject
                   : screen === 'admin'
@@ -3723,6 +3932,20 @@ function App() {
         </div>
 
         <div className="theme-toolbar">
+          {(screen === 'admin' || screen === 'staff') && (
+            <button
+              type="button"
+              className="ghost-button ghost-button-small toolbar-action-button"
+              onClick={() => {
+                setAccountPassword('');
+                setAccountPasswordConfirm('');
+                setAccountPasswordNotice('');
+                setShowChangePasswordModal(true);
+              }}
+            >
+              Change password
+            </button>
+          )}
           {themeButtons.map(({ id, label, Icon }) => (
             <button
               key={id}
@@ -3762,7 +3985,7 @@ function App() {
                 </div>
 
                 <div className="benefit-grid benefit-grid-compact auth-benefit-strip auth-benefit-column">
-                  {benefitCards.map((card) => (
+                  {dailyMotivationSet.cards.map((card) => (
                     <article key={card.title} className="info-card">
                       <span className="info-card-icon" aria-hidden="true">{card.icon}</span>
                       <div className="info-card-copy">
@@ -3774,10 +3997,10 @@ function App() {
                 </div>
 
                 <div className="auth-support-card">
-                  <span className="auth-support-mark" aria-hidden="true">📚</span>
+                  <span className="auth-support-mark" aria-hidden="true">{dailyMotivationSet.feature.icon}</span>
                   <div>
-                    <strong>Ready on every device</strong>
-                    <p>Clear steps, country-matched learning, and a calmer start for children and teens.</p>
+                    <strong>{dailyMotivationSet.feature.title}</strong>
+                    <p>{dailyMotivationSet.feature.detail}</p>
                   </div>
                 </div>
               </div>
@@ -6034,6 +6257,10 @@ function App() {
                           <option key={option} value={option}>{option}</option>
                         ))}
                       </select>
+                      <span className={`eligibility-badge eligibility-badge-${getEligibilityBadgeMeta(staffDraft.eligibility).tone}`}>
+                        <span aria-hidden="true">{getEligibilityBadgeMeta(staffDraft.eligibility).icon}</span>
+                        {getEligibilityBadgeMeta(staffDraft.eligibility).label}
+                      </span>
                     </label>
                     <label className="field-span-2">
                       Qualifications
@@ -6082,13 +6309,17 @@ function App() {
                           <span>{member.email} · Joined {new Date(member.createdAt).toLocaleDateString()}</span>
                         </div>
                         <div className="row-actions">
-                          <strong>{member.eligibility || 'Ready'}</strong>
+                          <span className={`eligibility-badge eligibility-badge-${getEligibilityBadgeMeta(member.eligibility).tone}`}>
+                            <span aria-hidden="true">{getEligibilityBadgeMeta(member.eligibility).icon}</span>
+                            {getEligibilityBadgeMeta(member.eligibility).label}
+                          </span>
                           <button
                             type="button"
                             className="ghost-button ghost-button-small"
+                            disabled={member.email?.toLowerCase() === DEFAULT_STAFF_EMAIL}
                             onClick={() => removeStaffMember(member.id)}
                           >
-                            Remove
+                            {member.email?.toLowerCase() === DEFAULT_STAFF_EMAIL ? 'Main account' : 'Remove'}
                           </button>
                         </div>
                       </article>
@@ -6626,6 +6857,56 @@ function App() {
             </>
           )}
         </main>
+      )}
+
+      {showChangePasswordModal && (
+        <div className="modal-backdrop" role="presentation">
+          <section className="modal-card" role="dialog" aria-label="Change password">
+            <div className="panel-heading">
+              <p className="eyebrow">Account security</p>
+              <h2>Change your password</h2>
+              <p>Choose a new private password for this {profile.role === 'admin' ? 'school team' : 'staff'} account.</p>
+            </div>
+            <div className="field-grid">
+              <label className="field-span-2">
+                New password
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  value={accountPassword}
+                  onChange={(event) => setAccountPassword(event.target.value)}
+                  placeholder="Enter new password"
+                />
+              </label>
+              <label className="field-span-2">
+                Confirm new password
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  value={accountPasswordConfirm}
+                  onChange={(event) => setAccountPasswordConfirm(event.target.value)}
+                  placeholder="Enter the same password again"
+                />
+              </label>
+            </div>
+            {accountPasswordNotice ? <p className="empty-state">{accountPasswordNotice}</p> : null}
+            <div className="sample-buttons">
+              <button type="button" className="primary-button" onClick={handleChangePassword}>
+                Save new password
+              </button>
+              <button
+                type="button"
+                className="ghost-button"
+                onClick={() => {
+                  setShowChangePasswordModal(false);
+                  setAccountPassword('');
+                  setAccountPasswordConfirm('');
+                  setAccountPasswordNotice('');
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+          </section>
+        </div>
       )}
 
       {activeViewerMaterial && (

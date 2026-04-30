@@ -122,7 +122,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   };
 
   const { error: profileError } = await writeLearnerProfileWithSchemaFallback(
-    (row) => supabaseAdmin.from('learner_profiles').upsert(row),
+    async (row) => await supabaseAdmin.from('learner_profiles').upsert(row),
     profileRow,
   );
 

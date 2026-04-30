@@ -15,6 +15,7 @@ const STORAGE_KEY = 'review-buddy-state-clean';
 const DEFAULT_ADMIN_EMAIL = 'admin@reviewbuddy.app';
 const DEFAULT_ADMIN_PASSWORD = 'admin';
 const DEFAULT_STAFF_EMAIL = 'staff@reviewbuddy.app';
+const DEFAULT_STAFF_PASSWORD = 'staff';
 
 type StoredState = {
   registeredUsers?: RegisteredUser[];
@@ -189,10 +190,32 @@ function withFallbackLocalUsers(users: RegisteredUser[]) {
       user.email.toLowerCase() === DEFAULT_ADMIN_EMAIL ||
       user.username.toLowerCase() === 'admin',
   );
+  const hasStaff = nextUsers.some(
+    (user) =>
+      user.email.toLowerCase() === DEFAULT_STAFF_EMAIL ||
+      user.username.toLowerCase() === 'staff',
+  );
 
+  if (!hasStaff) nextUsers.unshift(createStaffFallbackUser());
   if (!hasAdmin) nextUsers.unshift(createAdminFallbackUser());
 
   return nextUsers;
+}
+
+function withFallbackLocalStaffMembers(staffMembers: AdminStaffMember[]) {
+  const nextMembers = [...staffMembers];
+  const hasStaff = nextMembers.some(
+    (member) =>
+      member.email?.toLowerCase() === DEFAULT_STAFF_EMAIL ||
+      member.username?.toLowerCase() === 'staff' ||
+      member.id === 'default-staff',
+  );
+
+  if (!hasStaff) {
+    nextMembers.unshift(createStaffFallbackMember());
+  }
+
+  return nextMembers;
 }
 
 function saveLocalUsers(users: RegisteredUser[]) {
@@ -274,6 +297,48 @@ function createAdminFallbackUser(): RegisteredUser {
     subject: 'Mathematics',
     createdAt: new Date('2026-03-31T00:00:00.000Z').toISOString(),
     lastLoginAt: new Date().toISOString(),
+  };
+}
+
+function createStaffFallbackUser(): RegisteredUser {
+  return {
+    id: 'default-staff',
+    username: 'Staff',
+    fullName: 'Review Buddy Staff',
+    email: DEFAULT_STAFF_EMAIL,
+    password: DEFAULT_STAFF_PASSWORD,
+    role: 'staff',
+    gender: 'girl',
+    avatarMode: 'generated',
+    avatarEmoji: '🧑🏽‍🏫',
+    countryCode: 'TZ',
+    plan: 'elite',
+    stage: 'primary',
+    level: 'Grade 4',
+    mode: 'solo',
+    subject: 'Communication Skills',
+    createdAt: new Date('2026-03-31T00:00:00.000Z').toISOString(),
+    lastLoginAt: new Date().toISOString(),
+    qualifications: 'Curriculum coach',
+    eligibility: 'Verified teacher',
+    supportFocus: 'Teacher support and review',
+  };
+}
+
+function createStaffFallbackMember(): AdminStaffMember {
+  return {
+    id: 'default-staff',
+    name: 'Review Buddy Staff',
+    role: 'Learning mentor',
+    focus: 'Teacher support and review · Tanzania',
+    status: 'Ready to assign',
+    countryCode: 'TZ',
+    email: DEFAULT_STAFF_EMAIL,
+    username: 'Staff',
+    password: DEFAULT_STAFF_PASSWORD,
+    qualifications: 'Curriculum coach',
+    eligibility: 'Verified teacher',
+    createdAt: new Date('2026-03-31T00:00:00.000Z').toISOString(),
   };
 }
 
@@ -599,6 +664,8 @@ async function requestPasswordReset(identifier: string) {
 
   if (email === 'admin') {
     email = DEFAULT_ADMIN_EMAIL;
+  } else if (email === 'staff') {
+    email = DEFAULT_STAFF_EMAIL;
   }
 
   if (!email.includes('@')) {
@@ -642,6 +709,33 @@ async function completePasswordReset(password: string) {
   await supabase.auth.signOut();
 }
 
+async function changePassword(email: string, password: string) {
+  const normalizedEmail = email.trim().toLowerCase();
+  const nextPassword = password.trim();
+
+  if (!normalizedEmail || !nextPassword) {
+    throw new Error('Email and password are required.');
+  }
+
+  if (!supabase) {
+    updateLocalUserByEmail(normalizedEmail, (user) => ({ ...user, password: nextPassword }));
+    return;
+  }
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (user?.email?.trim().toLowerCase() === normalizedEmail) {
+    const { error } = await supabase.auth.updateUser({ password: nextPassword });
+    if (error) {
+      throw error;
+    }
+  }
+
+  updateLocalUserByEmail(normalizedEmail, (entry) => ({ ...entry, password: nextPassword }));
+}
+
 async function signIn(identifier: string, password: string) {
   const normalizedIdentifier = identifier.trim();
 
@@ -651,9 +745,12 @@ async function signIn(identifier: string, password: string) {
 
   let email = normalizedIdentifier.toLowerCase();
   const isAdminShortcut = email === 'admin' && password === DEFAULT_ADMIN_PASSWORD;
+  const isStaffShortcut = email === 'staff' && password === DEFAULT_STAFF_PASSWORD;
 
   if (email === 'admin') {
     email = DEFAULT_ADMIN_EMAIL;
+  } else if (email === 'staff') {
+    email = DEFAULT_STAFF_EMAIL;
   }
 
   if (!email.includes('@')) {
@@ -677,6 +774,9 @@ async function signIn(identifier: string, password: string) {
   if (error || !data.user) {
     if (isAdminShortcut) {
       return createAdminFallbackUser();
+    }
+    if (isStaffShortcut) {
+      return createStaffFallbackUser();
     }
 
     return findLocalUser(normalizedIdentifier, password);
@@ -739,11 +839,11 @@ async function signIn(identifier: string, password: string) {
 
   if (
     resolvedProfileRow &&
-    isAdminShortcut &&
-    resolvedProfileRow.role !== 'admin'
+    (isAdminShortcut || isStaffShortcut) &&
+    resolvedProfileRow.role !== (isAdminShortcut ? 'admin' : 'staff')
   ) {
-    const role = 'admin';
-    const avatarEmoji = '🛡️';
+    const role = isAdminShortcut ? 'admin' : 'staff';
+    const avatarEmoji = role === 'admin' ? '🛡️' : '🧑🏽‍🏫';
     const { data: repairedRow } = await supabase
       .from('learner_profiles')
       .upsert({
@@ -764,6 +864,9 @@ async function signIn(identifier: string, password: string) {
   if (profileError || !resolvedProfileRow) {
     if (isAdminShortcut) {
       return createAdminFallbackUser();
+    }
+    if (isStaffShortcut) {
+      return createStaffFallbackUser();
     }
 
     return findLocalUser(normalizedIdentifier, password);
@@ -814,7 +917,7 @@ async function listRegisteredUsers() {
     ),
   ];
 
-  return writeListCache('registeredUsers', mergedUsers);
+  return writeListCache('registeredUsers', withFallbackLocalUsers(mergedUsers));
 }
 
 async function listStaffMembers() {
@@ -824,7 +927,7 @@ async function listStaffMembers() {
   }
 
   if (!supabase) {
-    return writeListCache('staffMembers', readStoredState().staffMembers ?? []);
+    return writeListCache('staffMembers', withFallbackLocalStaffMembers(readStoredState().staffMembers ?? []));
   }
 
   const { data, error } = await supabase
@@ -835,7 +938,7 @@ async function listStaffMembers() {
   const localStaff = readStoredState().staffMembers ?? [];
 
   if (error || !data) {
-    return writeListCache('staffMembers', localStaff);
+    return writeListCache('staffMembers', withFallbackLocalStaffMembers(localStaff));
   }
 
   const remoteStaff = data.map((row) => mapStaffRow(row));
@@ -851,7 +954,7 @@ async function listStaffMembers() {
     ),
   ];
 
-  return writeListCache('staffMembers', mergedStaff);
+  return writeListCache('staffMembers', withFallbackLocalStaffMembers(mergedStaff));
 }
 
 async function listStaffMaterials() {
@@ -1034,6 +1137,70 @@ async function addStaffMember(member: AdminStaffMember) {
 
   invalidateListCache('staffMembers', 'registeredUsers');
   return mapStaffRow(payload.staffMember);
+}
+
+async function restoreCoreStaffAccount() {
+  const fallbackUser = createStaffFallbackUser();
+  const fallbackMember = createStaffFallbackMember();
+
+  if (!supabase) {
+    saveLocalUser(fallbackUser);
+    mergeStoredState({
+      staffMembers: withFallbackLocalStaffMembers(readStoredState().staffMembers ?? []),
+    });
+    invalidateListCache('staffMembers', 'registeredUsers');
+    return {
+      staffUser: fallbackUser,
+      staffMember: fallbackMember,
+    };
+  }
+
+  const token = await getAccessToken();
+  if (!token) {
+    saveLocalUser(fallbackUser);
+    mergeStoredState({
+      staffMembers: withFallbackLocalStaffMembers(readStoredState().staffMembers ?? []),
+    });
+    invalidateListCache('staffMembers', 'registeredUsers');
+    return {
+      staffUser: fallbackUser,
+      staffMember: fallbackMember,
+    };
+  }
+
+  const response = await fetch('/api/restore-core-staff', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+  });
+
+  const payload = (await response.json().catch(() => null)) as
+    | {
+        staffMember?: Record<string, unknown>;
+        staffUser?: Record<string, unknown>;
+      }
+    | null;
+
+  if (!response.ok || !payload?.staffMember || !payload.staffUser) {
+    throw new Error('We could not restore the main Staff account just now.');
+  }
+
+  const staffMember = mapStaffRow(payload.staffMember);
+  const staffUser = mergeRemoteUserWithLocalState(mapProfileRow(payload.staffUser));
+  saveLocalUser({
+    ...staffUser,
+    password: staffUser.password || DEFAULT_STAFF_PASSWORD,
+  });
+  invalidateListCache('staffMembers', 'registeredUsers');
+  return {
+    staffMember,
+    staffUser: {
+      ...staffUser,
+      password: staffUser.password || DEFAULT_STAFF_PASSWORD,
+    },
+  };
 }
 
 async function addStaffMaterial(material: StaffMaterial) {
@@ -1421,6 +1588,15 @@ async function updateStaffMaterial(material: StaffMaterial) {
 }
 
 async function removeStaffMember(memberIdOrName: string) {
+  const normalizedStaffKey = memberIdOrName.trim().toLowerCase();
+  if (
+    normalizedStaffKey === 'default-staff' ||
+    normalizedStaffKey === DEFAULT_STAFF_EMAIL ||
+    normalizedStaffKey === 'review buddy staff'
+  ) {
+    throw new Error('The main Staff account stays in the system.');
+  }
+
   if (!supabase) {
     const localStaff = readStoredState().staffMembers ?? [];
     mergeStoredState({
@@ -1633,6 +1809,7 @@ export const appRepository = {
   resendRegistrationCode,
   requestPasswordReset,
   completePasswordReset,
+  changePassword,
   signIn,
   syncLearnerProfile,
   listRegisteredUsers,
@@ -1642,6 +1819,7 @@ export const appRepository = {
   listSupportRequests,
   listAnnouncements,
   addStaffMember,
+  restoreCoreStaffAccount,
   addStaffMaterial,
   addFeedbackEntry,
   addSupportRequest,

@@ -685,6 +685,13 @@ button:disabled {
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.toolbar-action-button {
+  min-height: 42px;
+  padding-inline: 14px;
 }
 
 .theme-button,
@@ -2431,6 +2438,55 @@ button:disabled {
   border: 1px solid color-mix(in srgb, var(--theme-primary) 12%, white);
   font-size: 0.84rem;
   font-weight: 800;
+}
+
+.eligibility-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  width: fit-content;
+  margin-top: 10px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  font-size: 0.84rem;
+  font-weight: 800;
+}
+
+.eligibility-badge-gold {
+  background: rgba(250, 204, 21, 0.18);
+  border-color: rgba(217, 119, 6, 0.2);
+  color: #92400e;
+}
+
+.eligibility-badge-sky {
+  background: rgba(56, 189, 248, 0.16);
+  border-color: rgba(14, 116, 144, 0.18);
+  color: #0f4c5c;
+}
+
+.eligibility-badge-violet {
+  background: rgba(168, 85, 247, 0.14);
+  border-color: rgba(109, 40, 217, 0.18);
+  color: #5b21b6;
+}
+
+.eligibility-badge-mint {
+  background: rgba(34, 197, 94, 0.14);
+  border-color: rgba(22, 163, 74, 0.18);
+  color: #166534;
+}
+
+.eligibility-badge-rose {
+  background: rgba(244, 114, 182, 0.14);
+  border-color: rgba(190, 24, 93, 0.16);
+  color: #9d174d;
+}
+
+.eligibility-badge-slate {
+  background: rgba(148, 163, 184, 0.16);
+  border-color: rgba(100, 116, 139, 0.18);
+  color: #334155;
 }
 
 .mini-stat-card strong {

@@ -638,6 +638,40 @@ function getEligibilityBadgeMeta(eligibility?: string) {
   }
 }
 
+function isReloadNavigation() {
+  if (typeof window === 'undefined') {
+    return false;
+  }
+
+  const navigationEntry = window.performance
+    .getEntriesByType('navigation')
+    .find((entry): entry is PerformanceNavigationTiming => entry instanceof PerformanceNavigationTiming);
+
+  if (navigationEntry) {
+    return navigationEntry.type === 'reload';
+  }
+
+  const legacyNavigation = window.performance.navigation;
+  return legacyNavigation?.type === 1;
+}
+
+function stripStoredAuthState(saved: StoredState): StoredState {
+  return {
+    appVersion: saved.appVersion,
+    authMode: 'signin',
+    themeMode: saved.themeMode,
+    registeredUsers: saved.registeredUsers,
+    staffMembers: saved.staffMembers,
+    staffMaterials: saved.staffMaterials,
+    adminActivityByCountry: saved.adminActivityByCountry,
+    followUpsByCountry: saved.followUpsByCountry,
+    feedbackEntries: saved.feedbackEntries,
+    submittedFeedbackKeys: saved.submittedFeedbackKeys,
+    supportRequests: saved.supportRequests,
+    announcements: saved.announcements,
+  };
+}
+
 function getAttachmentMimeType(dataUrl?: string) {
   const match = dataUrl?.match(/^data:([^;,]+)[;,]/i);
   return match?.[1]?.toLowerCase();
@@ -1369,6 +1403,16 @@ function resolveMaterialApprovalStatus(material: StaffMaterial) {
   return 'pending';
 }
 
+function getMaterialTypeBadge(material: StaffMaterial) {
+  return material.resourceType === 'document'
+    ? '📄 File'
+    : material.resourceType === 'video'
+      ? '🎬 Video'
+      : material.resourceType === 'question-bank'
+        ? '🧠 Questions'
+        : '📘 Notes';
+}
+
 function getSupportCategoryLabel(category: SupportRequest['category']) {
   if (category === 'topic') return 'Topic help';
   if (category === 'mentor') return 'Learning support';
@@ -1780,6 +1824,12 @@ function App() {
     });
 
     const raw = window.localStorage.getItem(STORAGE_KEY);
+    const shouldForceSignOut = isReloadNavigation();
+
+    if (shouldForceSignOut) {
+      void supabase?.auth.signOut();
+      setAuthNotice('The page was refreshed. Sign in again to continue.');
+    }
 
     if (!raw) {
       setIsReady(true);
@@ -1787,24 +1837,29 @@ function App() {
     }
 
     try {
-      const saved = JSON.parse(raw) as StoredState;
+      const parsed = JSON.parse(raw) as StoredState;
+      const saved = shouldForceSignOut ? stripStoredAuthState(parsed) : parsed;
+
+      if (shouldForceSignOut) {
+        window.localStorage.setItem(STORAGE_KEY, JSON.stringify(saved));
+      }
 
       if (saved.appVersion !== APP_VERSION) {
         setShowVersionPrompt(Boolean(saved.appVersion));
       }
 
-      if (saved.profile) setProfile(normalizeLearnerProfile(saved.profile));
-      if (saved.attempts) setAttempts(saved.attempts);
+      if (!shouldForceSignOut && saved.profile) setProfile(normalizeLearnerProfile(saved.profile));
+      if (!shouldForceSignOut && saved.attempts) setAttempts(saved.attempts);
       if (saved.registeredUsers) setRegisteredUsers(ensureRegisteredUsers(saved.registeredUsers));
       if (saved.authMode) setAuthMode(saved.authMode);
       if (saved.themeMode) setThemeMode(saved.themeMode);
-      if (saved.screen) setScreen(saved.screen);
-      if (saved.studentView) setStudentView(saved.studentView);
-      if (saved.adminView) setAdminView(saved.adminView);
-      if (saved.staffView) setStaffView(saved.staffView);
-      if (saved.selectedSubject) setSelectedSubject(saved.selectedSubject);
-      if (saved.reviewSnapshot) setReviewSnapshot(saved.reviewSnapshot);
-      if (saved.quizState) setQuizState(saved.quizState);
+      if (!shouldForceSignOut && saved.screen) setScreen(saved.screen);
+      if (!shouldForceSignOut && saved.studentView) setStudentView(saved.studentView);
+      if (!shouldForceSignOut && saved.adminView) setAdminView(saved.adminView);
+      if (!shouldForceSignOut && saved.staffView) setStaffView(saved.staffView);
+      if (!shouldForceSignOut && saved.selectedSubject) setSelectedSubject(saved.selectedSubject);
+      if (!shouldForceSignOut && saved.reviewSnapshot) setReviewSnapshot(saved.reviewSnapshot);
+      if (!shouldForceSignOut && saved.quizState) setQuizState(saved.quizState);
       if (saved.staffMembers) setStaffMembers(saved.staffMembers);
       if (saved.staffMaterials) setStaffMaterials(saved.staffMaterials);
       if (saved.adminActivityByCountry) setAdminActivityByCountry(saved.adminActivityByCountry);
@@ -2207,6 +2262,35 @@ function App() {
   const mySupportRequests = supportRequestsForAdmin
     .filter((request) => request.createdBy.toLowerCase() === (profile.email || profile.fullName).toLowerCase())
     .map(normalizeSupportRequestEntry);
+  const getStaffMemberForMaterial = (material: StaffMaterial) =>
+    staffMembers.find((member) => {
+      const memberEmail = member.email?.trim().toLowerCase() ?? '';
+      const materialEmail = material.uploadedByEmail?.trim().toLowerCase() ?? '';
+      const memberName = member.name.trim().toLowerCase();
+      const materialName = material.uploadedBy.trim().toLowerCase();
+      return (memberEmail && materialEmail && memberEmail === materialEmail) || (!!memberName && memberName === materialName);
+    });
+  const renderMaterialTeacherMeta = (material: StaffMaterial) => {
+    const staffMember = getStaffMemberForMaterial(material);
+    if (!staffMember) {
+      return <span className="teacher-material-meta">Shared by {material.uploadedBy}</span>;
+    }
+
+    const badge = getEligibilityBadgeMeta(staffMember.eligibility);
+    return (
+      <div className="material-teacher-stack">
+        <div className="material-pill-row">
+          <span className="mini-badge">🧑🏽‍🏫 {staffMember.role}</span>
+          <span className={`eligibility-badge eligibility-badge-${badge.tone}`}>
+            <span aria-hidden="true">{badge.icon}</span>
+            {badge.label}
+          </span>
+          {staffMember.qualifications ? <span className="mini-badge">🎓 {staffMember.qualifications}</span> : null}
+        </div>
+        <span className="teacher-material-meta">Shared by {material.uploadedBy}</span>
+      </div>
+    );
+  };
   const staffShortcutItems = [
     {
       key: 'learners' as const,
@@ -2250,6 +2334,12 @@ function App() {
   const openSupportRequests = supportRequestsForAdmin
     .map(normalizeSupportRequestEntry)
     .filter((request) => !isClosedSupportRequest(request));
+  const adminOverviewShortcuts = [
+    { label: 'Registered learners', count: learnerRegistrations.length, view: 'learners' as const },
+    { label: 'Countries with sign-ups', count: registrationsByCountry.length, view: 'countries' as const },
+    { label: 'Pending approvals', count: pendingMaterials.length, view: 'followups' as const },
+    { label: 'Support requests', count: openSupportRequests.length, view: 'followups' as const },
+  ];
   const focusCountryOpenRequests = openSupportRequests.filter((request) => request.countryCode === adminMetricsCode);
   const assignedSupportRequests = openSupportRequests.filter(
     (request) => (request.assignedToEmail ?? '').toLowerCase() === profile.email.toLowerCase(),
@@ -2815,6 +2905,7 @@ function App() {
     if ('speechSynthesis' in window) {
       window.speechSynthesis.cancel();
     }
+    void supabase?.auth.signOut();
     setSpeakingKey(null);
     setAuthMode('signin');
     setAuthNotice('');
@@ -2825,6 +2916,7 @@ function App() {
     setStudentView('home');
     setAdminView('overview');
     setStaffView('lounge');
+    setStaffShortcutView('uploads');
     setSelectedSubject(null);
     setReviewSnapshot(null);
     setQuizState(null);
@@ -4978,6 +5070,7 @@ function App() {
                               <span className="mini-badge">{getFlagEmoji(material.countryCode)} {material.level}</span>
                             </div>
                             <p>{material.summary}</p>
+                            {renderMaterialTeacherMeta(material)}
                             <div className="teacher-material-body">
                               {shouldShowInlineMaterialText(material) &&
                                 material.body.split('\n').filter(Boolean).map((line, index) => (
@@ -5002,7 +5095,6 @@ function App() {
                                 </button>
                               )}
                             </div>
-                            <span className="teacher-material-meta">Added by {material.uploadedBy}</span>
                           </article>
                         ))}
                       </div>
@@ -5125,6 +5217,7 @@ function App() {
                               <span className="mini-badge">{getFlagEmoji(material.countryCode)} {material.level}</span>
                             </div>
                             <p>{material.summary}</p>
+                            {renderMaterialTeacherMeta(material)}
                             <div className="teacher-material-body">
                               <button
                                 type="button"
@@ -5134,7 +5227,6 @@ function App() {
                                 Watch in app
                               </button>
                             </div>
-                            <span className="teacher-material-meta">Added by {material.uploadedBy}</span>
                           </article>
                         ))}
                       </div>
@@ -5548,25 +5640,25 @@ function App() {
                 </div>
               ) : null}
               {(staffShortcutView === 'uploads' || staffShortcutView === 'pending') ? (
-                <div className="teacher-material-grid">
+                <div className="teacher-material-grid teacher-material-grid-compact">
                   {shortcutMaterials.map((material) => (
-                    <article key={material.id} className="teacher-material-card">
+                    <article key={material.id} className="teacher-material-card teacher-material-card-compact">
                       <div className="teacher-material-head">
                         <strong>{material.title}</strong>
                         <span className="mini-badge">{getMaterialStatusBadge(resolveMaterialApprovalStatus(material))}</span>
                       </div>
                       <p>{material.summary}</p>
+                      {renderMaterialTeacherMeta(material)}
                       <span className="teacher-material-meta">
                         {getFlagEmoji(material.countryCode)} {getCountryByCode(material.countryCode).name} · {material.subject} · {material.level}
                       </span>
                       <p className="teacher-material-meta">{material.aiReviewSummary ?? 'Waiting for review.'}</p>
                       {material.adminReviewNote ? <p className="teacher-material-meta">{material.adminReviewNote}</p> : null}
                       <div className="material-pill-row">
-                        <span className="mini-badge">{material.resourceType === 'document' ? '📄 File' : material.resourceType === 'video' ? '🎬 Video' : material.resourceType === 'question-bank' ? '🧠 Questions' : '📘 Notes'}</span>
+                        <span className="mini-badge">{getMaterialTypeBadge(material)}</span>
                         {material.questionLimit ? <span className="mini-badge">#{material.questionLimit}</span> : null}
                       </div>
                       <div className="row-actions">
-                        <strong>{material.uploadedBy}</strong>
                         <div className="row-actions">
                           <button
                             type="button"
@@ -5864,54 +5956,17 @@ function App() {
                   </button>
                 )}
               </div>
-              <div className="teacher-material-grid">
-                {myStaffMaterials.length > 0 ? myStaffMaterials.slice(0, 6).map((material) => (
-                  <article key={material.id} className="teacher-material-card">
-                    <div className="teacher-material-head">
-                      <strong>{material.title}</strong>
-                      <span className="mini-badge">{getMaterialStatusBadge(resolveMaterialApprovalStatus(material))}</span>
-                    </div>
-                    <p>{material.summary}</p>
-                    <span className="teacher-material-meta">
-                      {getFlagEmoji(material.countryCode)} {getCountryByCode(material.countryCode).name} · {material.subject} · {material.level}
-                    </span>
-                    <p className="teacher-material-meta">{material.aiReviewSummary ?? 'Waiting for review.'}</p>
-                    {material.adminReviewNote ? <p className="teacher-material-meta">{material.adminReviewNote}</p> : null}
-                    <div className="material-pill-row">
-                      <span className="mini-badge">{material.resourceType === 'document' ? '📄 File' : material.resourceType === 'video' ? '🎬 Video' : material.resourceType === 'question-bank' ? '🧠 Questions' : '📘 Notes'}</span>
-                      {material.questionLimit ? <span className="mini-badge">#{material.questionLimit}</span> : null}
-                    </div>
-                    <div className="row-actions">
-                      <strong>{material.uploadedBy}</strong>
-                      <div className="row-actions">
-                        <button
-                          type="button"
-                          className="ghost-button ghost-button-small"
-                          onClick={() => openMaterialViewer(material, 'Staff preview')}
-                        >
-                          Preview
-                        </button>
-                        <button
-                          type="button"
-                          className="ghost-button ghost-button-small"
-                          onClick={() => beginEditStaffMaterial(material)}
-                        >
-                          Edit
-                        </button>
-                        <button
-                          type="button"
-                          className="ghost-button ghost-button-small"
-                          onClick={() => removeStaffMaterial(material.id)}
-                        >
-                          Remove
-                        </button>
-                      </div>
-                    </div>
-                  </article>
-                )) : (
-                  <p className="empty-state">Your uploads will appear here after you send material for review.</p>
-                )}
+              <div className="banner-actions">
+                <button type="button" className="ghost-button ghost-button-small" onClick={() => openStaffShortcut('uploads')}>
+                  Open My uploads
+                </button>
+                {pendingStaffMaterials.length > 0 ? (
+                  <button type="button" className="ghost-button ghost-button-small" onClick={() => openStaffShortcut('pending')}>
+                    Open Pending approvals
+                  </button>
+                ) : null}
               </div>
+              <p className="teacher-material-meta">Your uploads stay in My uploads while the school team reviews them.</p>
             </section>
           </section>
 
@@ -6160,22 +6215,18 @@ function App() {
                 </section>
 
                 <section className="stats-grid">
-                  <article className="info-card">
-                    <strong>Registered learners</strong>
-                    <p>{learnerRegistrations.length}</p>
-                  </article>
-                  <article className="info-card">
-                    <strong>Countries with sign-ups</strong>
-                    <p>{registrationsByCountry.length}</p>
-                  </article>
-                  <article className="info-card">
-                    <strong>Pending approvals</strong>
-                    <p>{pendingMaterials.length}</p>
-                  </article>
-                  <article className="info-card">
-                    <strong>Support requests</strong>
-                    <p>{openSupportRequests.length}</p>
-                  </article>
+                  {adminOverviewShortcuts.map((item) => (
+                    <button
+                      key={item.label}
+                      type="button"
+                      className="info-card info-card-button"
+                      onClick={() => openAdminView(item.view)}
+                    >
+                      <strong>{item.label}</strong>
+                      <p>{item.count}</p>
+                      <span>Open {item.label.toLowerCase()}</span>
+                    </button>
+                  ))}
                 </section>
 
                 <section className="setup-panel">
@@ -6715,6 +6766,7 @@ function App() {
                         <div>
                           <strong>{item.title}</strong>
                           <span>Waiting for review · {item.uploadedBy} · {getFlagEmoji(item.countryCode)} {item.subject}</span>
+                          {renderMaterialTeacherMeta(item)}
                           <span>{item.aiReviewSummary}</span>
                         </div>
                         <div className="row-actions">
@@ -6727,15 +6779,15 @@ function App() {
                           </button>
                           <button
                             type="button"
-                            className="ghost-button ghost-button-small"
-                            onClick={() => reviewPendingMaterial(item.id, 'approved')}
+                            className="primary-button primary-button-small"
+                            onClick={() => void reviewPendingMaterial(item.id, 'approved')}
                           >
                             Approve
                           </button>
                           <button
                             type="button"
-                            className="ghost-button ghost-button-small"
-                            onClick={() => reviewPendingMaterial(item.id, 'denied')}
+                            className="ghost-button ghost-button-small feedback-delete-button"
+                            onClick={() => void reviewPendingMaterial(item.id, 'denied')}
                           >
                             Deny
                           </button>
@@ -7142,6 +7194,8 @@ function App() {
                 </button>
               </div>
             </div>
+
+            <div className="material-viewer-teacher">{renderMaterialTeacherMeta(activeViewerMaterial)}</div>
 
             <div className="material-viewer-shell">
               {activeViewerMaterial.resourceType === 'text' && (

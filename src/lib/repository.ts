@@ -54,22 +54,6 @@ const OPTIONAL_SUPPORT_REQUEST_COLUMNS = new Set([
   'completed_by',
 ]);
 
-const OPTIONAL_STAFF_MATERIAL_COLUMNS = new Set([
-  'resource_type',
-  'attachment_name',
-  'attachment_data',
-  'video_url',
-  'question_limit',
-  'questions',
-  'uploaded_by_email',
-  'approval_status',
-  'ai_review_summary',
-  'admin_review_note',
-  'reviewed_at',
-  'reviewed_by',
-  'updated_at',
-]);
-
 const CACHE_TTL_MS = 15000;
 const listCache = new Map<string, { timestamp: number; data: unknown }>();
 
@@ -82,12 +66,6 @@ function getMissingLearnerProfileColumn(error: { message?: string } | null | und
 function getMissingSupportRequestColumn(error: { message?: string } | null | undefined) {
   const message = error?.message ?? '';
   const match = /Could not find the '([^']+)' column of 'support_requests' in the schema cache/i.exec(message);
-  return match?.[1] ?? null;
-}
-
-function getMissingStaffMaterialColumn(error: { message?: string } | null | undefined) {
-  const message = error?.message ?? '';
-  const match = /Could not find the '([^']+)' column of 'staff_materials' in the schema cache/i.exec(message);
   return match?.[1] ?? null;
 }
 
@@ -126,27 +104,6 @@ async function writeSupportRequestWithSchemaFallback(
 
     const missingColumn = getMissingSupportRequestColumn(result.error);
     if (!missingColumn || !OPTIONAL_SUPPORT_REQUEST_COLUMNS.has(missingColumn) || !(missingColumn in nextRow)) {
-      return { ...result, row: nextRow };
-    }
-
-    delete nextRow[missingColumn];
-  }
-}
-
-async function writeStaffMaterialWithSchemaFallback(
-  write: (row: Record<string, unknown>) => Promise<{ error: { message?: string } | null; data?: unknown }>,
-  initialRow: Record<string, unknown>,
-) {
-  const nextRow = { ...initialRow };
-
-  while (true) {
-    const result = await write(nextRow);
-    if (!result.error) {
-      return { ...result, error: null, row: nextRow };
-    }
-
-    const missingColumn = getMissingStaffMaterialColumn(result.error);
-    if (!missingColumn || !OPTIONAL_STAFF_MATERIAL_COLUMNS.has(missingColumn) || !(missingColumn in nextRow)) {
       return { ...result, row: nextRow };
     }
 
@@ -1286,70 +1243,31 @@ async function addStaffMaterial(material: StaffMaterial) {
   }
 
   const token = await getAccessToken();
-  if (token) {
-    const response = await fetch('/api/upsert-material', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify(material),
-    });
-
-    const payload = (await response.json().catch(() => null)) as
-      | {
-          error?: string;
-          material?: Record<string, unknown>;
-        }
-      | null;
-
-    if (!response.ok || !payload?.material) {
-      throw new Error(payload?.error ?? 'We could not save that material just now.');
-    }
-
-    const savedMaterial = mergeStaffMaterialSnapshot(mapStaffMaterialRow(payload.material), material);
-    saveLocalStaffMaterials([savedMaterial, ...localMaterials.filter((entry) => entry.id !== savedMaterial.id)]);
-    invalidateListCache('staffMaterials');
-    return savedMaterial;
+  if (!token) {
+    throw new Error('Sign in again before sending material for review.');
   }
 
-  const insertRow = {
-    id: material.id,
-    title: material.title,
-    summary: material.summary,
-    body: material.body,
-    country_code: material.countryCode,
-    stage: material.stage,
-    level: material.level,
-    subject: material.subject,
-    category: material.category,
-    resource_type: material.resourceType,
-    attachment_name: material.attachmentName ?? null,
-    attachment_data: material.attachmentData ?? null,
-    video_url: material.videoUrl ?? null,
-    question_limit: material.questionLimit ?? null,
-    questions: material.questions ?? [],
-    uploaded_by: material.uploadedBy,
-    uploaded_by_email: material.uploadedByEmail ?? null,
-    created_at: material.createdAt,
-    updated_at: material.updatedAt ?? material.createdAt,
-    approval_status: material.approvalStatus ?? 'approved',
-    ai_review_summary: material.aiReviewSummary ?? null,
-    admin_review_note: material.adminReviewNote ?? null,
-    reviewed_at: material.reviewedAt ?? null,
-    reviewed_by: material.reviewedBy ?? null,
-  };
+  const response = await fetch('/api/upsert-material', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(material),
+  });
 
-  const { data, error } = await writeStaffMaterialWithSchemaFallback(
-    async (row) => await supabaseClient.from('staff_materials').insert(row).select('*').single(),
-    insertRow,
-  );
+  const payload = (await response.json().catch(() => null)) as
+    | {
+        error?: string;
+        material?: Record<string, unknown>;
+      }
+    | null;
 
-  if (error || !data) {
-    throw error ?? new Error('We could not save that material just now.');
+  if (!response.ok || !payload?.material) {
+    throw new Error(payload?.error ?? 'We could not save that material just now.');
   }
 
-  const savedMaterial = mergeStaffMaterialSnapshot(mapStaffMaterialRow(data as Record<string, unknown>), material);
+  const savedMaterial = mergeStaffMaterialSnapshot(mapStaffMaterialRow(payload.material), material);
   saveLocalStaffMaterials([savedMaterial, ...localMaterials.filter((entry) => entry.id !== savedMaterial.id)]);
   invalidateListCache('staffMaterials');
   return savedMaterial;
@@ -1587,74 +1505,31 @@ async function updateStaffMaterial(material: StaffMaterial) {
   }
 
   const token = await getAccessToken();
-  if (token) {
-    const response = await fetch('/api/upsert-material', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify(material),
-    });
-
-    const payload = (await response.json().catch(() => null)) as
-      | {
-          error?: string;
-          material?: Record<string, unknown>;
-        }
-      | null;
-
-    if (!response.ok || !payload?.material) {
-      throw new Error(payload?.error ?? 'We could not update that material just now.');
-    }
-
-    const savedMaterial = mergeStaffMaterialSnapshot(mapStaffMaterialRow(payload.material), material);
-    saveLocalStaffMaterials([savedMaterial, ...localMaterials.filter((entry) => entry.id !== savedMaterial.id)]);
-    invalidateListCache('staffMaterials');
-    return savedMaterial;
+  if (!token) {
+    throw new Error('Sign in again before reviewing or editing this material.');
   }
 
-  const updateRow = {
-    title: material.title,
-    summary: material.summary,
-    body: material.body,
-    country_code: material.countryCode,
-    stage: material.stage,
-    level: material.level,
-    subject: material.subject,
-    category: material.category,
-    resource_type: material.resourceType,
-    attachment_name: material.attachmentName ?? null,
-    attachment_data: material.attachmentData ?? null,
-    video_url: material.videoUrl ?? null,
-    question_limit: material.questionLimit ?? null,
-    questions: material.questions ?? [],
-    uploaded_by: material.uploadedBy,
-    uploaded_by_email: material.uploadedByEmail ?? null,
-    updated_at: material.updatedAt ?? new Date().toISOString(),
-    approval_status: material.approvalStatus ?? 'approved',
-    ai_review_summary: material.aiReviewSummary ?? null,
-    admin_review_note: material.adminReviewNote ?? null,
-    reviewed_at: material.reviewedAt ?? null,
-    reviewed_by: material.reviewedBy ?? null,
-  };
+  const response = await fetch('/api/upsert-material', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(material),
+  });
 
-  const { data, error } = await writeStaffMaterialWithSchemaFallback(
-    async (row) =>
-      await supabaseClient
-        .from('staff_materials')
-        .update(row)
-        .eq('id', material.id)
-        .select('*')
-        .single(),
-    updateRow,
-  );
+  const payload = (await response.json().catch(() => null)) as
+    | {
+        error?: string;
+        material?: Record<string, unknown>;
+      }
+    | null;
 
-  if (error || !data) {
-    throw error ?? new Error('We could not update that material just now.');
+  if (!response.ok || !payload?.material) {
+    throw new Error(payload?.error ?? 'We could not update that material just now.');
   }
 
-  const savedMaterial = mergeStaffMaterialSnapshot(mapStaffMaterialRow(data as Record<string, unknown>), material);
+  const savedMaterial = mergeStaffMaterialSnapshot(mapStaffMaterialRow(payload.material), material);
   saveLocalStaffMaterials([savedMaterial, ...localMaterials.filter((entry) => entry.id !== savedMaterial.id)]);
   invalidateListCache('staffMaterials');
   return savedMaterial;
@@ -1715,11 +1590,23 @@ async function removeStaffMaterial(materialId: string) {
     return;
   }
 
-  const { error } = await supabase.from('staff_materials').delete().eq('id', materialId);
-  if (!error) {
-    saveLocalStaffMaterials(localMaterials.filter((material) => material.id !== materialId));
-    invalidateListCache('staffMaterials');
-    return;
+  const token = await getAccessToken();
+  if (!token) {
+    throw new Error('Sign in again before removing this material.');
+  }
+
+  const response = await fetch('/api/delete-material', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ materialId }),
+  });
+
+  if (!response.ok) {
+    const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+    throw new Error(payload?.error ?? 'We could not remove that material just now.');
   }
 
   saveLocalStaffMaterials(localMaterials.filter((material) => material.id !== materialId));

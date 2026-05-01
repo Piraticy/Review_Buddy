@@ -1630,7 +1630,18 @@ async function removeStaffMaterial(materialId: string) {
 
   if (!response.ok) {
     const payload = (await response.json().catch(() => null)) as { error?: string } | null;
-    throw new Error(payload?.error ?? 'We could not remove that material just now.');
+    const { error: fallbackError } = await supabase
+      .from('staff_materials')
+      .delete()
+      .eq('id', materialId);
+
+    if (!fallbackError) {
+      saveLocalStaffMaterials(localMaterials.filter((material) => material.id !== materialId));
+      invalidateListCache('staffMaterials');
+      return;
+    }
+
+    throw new Error(payload?.error ?? fallbackError.message ?? 'We could not remove that material just now.');
   }
 
   saveLocalStaffMaterials(localMaterials.filter((material) => material.id !== materialId));

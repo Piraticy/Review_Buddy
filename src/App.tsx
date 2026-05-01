@@ -234,9 +234,12 @@ type MaterialDocumentPreview =
 const STORAGE_KEY = 'review-buddy-state-clean';
 const LEGACY_STORAGE_KEYS = ['review-buddy-state'];
 const INSTALL_DISMISS_KEY = 'review-buddy-install-dismissed';
+const DEFERRED_UPDATE_KEY = 'review-buddy-update-deferred';
+const POST_UPDATE_NOTICE_KEY = 'review-buddy-post-update-notice';
 const APP_VERSION = '1.11.2';
 const APP_DISPLAY_VERSION = 'Updated often';
 const APP_CREATED_ON = 'March 26';
+const IDLE_LOGOUT_MS = 30 * 60 * 1000;
 const BIRTHDAY_MIN_DATE = new Date(1990, 0, 1);
 const BIRTHDAY_WEEKDAY_LABELS = ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'];
 const BIRTHDAY_MONTH_LABELS = [
@@ -637,41 +640,6 @@ function getEligibilityBadgeMeta(eligibility?: string) {
     default:
       return { icon: '✅', tone: 'slate', label: eligibility || 'Ready' };
   }
-}
-
-function isReloadNavigation() {
-  if (typeof window === 'undefined') {
-    return false;
-  }
-
-  const navigationEntry = window.performance
-    .getEntriesByType('navigation')
-    .find((entry): entry is PerformanceNavigationTiming => entry instanceof PerformanceNavigationTiming);
-
-  if (navigationEntry) {
-    return navigationEntry.type === 'reload';
-  }
-
-  const legacyNavigation = window.performance.navigation;
-  return legacyNavigation?.type === 1;
-}
-
-function stripStoredAuthState(saved: StoredState): StoredState {
-  return {
-    appVersion: saved.appVersion,
-    authMode: 'signin',
-    themeMode: saved.themeMode,
-    registeredUsers: saved.registeredUsers,
-    staffMembers: saved.staffMembers,
-    staffMaterials: saved.staffMaterials,
-    adminActivityByCountry: saved.adminActivityByCountry,
-    followUpsByCountry: saved.followUpsByCountry,
-    feedbackEntries: saved.feedbackEntries,
-    submittedFeedbackKeys: saved.submittedFeedbackKeys,
-    supportRequests: saved.supportRequests,
-    announcements: saved.announcements,
-    learningCountryCode: saved.learningCountryCode,
-  };
 }
 
 function getAttachmentMimeType(dataUrl?: string) {
@@ -1415,10 +1383,23 @@ function getMaterialTypeBadge(material: StaffMaterial) {
         : '📘 Notes';
 }
 
+function getTutorialSeenStorageKey(identifier: string) {
+  return `review-buddy-tutorial-seen:${identifier.trim().toLowerCase()}`;
+}
+
 function shouldShowFirstTimeTutorial(
   profile: LearnerProfile & Partial<Pick<RegisteredUser, 'createdAt' | 'lastLoginAt'>>,
   knownUser?: RegisteredUser,
 ) {
+  const tutorialIdentity = profile.email || knownUser?.email || profile.fullName || knownUser?.fullName || '';
+  if (
+    tutorialIdentity &&
+    typeof window !== 'undefined' &&
+    window.localStorage.getItem(getTutorialSeenStorageKey(tutorialIdentity)) === 'true'
+  ) {
+    return false;
+  }
+
   if (knownUser?.tutorialSeen || knownUser?.lastLoginAt) {
     return false;
   }
@@ -1718,6 +1699,7 @@ function App() {
   const [showTermsModal, setShowTermsModal] = useState(false);
   const [showTutorial, setShowTutorial] = useState(false);
   const [showVersionPrompt, setShowVersionPrompt] = useState(false);
+  const [showPostUpdateNotice, setShowPostUpdateNotice] = useState(false);
   const [streakNotice, setStreakNotice] = useState('');
   const [isAuthBusy, setIsAuthBusy] = useState(false);
   const [activeMaterialViewer, setActiveMaterialViewer] = useState<MaterialViewerPayload | null>(null);
@@ -1733,12 +1715,12 @@ function App() {
   const [authScene] = useState(() => AUTH_SCENES[Math.floor(Math.random() * AUTH_SCENES.length)]);
   const [showBirthdayPicker, setShowBirthdayPicker] = useState(false);
   const [birthdayCalendarDate, setBirthdayCalendarDate] = useState(() => getMonthStart(new Date()));
-  const [hasChosenSignupCountry, setHasChosenSignupCountry] = useState(false);
   const [learningCountryCode, setLearningCountryCode] = useState(() => createInitialProfile().countryCode);
   const speechKeyRef = useRef<string | null>(null);
   const birthdayPickerRef = useRef<HTMLDivElement | null>(null);
   const sharedRefreshPromiseRef = useRef<Promise<void> | null>(null);
   const staffShortcutPanelRef = useRef<HTMLElement | null>(null);
+  const staffUploadsPanelRef = useRef<HTMLElement | null>(null);
   const detectedCountryCodeRef = useRef(inferCountryCode());
   const restoredCoreStaffRef = useRef(false);
 
@@ -1796,24 +1778,6 @@ function App() {
   }, [profile.role, screen]);
 
   useEffect(() => {
-    if (authMode !== 'signup' || hasChosenSignupCountry) {
-      return;
-    }
-
-    const detectedCountryCode = detectedCountryCodeRef.current;
-    setProfile((current) => {
-      if (current.countryCode === detectedCountryCode) {
-        return current;
-      }
-
-      return normalizeLearnerProfile({
-        ...current,
-        countryCode: detectedCountryCode,
-      });
-    });
-  }, [authMode, hasChosenSignupCountry]);
-
-  useEffect(() => {
     if (authMode !== 'signup') {
       setShowBirthdayPicker(false);
     }
@@ -1853,43 +1817,36 @@ function App() {
     });
 
     const raw = window.localStorage.getItem(STORAGE_KEY);
-    const shouldForceSignOut = isReloadNavigation();
-
-    if (shouldForceSignOut) {
-      void supabase?.auth.signOut();
-      setAuthNotice('The page was refreshed. Sign in again to continue.');
-    }
 
     if (!raw) {
+      if (window.localStorage.getItem(POST_UPDATE_NOTICE_KEY) === 'true') {
+        window.localStorage.removeItem(POST_UPDATE_NOTICE_KEY);
+        setShowPostUpdateNotice(true);
+      }
       setIsReady(true);
       return;
     }
 
     try {
-      const parsed = JSON.parse(raw) as StoredState;
-      const saved = shouldForceSignOut ? stripStoredAuthState(parsed) : parsed;
-
-      if (shouldForceSignOut) {
-        window.localStorage.setItem(STORAGE_KEY, JSON.stringify(saved));
-      }
+      const saved = JSON.parse(raw) as StoredState;
 
       if (saved.appVersion !== APP_VERSION) {
         setShowVersionPrompt(Boolean(saved.appVersion));
       }
 
-      if (!shouldForceSignOut && saved.profile) setProfile(normalizeLearnerProfile(saved.profile));
+      if (saved.profile) setProfile(normalizeLearnerProfile(saved.profile));
       if (saved.learningCountryCode) setLearningCountryCode(saved.learningCountryCode);
-      if (!shouldForceSignOut && saved.attempts) setAttempts(saved.attempts);
+      if (saved.attempts) setAttempts(saved.attempts);
       if (saved.registeredUsers) setRegisteredUsers(ensureRegisteredUsers(saved.registeredUsers));
       if (saved.authMode) setAuthMode(saved.authMode);
       if (saved.themeMode) setThemeMode(saved.themeMode);
-      if (!shouldForceSignOut && saved.screen) setScreen(saved.screen);
-      if (!shouldForceSignOut && saved.studentView) setStudentView(saved.studentView);
-      if (!shouldForceSignOut && saved.adminView) setAdminView(saved.adminView);
-      if (!shouldForceSignOut && saved.staffView) setStaffView(saved.staffView);
-      if (!shouldForceSignOut && saved.selectedSubject) setSelectedSubject(saved.selectedSubject);
-      if (!shouldForceSignOut && saved.reviewSnapshot) setReviewSnapshot(saved.reviewSnapshot);
-      if (!shouldForceSignOut && saved.quizState) setQuizState(saved.quizState);
+      if (saved.screen) setScreen(saved.screen);
+      if (saved.studentView) setStudentView(saved.studentView);
+      if (saved.adminView) setAdminView(saved.adminView);
+      if (saved.staffView) setStaffView(saved.staffView);
+      if (saved.selectedSubject) setSelectedSubject(saved.selectedSubject);
+      if (saved.reviewSnapshot) setReviewSnapshot(saved.reviewSnapshot);
+      if (saved.quizState) setQuizState(saved.quizState);
       if (saved.staffMembers) setStaffMembers(saved.staffMembers);
       if (saved.staffMaterials) setStaffMaterials(saved.staffMaterials);
       if (saved.adminActivityByCountry) setAdminActivityByCountry(saved.adminActivityByCountry);
@@ -1898,6 +1855,10 @@ function App() {
       if (saved.submittedFeedbackKeys) setSubmittedFeedbackKeys(saved.submittedFeedbackKeys);
       if (saved.supportRequests) setSupportRequests(saved.supportRequests.map(normalizeSupportRequestEntry));
       if (saved.announcements) setAnnouncements(saved.announcements);
+      if (window.localStorage.getItem(POST_UPDATE_NOTICE_KEY) === 'true') {
+        window.localStorage.removeItem(POST_UPDATE_NOTICE_KEY);
+        setShowPostUpdateNotice(true);
+      }
     } catch {
       window.localStorage.removeItem(STORAGE_KEY);
     } finally {
@@ -1985,6 +1946,31 @@ function App() {
       window.removeEventListener('online', refreshNow);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       window.clearInterval(intervalId);
+    };
+  }, [isReady, screen]);
+
+  useEffect(() => {
+    if (!isReady || screen === 'auth') {
+      return undefined;
+    }
+
+    let timeoutId = window.setTimeout(() => {
+      logout('You were signed out after being idle for a while.');
+    }, IDLE_LOGOUT_MS);
+
+    const resetIdleTimer = () => {
+      window.clearTimeout(timeoutId);
+      timeoutId = window.setTimeout(() => {
+        logout('You were signed out after being idle for a while.');
+      }, IDLE_LOGOUT_MS);
+    };
+
+    const idleEvents: Array<keyof WindowEventMap> = ['mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll'];
+    idleEvents.forEach((eventName) => window.addEventListener(eventName, resetIdleTimer, { passive: true }));
+
+    return () => {
+      window.clearTimeout(timeoutId);
+      idleEvents.forEach((eventName) => window.removeEventListener(eventName, resetIdleTimer));
     };
   }, [isReady, screen]);
 
@@ -2370,15 +2356,27 @@ function App() {
       const materialEmail = material.uploadedByEmail?.trim().toLowerCase() ?? '';
       const memberName = member.name.trim().toLowerCase();
       const materialName = material.uploadedBy.trim().toLowerCase();
-      return (memberEmail && materialEmail && memberEmail === materialEmail) || (!!memberName && memberName === materialName);
+      const memberShortName = memberEmail.split('@')[0] ?? '';
+      return (
+        (memberEmail && materialEmail && memberEmail === materialEmail) ||
+        (!!memberName && memberName === materialName) ||
+        (!!memberShortName && memberShortName === materialName)
+      );
     });
   const getStaffRegistrationForMaterial = (material: StaffMaterial) =>
     staffRegistrations.find((entry) => {
       const entryEmail = entry.email.trim().toLowerCase();
       const materialEmail = material.uploadedByEmail?.trim().toLowerCase() ?? '';
       const entryName = entry.fullName.trim().toLowerCase();
+      const entryUsername = entry.username.trim().toLowerCase();
+      const entryShortName = entryEmail.split('@')[0] ?? '';
       const materialName = material.uploadedBy.trim().toLowerCase();
-      return (entryEmail && materialEmail && entryEmail === materialEmail) || (!!entryName && entryName === materialName);
+      return (
+        (entryEmail && materialEmail && entryEmail === materialEmail) ||
+        (!!entryName && entryName === materialName) ||
+        (!!entryUsername && entryUsername === materialName) ||
+        (!!entryShortName && entryShortName === materialName)
+      );
     });
   const renderMaterialTeacherMeta = (material: StaffMaterial) => {
     const staffMember = getStaffMemberForMaterial(material);
@@ -2444,6 +2442,10 @@ function App() {
   ];
   const activeStaffShortcut =
     staffShortcutItems.find((item) => item.key === staffShortcutView) ?? staffShortcutItems[0];
+  const activeStaffUploadShortcut =
+    staffShortcutView === 'pending'
+      ? staffShortcutItems.find((item) => item.key === 'pending') ?? staffShortcutItems[0]
+      : staffShortcutItems.find((item) => item.key === 'uploads') ?? staffShortcutItems[0];
   const shortcutMaterials = staffShortcutView === 'pending' ? pendingStaffMaterials : myStaffMaterials;
   const birthdayLearners = learnerRegistrations.filter((entry) => isBirthdayToday(entry));
   const openSupportRequests = supportRequestsForAdmin
@@ -2456,6 +2458,7 @@ function App() {
     { label: 'Support requests', count: openSupportRequests.length, view: 'followups' as const },
   ];
   const focusCountryOpenRequests = openSupportRequests.filter((request) => request.countryCode === adminMetricsCode);
+  const visibleAdminOpenRequests = focusCountryOpenRequests.length > 0 ? focusCountryOpenRequests : openSupportRequests;
   const assignedSupportRequests = openSupportRequests.filter(
     (request) => (request.assignedToEmail ?? '').toLowerCase() === profile.email.toLowerCase(),
   );
@@ -2581,10 +2584,6 @@ function App() {
   ];
 
   function updateProfile<Key extends keyof LearnerProfile>(key: Key, value: LearnerProfile[Key]) {
-    if (key === 'countryCode' && authMode === 'signup') {
-      setHasChosenSignupCountry(true);
-    }
-
     setProfile((current) => ({
       ...current,
       [key]: value,
@@ -2895,6 +2894,12 @@ function App() {
         tutorialSeen: sessionProfile.tutorialSeen,
       });
     }
+
+    if (window.localStorage.getItem(DEFERRED_UPDATE_KEY) === 'true') {
+      window.setTimeout(() => {
+        void applyLatestUpdate();
+      }, 0);
+    }
   }
 
   function openAdminView(view: AdminView) {
@@ -2907,7 +2912,11 @@ function App() {
   function openStaffShortcut(view: StaffShortcutView) {
     setStaffShortcutView(view);
     window.requestAnimationFrame(() => {
-      staffShortcutPanelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      const targetRef =
+        view === 'uploads' || view === 'pending'
+          ? staffUploadsPanelRef.current
+          : staffShortcutPanelRef.current;
+      targetRef?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
   }
 
@@ -3035,16 +3044,15 @@ function App() {
     }
   }
 
-  function logout() {
+  function logout(notice = '') {
     if ('speechSynthesis' in window) {
       window.speechSynthesis.cancel();
     }
     void supabase?.auth.signOut();
     setSpeakingKey(null);
     setAuthMode('signin');
-    setAuthNotice('');
+    setAuthNotice(notice);
     setSigninIdentifier('');
-    setHasChosenSignupCountry(false);
     setProfile(createInitialProfile());
     setLearningCountryCode(detectedCountryCodeRef.current);
     setScreen('auth');
@@ -3685,6 +3693,10 @@ function App() {
   function closeTutorial() {
     setShowTutorial(false);
     const nextProfile = { ...profile, tutorialSeen: true };
+    const tutorialIdentity = profile.email || profile.fullName;
+    if (tutorialIdentity) {
+      window.localStorage.setItem(getTutorialSeenStorageKey(tutorialIdentity), 'true');
+    }
     setProfile(nextProfile);
     if (profile.email) {
       setRegisteredUsers((current) =>
@@ -3713,11 +3725,14 @@ function App() {
   }
 
   function dismissVersionPrompt() {
+    window.localStorage.setItem(DEFERRED_UPDATE_KEY, 'true');
     setShowVersionPrompt(false);
   }
 
   async function applyLatestUpdate() {
+    window.localStorage.removeItem(DEFERRED_UPDATE_KEY);
     setShowVersionPrompt(false);
+    setShowPostUpdateNotice(false);
 
     if ('serviceWorker' in navigator) {
       const registration = await navigator.serviceWorker.getRegistration().catch(() => undefined);
@@ -4381,9 +4396,6 @@ function App() {
                             password: '',
                           }),
                         );
-                        if (!profile.fullName.trim() && !profile.email.trim()) {
-                          setHasChosenSignupCountry(false);
-                        }
                       }}
                     >
                       Register
@@ -4808,7 +4820,7 @@ function App() {
                     <p>{getFlagEmoji(country.code)} {country.name} · {getStageLabel(profile.stage)}</p>
                   </div>
                   <div className="banner-actions">
-                    <button type="button" className="primary-button action-button-prominent" onClick={logout}>
+                    <button type="button" className="primary-button action-button-prominent" onClick={() => logout()}>
                       Sign out
                     </button>
                   </div>
@@ -5081,7 +5093,7 @@ function App() {
                     >
                       Back to subjects
                     </button>
-                    <button type="button" className="primary-button" onClick={logout}>
+                    <button type="button" className="primary-button" onClick={() => logout()}>
                       Sign out
                     </button>
                   </div>
@@ -5211,7 +5223,7 @@ function App() {
                     >
                       Back to subject page
                     </button>
-                    <button type="button" className="primary-button" onClick={logout}>
+                    <button type="button" className="primary-button" onClick={() => logout()}>
                       Sign out
                     </button>
                   </div>
@@ -5348,7 +5360,7 @@ function App() {
                     >
                       Back to subject
                     </button>
-                    <button type="button" className="primary-button" onClick={logout}>
+                    <button type="button" className="primary-button" onClick={() => logout()}>
                       Sign out
                     </button>
                   </div>
@@ -5549,7 +5561,7 @@ function App() {
                     >
                       Back to subject
                     </button>
-                    <button type="button" className="primary-button" onClick={logout}>
+                    <button type="button" className="primary-button" onClick={() => logout()}>
                       Sign out
                     </button>
                   </div>
@@ -5672,7 +5684,7 @@ function App() {
                 <button type="button" className="primary-button action-button-prominent" onClick={() => setStaffView('lounge')}>
                   Back to lounge
                 </button>
-                <button type="button" className="primary-button" onClick={logout}>
+                <button type="button" className="primary-button" onClick={() => logout()}>
                   Sign out
                 </button>
               </div>
@@ -5772,7 +5784,7 @@ function App() {
                     Share thoughts
                   </button>
                 ) : null}
-                <button type="button" className="primary-button action-button-prominent" onClick={logout}>
+                <button type="button" className="primary-button action-button-prominent" onClick={() => logout()}>
                   Sign out
                 </button>
               </div>
@@ -5793,100 +5805,47 @@ function App() {
               ))}
             </section>
 
-            <section ref={staffShortcutPanelRef} className="setup-panel">
-              <div className="panel-heading">
-                <p className="eyebrow">Shortcut board</p>
-                <h2>{activeStaffShortcut.label}</h2>
-                <p>{activeStaffShortcut.helper}</p>
-              </div>
-              {staffShortcutView === 'learners' ? (
-                <div className="history-list">
-                  {focusedLearners.map((entry) => (
-                    <article key={entry.id} className="history-row">
-                      <div>
-                        <strong>{entry.fullName}</strong>
-                        <span>{getFlagEmoji(entry.countryCode)} {getCountryByCode(entry.countryCode).name} · {entry.level} · {entry.subject}</span>
-                        <span>{entry.lastLoginAt ? `Last seen ${new Date(entry.lastLoginAt).toLocaleString()}` : 'Waiting for first sign in'}</span>
-                      </div>
-                    </article>
-                  ))}
-                  {focusedLearners.length === 0 ? (
-                    <p className="empty-state">Learners in your class will appear here.</p>
-                  ) : null}
+            {(staffShortcutView === 'learners' || staffShortcutView === 'active') ? (
+              <section ref={staffShortcutPanelRef} className="setup-panel">
+                <div className="panel-heading">
+                  <p className="eyebrow">Shortcut board</p>
+                  <h2>{activeStaffShortcut.label}</h2>
+                  <p>{activeStaffShortcut.helper}</p>
                 </div>
-              ) : null}
-              {staffShortcutView === 'active' ? (
-                <div className="history-list">
-                  {recentActiveLearners.map((entry) => (
-                    <article key={entry.id} className="history-row">
-                      <div>
-                        <strong>{entry.fullName}</strong>
-                        <span>{entry.level} · {entry.subject}</span>
-                        <span>{entry.lastLoginAt ? `Active ${new Date(entry.lastLoginAt).toLocaleString()}` : 'Seen recently'}</span>
-                      </div>
-                    </article>
-                  ))}
-                  {recentActiveLearners.length === 0 ? (
-                    <p className="empty-state">Recent learner activity will appear here once people sign in and practise.</p>
-                  ) : null}
-                </div>
-              ) : null}
-              {(staffShortcutView === 'uploads' || staffShortcutView === 'pending') ? (
-                <div className="teacher-material-grid teacher-material-grid-compact">
-                  {shortcutMaterials.map((material) => (
-                    <article key={material.id} className="teacher-material-card teacher-material-card-compact">
-                      <div className="teacher-material-head">
-                        <strong>{material.title}</strong>
-                        <span className="mini-badge">{getMaterialStatusBadge(resolveMaterialApprovalStatus(material))}</span>
-                      </div>
-                      <p>{material.summary}</p>
-                      {renderMaterialTeacherMeta(material)}
-                      <span className="teacher-material-meta">
-                        {getFlagEmoji(material.countryCode)} {getCountryByCode(material.countryCode).name} · {material.subject} · {material.level}
-                      </span>
-                      <p className="teacher-material-meta">{material.aiReviewSummary ?? 'Waiting for review.'}</p>
-                      {material.adminReviewNote ? <p className="teacher-material-meta">{material.adminReviewNote}</p> : null}
-                      <div className="material-pill-row">
-                        <span className="mini-badge">{getMaterialTypeBadge(material)}</span>
-                        {material.questionLimit ? <span className="mini-badge">#{material.questionLimit}</span> : null}
-                      </div>
-                      <div className="row-actions">
-                        <div className="row-actions">
-                          <button
-                            type="button"
-                            className="ghost-button ghost-button-small"
-                            onClick={() => openMaterialViewer(material, 'Staff preview')}
-                          >
-                            Preview
-                          </button>
-                          <button
-                            type="button"
-                            className="ghost-button ghost-button-small"
-                            onClick={() => beginEditStaffMaterial(material)}
-                          >
-                            Edit
-                          </button>
-                          <button
-                            type="button"
-                            className="ghost-button ghost-button-small"
-                            onClick={() => removeStaffMaterial(material.id)}
-                          >
-                            Remove
-                          </button>
+                {staffShortcutView === 'learners' ? (
+                  <div className="history-list">
+                    {focusedLearners.map((entry) => (
+                      <article key={entry.id} className="history-row">
+                        <div>
+                          <strong>{entry.fullName}</strong>
+                          <span>{getFlagEmoji(entry.countryCode)} {getCountryByCode(entry.countryCode).name} · {entry.level} · {entry.subject}</span>
+                          <span>{entry.lastLoginAt ? `Last seen ${new Date(entry.lastLoginAt).toLocaleString()}` : 'Waiting for first sign in'}</span>
                         </div>
-                      </div>
-                    </article>
-                  ))}
-                  {shortcutMaterials.length === 0 ? (
-                    <p className="empty-state">
-                      {staffShortcutView === 'pending'
-                        ? 'Pending uploads will appear here as soon as you send them for review.'
-                        : 'Your uploads will appear here after you send material for review.'}
-                    </p>
-                  ) : null}
-                </div>
-              ) : null}
-            </section>
+                      </article>
+                    ))}
+                    {focusedLearners.length === 0 ? (
+                      <p className="empty-state">Learners in your class will appear here.</p>
+                    ) : null}
+                  </div>
+                ) : null}
+                {staffShortcutView === 'active' ? (
+                  <div className="history-list">
+                    {recentActiveLearners.map((entry) => (
+                      <article key={entry.id} className="history-row">
+                        <div>
+                          <strong>{entry.fullName}</strong>
+                          <span>{entry.level} · {entry.subject}</span>
+                          <span>{entry.lastLoginAt ? `Active ${new Date(entry.lastLoginAt).toLocaleString()}` : 'Seen recently'}</span>
+                        </div>
+                      </article>
+                    ))}
+                    {recentActiveLearners.length === 0 ? (
+                      <p className="empty-state">Recent learner activity will appear here once people sign in and practise.</p>
+                    ) : null}
+                  </div>
+                ) : null}
+              </section>
+            ) : null}
 
             <section className="setup-panel">
               <div className="panel-heading">
@@ -6160,6 +6119,65 @@ function App() {
               </div>
               <p className="teacher-material-meta">Your uploads stay in My uploads while the school team reviews them.</p>
             </section>
+
+            <section ref={staffUploadsPanelRef} className="setup-panel">
+              <div className="panel-heading">
+                <p className="eyebrow">Your uploads</p>
+                <h2>{activeStaffUploadShortcut.label}</h2>
+                <p>{activeStaffUploadShortcut.helper}</p>
+              </div>
+              <div className="teacher-material-grid teacher-material-grid-compact">
+                {shortcutMaterials.map((material) => (
+                  <article key={material.id} className="teacher-material-card teacher-material-card-compact">
+                    <div className="teacher-material-head">
+                      <strong>{material.title}</strong>
+                      <span className="mini-badge">{getMaterialStatusBadge(resolveMaterialApprovalStatus(material))}</span>
+                    </div>
+                    <p>{material.summary}</p>
+                    {renderMaterialTeacherMeta(material)}
+                    <span className="teacher-material-meta">
+                      {getFlagEmoji(material.countryCode)} {getCountryByCode(material.countryCode).name} · {material.subject} · {material.level}
+                    </span>
+                    <p className="teacher-material-meta">{material.aiReviewSummary ?? 'Waiting for review.'}</p>
+                    {material.adminReviewNote ? <p className="teacher-material-meta">{material.adminReviewNote}</p> : null}
+                    <div className="material-pill-row">
+                      <span className="mini-badge">{getMaterialTypeBadge(material)}</span>
+                      {material.questionLimit ? <span className="mini-badge">#{material.questionLimit}</span> : null}
+                    </div>
+                    <div className="row-actions">
+                      <button
+                        type="button"
+                        className="ghost-button ghost-button-small"
+                        onClick={() => openMaterialViewer(material, 'Staff preview')}
+                      >
+                        Preview
+                      </button>
+                      <button
+                        type="button"
+                        className="ghost-button ghost-button-small"
+                        onClick={() => beginEditStaffMaterial(material)}
+                      >
+                        Edit
+                      </button>
+                      <button
+                        type="button"
+                        className="ghost-button ghost-button-small"
+                        onClick={() => removeStaffMaterial(material.id)}
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  </article>
+                ))}
+                {shortcutMaterials.length === 0 ? (
+                  <p className="empty-state">
+                    {staffShortcutView === 'pending'
+                      ? 'Pending uploads will appear here as soon as you send them for review.'
+                      : 'Your uploads will appear here after you send material for review.'}
+                  </p>
+                ) : null}
+              </div>
+            </section>
           </section>
 
           <aside className="dashboard-side">
@@ -6400,7 +6418,7 @@ function App() {
                     <p>{getFlagEmoji(adminCountry.code)} {adminCountry.name} · {adminCountry.curriculum}</p>
                   </div>
                   <div className="banner-actions">
-                    <button type="button" className="primary-button" onClick={logout}>
+                    <button type="button" className="primary-button" onClick={() => logout()}>
                       Sign out
                     </button>
                   </div>
@@ -6986,7 +7004,7 @@ function App() {
                         </div>
                       </article>
                     ))}
-                    {focusCountryOpenRequests.map((item) => {
+                    {visibleAdminOpenRequests.map((item) => {
                       const assignableStaff = getAssignableStaffForRequest(item);
                       const selectedStaffEmail =
                         requestAssignmentSelections[item.id] ||
@@ -7067,7 +7085,7 @@ function App() {
                         </div>
                       </article>
                     ))}
-                    {pendingMaterials.length === 0 && focusCountryOpenRequests.length === 0 && followUpItems.length === 0 ? (
+                    {pendingMaterials.length === 0 && visibleAdminOpenRequests.length === 0 && followUpItems.length === 0 ? (
                       <p className="empty-state">Follow-up items will appear here when real learner activity needs support.</p>
                     ) : null}
                   </div>
@@ -7536,7 +7554,7 @@ function App() {
             <div className="panel-heading">
               <p className="eyebrow">Latest changes</p>
               <h2>Refresh to see the newest updates</h2>
-              <p>Refresh now to get the latest improvements and fixes.</p>
+              <p>Refresh now to get the latest improvements and fixes. If you choose later, the app will finish the update the next time you sign in.</p>
             </div>
             <div className="sample-buttons">
               <button type="button" className="primary-button" onClick={() => void applyLatestUpdate()}>
@@ -7544,6 +7562,23 @@ function App() {
               </button>
               <button type="button" className="ghost-button" onClick={dismissVersionPrompt}>
                 Later
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+
+      {showPostUpdateNotice && (
+        <div className="modal-backdrop" role="presentation">
+          <section className="modal-card" role="dialog" aria-label="App updated">
+            <div className="panel-heading">
+              <p className="eyebrow">App updated</p>
+              <h2>Updated with new features and fixes</h2>
+              <p>Review Buddy is now running the latest version.</p>
+            </div>
+            <div className="sample-buttons">
+              <button type="button" className="primary-button" onClick={() => setShowPostUpdateNotice(false)}>
+                Continue
               </button>
             </div>
           </section>

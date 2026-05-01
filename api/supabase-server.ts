@@ -249,6 +249,7 @@ export async function requireAuthorizedRole(
       id: authData.user.id,
       role: resolvedRole,
       email: normalizedEmail,
+      fullName: String(profile?.full_name ?? authData.user.user_metadata?.full_name ?? ''),
     },
   };
 }

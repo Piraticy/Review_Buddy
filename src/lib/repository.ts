@@ -915,8 +915,12 @@ async function signIn(identifier: string, password: string) {
   return signedInUser;
 }
 
-async function listRegisteredUsers() {
-  const cached = readListCache<RegisteredUser[]>('registeredUsers');
+async function listRegisteredUsers(force = false) {
+  if (force) {
+    invalidateListCache('registeredUsers');
+  }
+
+  const cached = force ? null : readListCache<RegisteredUser[]>('registeredUsers');
   if (cached) {
     return cached;
   }
@@ -948,8 +952,12 @@ async function listRegisteredUsers() {
   return writeListCache('registeredUsers', withFallbackLocalUsers(mergedUsers));
 }
 
-async function listStaffMembers() {
-  const cached = readListCache<AdminStaffMember[]>('staffMembers');
+async function listStaffMembers(force = false) {
+  if (force) {
+    invalidateListCache('staffMembers');
+  }
+
+  const cached = force ? null : readListCache<AdminStaffMember[]>('staffMembers');
   if (cached) {
     return cached;
   }
@@ -985,8 +993,12 @@ async function listStaffMembers() {
   return writeListCache('staffMembers', withFallbackLocalStaffMembers(mergedStaff));
 }
 
-async function listStaffMaterials() {
-  const cached = readListCache<StaffMaterial[]>('staffMaterials');
+async function listStaffMaterials(force = false) {
+  if (force) {
+    invalidateListCache('staffMaterials');
+  }
+
+  const cached = force ? null : readListCache<StaffMaterial[]>('staffMaterials');
   if (cached) {
     return cached;
   }
@@ -1023,8 +1035,12 @@ async function listStaffMaterials() {
   return writeListCache('staffMaterials', mergedMaterials);
 }
 
-async function listFeedbackEntries() {
-  const cached = readListCache<FeedbackEntry[]>('feedbackEntries');
+async function listFeedbackEntries(force = false) {
+  if (force) {
+    invalidateListCache('feedbackEntries');
+  }
+
+  const cached = force ? null : readListCache<FeedbackEntry[]>('feedbackEntries');
   if (cached) {
     return cached;
   }
@@ -1053,7 +1069,11 @@ async function listFeedbackEntries() {
   ]);
 }
 
-async function listSupportRequests() {
+async function listSupportRequests(force = false) {
+  if (force) {
+    invalidateListCache('supportRequests');
+  }
+
   const localRequests = (readStoredState().supportRequests ?? []).map(normalizeSupportRequest);
 
   if (!supabase) {
@@ -1097,8 +1117,12 @@ async function listSupportRequests() {
   ];
 }
 
-async function listAnnouncements() {
-  const cached = readListCache<Announcement[]>('announcements');
+async function listAnnouncements(force = false) {
+  if (force) {
+    invalidateListCache('announcements');
+  }
+
+  const cached = force ? null : readListCache<Announcement[]>('announcements');
   if (cached) {
     return cached;
   }

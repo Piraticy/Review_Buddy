@@ -187,6 +187,7 @@ type StoredState = {
   submittedFeedbackKeys?: string[];
   supportRequests?: SupportRequest[];
   announcements?: Announcement[];
+  learningCountryCode?: string;
 };
 
 type BeforeInstallPromptEvent = Event & {
@@ -233,7 +234,7 @@ type MaterialDocumentPreview =
 const STORAGE_KEY = 'review-buddy-state-clean';
 const LEGACY_STORAGE_KEYS = ['review-buddy-state'];
 const INSTALL_DISMISS_KEY = 'review-buddy-install-dismissed';
-const APP_VERSION = '1.11.1';
+const APP_VERSION = '1.11.2';
 const APP_DISPLAY_VERSION = 'Updated often';
 const APP_CREATED_ON = 'March 26';
 const BIRTHDAY_MIN_DATE = new Date(1990, 0, 1);
@@ -669,6 +670,7 @@ function stripStoredAuthState(saved: StoredState): StoredState {
     submittedFeedbackKeys: saved.submittedFeedbackKeys,
     supportRequests: saved.supportRequests,
     announcements: saved.announcements,
+    learningCountryCode: saved.learningCountryCode,
   };
 }
 
@@ -1413,6 +1415,32 @@ function getMaterialTypeBadge(material: StaffMaterial) {
         : '📘 Notes';
 }
 
+function shouldShowFirstTimeTutorial(
+  profile: LearnerProfile & Partial<Pick<RegisteredUser, 'createdAt' | 'lastLoginAt'>>,
+  knownUser?: RegisteredUser,
+) {
+  if (knownUser?.tutorialSeen || knownUser?.lastLoginAt) {
+    return false;
+  }
+
+  if (profile.tutorialSeen) {
+    return false;
+  }
+
+  const lastLoginAt = profile.lastLoginAt;
+  const createdAt = profile.createdAt ?? knownUser?.createdAt;
+
+  if (!lastLoginAt) {
+    return true;
+  }
+
+  if (!createdAt) {
+    return false;
+  }
+
+  return Math.abs(new Date(lastLoginAt).getTime() - new Date(createdAt).getTime()) < 10_000;
+}
+
 function getSupportCategoryLabel(category: SupportRequest['category']) {
   if (category === 'topic') return 'Topic help';
   if (category === 'mentor') return 'Learning support';
@@ -1706,6 +1734,7 @@ function App() {
   const [showBirthdayPicker, setShowBirthdayPicker] = useState(false);
   const [birthdayCalendarDate, setBirthdayCalendarDate] = useState(() => getMonthStart(new Date()));
   const [hasChosenSignupCountry, setHasChosenSignupCountry] = useState(false);
+  const [learningCountryCode, setLearningCountryCode] = useState(() => createInitialProfile().countryCode);
   const speechKeyRef = useRef<string | null>(null);
   const birthdayPickerRef = useRef<HTMLDivElement | null>(null);
   const sharedRefreshPromiseRef = useRef<Promise<void> | null>(null);
@@ -1849,6 +1878,7 @@ function App() {
       }
 
       if (!shouldForceSignOut && saved.profile) setProfile(normalizeLearnerProfile(saved.profile));
+      if (saved.learningCountryCode) setLearningCountryCode(saved.learningCountryCode);
       if (!shouldForceSignOut && saved.attempts) setAttempts(saved.attempts);
       if (saved.registeredUsers) setRegisteredUsers(ensureRegisteredUsers(saved.registeredUsers));
       if (saved.authMode) setAuthMode(saved.authMode);
@@ -1915,8 +1945,48 @@ function App() {
   }, []);
 
   useEffect(() => {
-    void refreshSharedState();
+    void refreshSharedState(true);
   }, []);
+
+  useEffect(() => {
+    const handleUpdateReady = () => {
+      setShowVersionPrompt(true);
+    };
+
+    window.addEventListener('review-buddy-update-ready', handleUpdateReady);
+    return () => {
+      window.removeEventListener('review-buddy-update-ready', handleUpdateReady);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!isReady || screen === 'auth') {
+      return undefined;
+    }
+
+    const refreshNow = () => {
+      void refreshSharedState(true).catch(() => undefined);
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        refreshNow();
+      }
+    };
+
+    window.addEventListener('focus', refreshNow);
+    window.addEventListener('online', refreshNow);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    const intervalId = window.setInterval(refreshNow, 20000);
+
+    return () => {
+      window.removeEventListener('focus', refreshNow);
+      window.removeEventListener('online', refreshNow);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.clearInterval(intervalId);
+    };
+  }, [isReady, screen]);
 
   useEffect(() => {
     if (!isReady) return;
@@ -1945,6 +2015,7 @@ function App() {
         submittedFeedbackKeys,
         supportRequests,
         announcements,
+        learningCountryCode,
       } satisfies StoredState),
     );
   }, [
@@ -1969,6 +2040,7 @@ function App() {
     submittedFeedbackKeys,
     themeMode,
     feedbackEntries,
+    learningCountryCode,
   ]);
 
   useEffect(() => {
@@ -2000,6 +2072,17 @@ function App() {
   }, [profile.countryCode, screen]);
 
   useEffect(() => {
+    if (profile.role !== 'student' || profile.plan !== 'elite') {
+      setLearningCountryCode(profile.countryCode);
+      return;
+    }
+
+    if (!COUNTRIES.some((entry) => entry.code === learningCountryCode)) {
+      setLearningCountryCode(profile.countryCode);
+    }
+  }, [learningCountryCode, profile.countryCode, profile.plan, profile.role]);
+
+  useEffect(() => {
     setStaffMaterialDraft((current) => {
       const levelOptions = getLevelOptions(current.stage);
       const nextLevel = levelOptions.includes(current.level) ? current.level : levelOptions[0];
@@ -2018,11 +2101,30 @@ function App() {
     });
   }, [staffMaterialDraft.countryCode, staffMaterialDraft.stage]);
 
-  const country = getCountryByCode(profile.countryCode);
-  const availableSubjects = getAvailableSubjects(profile.countryCode, profile.stage, profile.plan);
+  const activeLearningCountryCode =
+    profile.role === 'student' && profile.plan === 'elite' ? learningCountryCode : profile.countryCode;
+  const country = getCountryByCode(activeLearningCountryCode);
+  const availableSubjects = getAvailableSubjects(activeLearningCountryCode, profile.stage, profile.plan);
   const currentQuestion = quizState?.questions[quizState.currentIndex];
   const adminMetricsCode = screen === 'admin' ? adminFocusCode : profile.countryCode;
-  const activeStudentSubject = selectedSubject ?? profile.subject;
+  const activeStudentSubject =
+    selectedSubject && availableSubjects.includes(selectedSubject)
+      ? selectedSubject
+      : (availableSubjects[0] ?? profile.subject);
+
+  useEffect(() => {
+    if (screen !== 'student') {
+      return;
+    }
+
+    setSelectedSubject((current) => {
+      if (current && availableSubjects.includes(current)) {
+        return current;
+      }
+
+      return availableSubjects[0] ?? null;
+    });
+  }, [availableSubjects, screen]);
   const adminCountry = getCountryByCode(adminMetricsCode);
   const learnerRegistrations = registeredUsers.filter((entry) => entry.role === 'student');
   const staffRegistrations = registeredUsers.filter((entry) => entry.role === 'staff');
@@ -2168,13 +2270,13 @@ function App() {
   const firstName = profile.fullName.trim().split(' ')[0] || 'Learner';
   const dailyMotivationSet = getDailyMotivationSet();
   const learningMaterial = getLearningMaterial(
-    profile.countryCode,
+    activeLearningCountryCode,
     activeStudentSubject,
     profile.stage,
     profile.level,
   );
   const learningVideo = getLearningVideo(
-    profile.countryCode,
+    activeLearningCountryCode,
     activeStudentSubject,
     profile.stage,
     profile.level,
@@ -2184,7 +2286,7 @@ function App() {
   const matchingStaffMaterials = staffMaterials.filter(
     (material) =>
       resolveMaterialApprovalStatus(material) === 'approved' &&
-      material.countryCode === profile.countryCode &&
+      material.countryCode === activeLearningCountryCode &&
       material.stage === profile.stage &&
       material.level === profile.level &&
       material.subject === activeStudentSubject,
@@ -2270,22 +2372,35 @@ function App() {
       const materialName = material.uploadedBy.trim().toLowerCase();
       return (memberEmail && materialEmail && memberEmail === materialEmail) || (!!memberName && memberName === materialName);
     });
+  const getStaffRegistrationForMaterial = (material: StaffMaterial) =>
+    staffRegistrations.find((entry) => {
+      const entryEmail = entry.email.trim().toLowerCase();
+      const materialEmail = material.uploadedByEmail?.trim().toLowerCase() ?? '';
+      const entryName = entry.fullName.trim().toLowerCase();
+      const materialName = material.uploadedBy.trim().toLowerCase();
+      return (entryEmail && materialEmail && entryEmail === materialEmail) || (!!entryName && entryName === materialName);
+    });
   const renderMaterialTeacherMeta = (material: StaffMaterial) => {
     const staffMember = getStaffMemberForMaterial(material);
-    if (!staffMember) {
+    const staffRegistration = getStaffRegistrationForMaterial(material);
+    const teacherRole = staffMember?.role ?? (staffRegistration ? 'Teacher' : '');
+    const teacherEligibility = staffMember?.eligibility ?? staffRegistration?.eligibility;
+    const teacherQualifications = staffMember?.qualifications ?? staffRegistration?.qualifications;
+
+    if (!teacherRole && !teacherEligibility && !teacherQualifications) {
       return <span className="teacher-material-meta">Shared by {material.uploadedBy}</span>;
     }
 
-    const badge = getEligibilityBadgeMeta(staffMember.eligibility);
+    const badge = getEligibilityBadgeMeta(teacherEligibility);
     return (
       <div className="material-teacher-stack">
         <div className="material-pill-row">
-          <span className="mini-badge">🧑🏽‍🏫 {staffMember.role}</span>
+          {teacherRole ? <span className="mini-badge">🧑🏽‍🏫 {teacherRole}</span> : null}
           <span className={`eligibility-badge eligibility-badge-${badge.tone}`}>
             <span aria-hidden="true">{badge.icon}</span>
             {badge.label}
           </span>
-          {staffMember.qualifications ? <span className="mini-badge">🎓 {staffMember.qualifications}</span> : null}
+          {teacherQualifications ? <span className="mini-badge">🎓 {teacherQualifications}</span> : null}
         </div>
         <span className="teacher-material-meta">Shared by {material.uploadedBy}</span>
       </div>
@@ -2559,6 +2674,23 @@ function App() {
     repoAnnouncements: Announcement[],
   ) {
     startTransition(() => {
+      setProfile((current) => {
+        if (!current.email) {
+          return current;
+        }
+
+        const latestProfile = repoUsers.find((entry) => entry.email.toLowerCase() === current.email.toLowerCase());
+        if (!latestProfile) {
+          return current;
+        }
+
+        return normalizeLearnerProfile({
+          ...current,
+          ...latestProfile,
+          password: current.password || latestProfile.password,
+          tutorialSeen: latestProfile.tutorialSeen ?? current.tutorialSeen,
+        });
+      });
       setRegisteredUsers(ensureRegisteredUsers(repoUsers));
       setStaffMembers(repoStaff);
       setStaffMaterials(repoMaterials);
@@ -2568,19 +2700,19 @@ function App() {
     });
   }
 
-  async function refreshSharedState() {
+  async function refreshSharedState(force = false) {
     if (sharedRefreshPromiseRef.current) {
       return sharedRefreshPromiseRef.current;
     }
 
     const refreshTask = (async () => {
       const [repoUsers, repoStaff, repoMaterials, repoFeedback, repoSupportRequests, repoAnnouncements] = await Promise.all([
-        appRepository.listRegisteredUsers(),
-        appRepository.listStaffMembers(),
-        appRepository.listStaffMaterials(),
-        appRepository.listFeedbackEntries(),
-        appRepository.listSupportRequests(),
-        appRepository.listAnnouncements(),
+        appRepository.listRegisteredUsers(force),
+        appRepository.listStaffMembers(force),
+        appRepository.listStaffMaterials(force),
+        appRepository.listFeedbackEntries(force),
+        appRepository.listSupportRequests(force),
+        appRepository.listAnnouncements(force),
       ]);
 
       applySharedState(
@@ -2694,6 +2826,7 @@ function App() {
 
   function enterWorkspace(nextProfile: LearnerProfile) {
     const normalized = normalizeLearnerProfile(nextProfile);
+    const knownUser = registeredUsers.find((entry) => entry.email.toLowerCase() === normalized.email.toLowerCase());
     const todayKey = getTodayKey();
     const yesterdayKey = getYesterdayKey();
     let nextStreak = normalized.streakCount ?? 0;
@@ -2718,11 +2851,12 @@ function App() {
     setProfile(sessionProfile);
     setQuizState(null);
     setSelectedSubject(sessionProfile.subject);
+    setLearningCountryCode(sessionProfile.countryCode);
     setStudentView('home');
     setAdminView('overview');
     setStaffView('lounge');
     setScreen(sessionProfile.role === 'admin' ? 'admin' : sessionProfile.role === 'staff' ? 'staff' : 'student');
-    setShowTutorial(!(sessionProfile.tutorialSeen ?? false));
+    setShowTutorial(shouldShowFirstTimeTutorial(sessionProfile, knownUser));
     setStreakNotice(
       sessionProfile.role === 'student'
         ? buildStreakNotice(normalized.lastActiveOn, todayKey, yesterdayKey, sessionProfile.streakCount ?? 1)
@@ -2825,7 +2959,7 @@ function App() {
           setAdminNotice(`${savedUser.fullName} is now on the learner list.`);
           setConfirmPassword('');
           enterWorkspace(savedUser);
-          void refreshSharedState().catch(() => undefined);
+          void refreshSharedState(true).catch(() => undefined);
         } catch (error) {
           setAuthNotice(getErrorMessage(error, 'We could not create the account just now. Please try again.'));
         }
@@ -2841,7 +2975,7 @@ function App() {
       }
 
       enterWorkspace(matchedUser);
-      void refreshSharedState().catch(() => undefined);
+      void refreshSharedState(true).catch(() => undefined);
     } catch (error) {
       setAuthNotice(getErrorMessage(error, 'We could not continue right now. Please try again.'));
     } finally {
@@ -2912,6 +3046,7 @@ function App() {
     setSigninIdentifier('');
     setHasChosenSignupCountry(false);
     setProfile(createInitialProfile());
+    setLearningCountryCode(detectedCountryCodeRef.current);
     setScreen('auth');
     setStudentView('home');
     setAdminView('overview');
@@ -3011,7 +3146,7 @@ function App() {
       );
 
       try {
-        const refreshedUsers = await appRepository.listRegisteredUsers();
+        const refreshedUsers = await appRepository.listRegisteredUsers(true);
         setRegisteredUsers(
           ensureRegisteredUsers([
             registeredStaffUser,
@@ -3021,6 +3156,8 @@ function App() {
       } catch {
         // Keep the newly created local staff login available even if refresh fails.
       }
+
+      void refreshSharedState(true).catch(() => undefined);
     } catch (error) {
       setAdminNotice(getErrorMessage(error, `We could not save that staff profile for ${focusCountry.name} just now.`));
       return;
@@ -3323,6 +3460,7 @@ function App() {
           new Date(left.updatedAt ?? left.createdAt).getTime(),
       ),
     );
+    void refreshSharedState(true).catch(() => undefined);
     setStaffMaterialDraft(createInitialMaterialDraft(profile.countryCode));
     setAdminNotice(
       profile.role === 'admin'
@@ -3333,9 +3471,14 @@ function App() {
 
   async function removeStaffMaterial(materialId: string) {
     const material = staffMaterials.find((entry) => entry.id === materialId);
-    await appRepository.removeStaffMaterial(materialId);
-    setStaffMaterials((current) => current.filter((entry) => entry.id !== materialId));
-    setAdminNotice(`${material?.title ?? 'That material'} was removed from staff materials.`);
+    try {
+      await appRepository.removeStaffMaterial(materialId);
+      setStaffMaterials((current) => current.filter((entry) => entry.id !== materialId));
+      void refreshSharedState(true).catch(() => undefined);
+      setAdminNotice(`${material?.title ?? 'That material'} was removed from staff materials.`);
+    } catch (error) {
+      setAdminNotice(getErrorMessage(error, 'We could not remove that material just now.'));
+    }
   }
 
   async function removeStaffMember(memberIdOrName: string) {
@@ -3357,6 +3500,7 @@ function App() {
     await appRepository.removeStaffMember(memberIdOrName);
     setStaffMembers((current) => current.filter((entry) => entry.id !== memberIdOrName && entry.name !== memberIdOrName));
     setRegisteredUsers((current) => current.filter((entry) => entry.id !== memberIdOrName && entry.fullName !== memberIdOrName));
+    void refreshSharedState(true).catch(() => undefined);
     setAdminNotice(`${removedName} was removed from the staff list.`);
   }
 
@@ -3385,7 +3529,7 @@ function App() {
       createdAt: new Date().toISOString(),
       createdBy: profile.email || profile.fullName,
       createdByRole: profile.role,
-      countryCode: profile.countryCode,
+      countryCode: profile.role === 'student' ? activeLearningCountryCode : profile.countryCode,
       title: supportRequestDraft.title.trim(),
       detail: supportRequestDraft.detail.trim(),
       category: supportRequestDraft.category,
@@ -3395,6 +3539,7 @@ function App() {
     try {
       const savedRequest = await appRepository.addSupportRequest(nextRequest);
       setSupportRequests((current) => [savedRequest, ...current.filter((entry) => entry.id !== savedRequest.id)]);
+      void refreshSharedState(true).catch(() => undefined);
       setSupportRequestDraft(createInitialSupportRequestDraft());
       setAdminNotice('Your request was sent to the school team.');
     } catch (error) {
@@ -3415,6 +3560,7 @@ function App() {
       setSupportRequests((current) =>
         current.map((request) => (request.id === nextRequest.id ? normalizeSupportRequestEntry(nextRequest) : request)),
       );
+      void refreshSharedState(true).catch(() => undefined);
       setAdminNotice(successMessage);
     } catch (error) {
       setAdminNotice(getErrorMessage(error, 'We could not update that request just now.'));
@@ -3529,6 +3675,7 @@ function App() {
       setStaffMaterials((current) =>
         current.map((material) => (material.id === materialId ? reviewedMaterial : material)),
       );
+      void refreshSharedState(true).catch(() => undefined);
       setAdminNotice(status === 'approved' ? 'Material approved and published.' : 'Material returned to staff for changes.');
     } catch (error) {
       setAdminNotice(getErrorMessage(error, 'We could not review that material just now.'));
@@ -3567,6 +3714,29 @@ function App() {
 
   function dismissVersionPrompt() {
     setShowVersionPrompt(false);
+  }
+
+  async function applyLatestUpdate() {
+    setShowVersionPrompt(false);
+
+    if ('serviceWorker' in navigator) {
+      const registration = await navigator.serviceWorker.getRegistration().catch(() => undefined);
+      if (registration?.waiting) {
+        window.sessionStorage.setItem('review-buddy-update-requested', 'true');
+        registration.waiting.postMessage({ type: 'SKIP_WAITING' });
+        return;
+      }
+
+      await registration?.update().catch(() => undefined);
+      const refreshedRegistration = await navigator.serviceWorker.getRegistration().catch(() => undefined);
+      if (refreshedRegistration?.waiting) {
+        window.sessionStorage.setItem('review-buddy-update-requested', 'true');
+        refreshedRegistration.waiting.postMessage({ type: 'SKIP_WAITING' });
+        return;
+      }
+    }
+
+    window.location.reload();
   }
 
   function exportCountryReport() {
@@ -3684,7 +3854,7 @@ function App() {
       userName: profile.fullName || firstName,
       userKey: feedbackUserKey,
       role: profile.role,
-      countryCode: profile.countryCode,
+      countryCode: profile.role === 'student' ? activeLearningCountryCode : profile.countryCode,
       rating: averageRating,
       choice: lowestQuestion?.label ?? FEEDBACK_CHOICES[0],
       ratings: feedbackRatings,
@@ -4680,6 +4850,22 @@ function App() {
                   </div>
 
                   <div className="field-grid">
+                    {profile.plan === 'elite' ? (
+                      <label>
+                        Learning country
+                        <select
+                          value={learningCountryCode}
+                          onChange={(event) => setLearningCountryCode(event.target.value)}
+                        >
+                          {COUNTRIES.map((entry) => (
+                            <option key={`learn-${entry.code}`} value={entry.code}>
+                              {getFlagEmoji(entry.code)} {entry.name}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    ) : null}
+
                     <label>
                       Learner group
                       <select
@@ -4733,6 +4919,12 @@ function App() {
                   <div className="plan-note">
                     <strong>{getPlanDetails(profile.plan).badge}</strong>
                     <p>{getPlanDetails(profile.plan).description}</p>
+                    {profile.plan === 'elite' ? (
+                      <p>
+                        Full access lets you switch between countries while keeping your own account home in{' '}
+                        {getFlagEmoji(profile.countryCode)} {getCountryByCode(profile.countryCode).name}.
+                      </p>
+                    ) : null}
                   </div>
 
                   <div className="subject-grid">
@@ -7292,7 +7484,7 @@ function App() {
             </div>
 
             <div className="material-viewer-footer">
-              <span className="teacher-material-meta">Shared by {activeViewerMaterial.uploadedBy}</span>
+              <div className="material-viewer-footer-meta">{renderMaterialTeacherMeta(activeViewerMaterial)}</div>
               {activeViewerMaterial.resourceType === 'document' && activeViewerMaterial.attachmentData && (
                 <a
                   className="ghost-button inline-link-button"
@@ -7347,7 +7539,7 @@ function App() {
               <p>Refresh now to get the latest improvements and fixes.</p>
             </div>
             <div className="sample-buttons">
-              <button type="button" className="primary-button" onClick={() => window.location.reload()}>
+              <button type="button" className="primary-button" onClick={() => void applyLatestUpdate()}>
                 Refresh now
               </button>
               <button type="button" className="ghost-button" onClick={dismissVersionPrompt}>

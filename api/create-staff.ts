@@ -5,6 +5,7 @@ import {
   requireAuthorizedRole,
   setCorsHeaders,
   writeLearnerProfileWithSchemaFallback,
+  writeStaffMemberWithSchemaFallback,
   type VercelRequest,
   type VercelResponse,
 } from './supabase-server.js';
@@ -148,11 +149,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     created_at: createdAt,
   };
 
-  const { data: staffMember, error: staffError } = await supabaseAdmin
-    .from('staff_members')
-    .upsert(staffRow)
-    .select('*')
-    .single();
+  const { data: staffMember, error: staffError } = await writeStaffMemberWithSchemaFallback(
+    async (row) => await supabaseAdmin.from('staff_members').upsert(row).select('*').single(),
+    staffRow,
+  );
 
   if (staffError || !staffMember) {
     await supabaseAdmin.from('learner_profiles').delete().eq('id', createdUserId);

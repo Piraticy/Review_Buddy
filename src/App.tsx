@@ -2122,9 +2122,11 @@ function App() {
         new Date(left.updatedAt ?? left.createdAt).getTime(),
     );
   const readingMaterials = matchingStaffMaterials.filter((material) => material.category === 'reading');
+  const readingTextMaterials = readingMaterials.filter((material) => material.resourceType !== 'video');
+  const readingVideoMaterials = readingMaterials.filter((material) => material.resourceType === 'video');
   const quizMaterials = matchingStaffMaterials.filter((material) => material.category === 'quiz');
   const examMaterials = matchingStaffMaterials.filter((material) => material.category === 'exam');
-  const featuredVideoMaterial = readingMaterials.find((material) => material.resourceType === 'video' && material.videoUrl);
+  const featuredVideoMaterial = readingVideoMaterials[0];
   const duplicateQuestionPrompts = staffMaterialDraft.resourceType === 'question-bank' ? findDuplicateQuestionPrompts() : [];
   const feedbackUserKey = `${profile.role}:${(profile.email || profile.fullName || firstName).trim().toLowerCase()}`;
   const hasSubmittedFeedback =
@@ -2852,8 +2854,8 @@ function App() {
       } catch {
         // Keep the newly created local staff login available even if refresh fails.
       }
-    } catch {
-      setAdminNotice(`We could not save that staff profile for ${focusCountry.name} just now.`);
+    } catch (error) {
+      setAdminNotice(getErrorMessage(error, `We could not save that staff profile for ${focusCountry.name} just now.`));
       return;
     }
 
@@ -3137,9 +3139,15 @@ function App() {
       reviewedBy: profile.role === 'admin' ? profile.fullName : undefined,
     };
 
-    const savedMaterial = staffMaterialDraft.editingId
-      ? await appRepository.updateStaffMaterial(materialPayload)
-      : await appRepository.addStaffMaterial(materialPayload);
+    let savedMaterial: StaffMaterial;
+    try {
+      savedMaterial = staffMaterialDraft.editingId
+        ? await appRepository.updateStaffMaterial(materialPayload)
+        : await appRepository.addStaffMaterial(materialPayload);
+    } catch (error) {
+      setAdminNotice(getErrorMessage(error, 'We could not save that material just now.'));
+      return;
+    }
 
     setStaffMaterials((current) =>
       [savedMaterial, ...current.filter((entry) => entry.id !== savedMaterial.id)].sort(
@@ -4763,7 +4771,8 @@ function App() {
                         <p>{getFlagEmoji(country.code)} {country.name} · {profile.level}</p>
                       </div>
                       <div className="material-pill-row">
-                        <span className="mini-badge">📘 {readingMaterials.length} notes</span>
+                        <span className="mini-badge">📘 {readingTextMaterials.length} reading items</span>
+                        <span className="mini-badge">🎬 {readingVideoMaterials.length} video lessons</span>
                         <span className="mini-badge">📝 {quizMaterials.length} quiz guides</span>
                         <span className="mini-badge">🎓 {examMaterials.length} exam guides</span>
                       </div>
@@ -4879,7 +4888,7 @@ function App() {
                     <strong>{learningMaterial.intro}</strong>
                     <p>{learningMaterial.activityHint}</p>
                   </article>
-                  {readingMaterials.length > 0 && (
+                  {readingTextMaterials.length > 0 && (
                     <section className="teacher-materials-panel">
                       <div className="panel-heading">
                         <p className="eyebrow">Teacher materials</p>
@@ -4887,7 +4896,7 @@ function App() {
                         <p>These notes were added for this country, level, and subject.</p>
                       </div>
                       <div className="teacher-material-grid">
-                        {readingMaterials.map((material) => (
+                        {readingTextMaterials.map((material) => (
                           <article key={material.id} className="teacher-material-card">
                             <div className="teacher-material-head">
                               <strong>{material.title}</strong>
@@ -5026,7 +5035,37 @@ function App() {
                       </article>
                     ))}
                   </div>
-                  {featuredVideoMaterial && (
+                  {readingVideoMaterials.length > 0 && (
+                    <section className="teacher-materials-panel">
+                      <div className="panel-heading">
+                        <p className="eyebrow">School video list</p>
+                        <h2>Uploaded for this subject</h2>
+                        <p>These videos match the learner group, level, country, and subject on this page.</p>
+                      </div>
+                      <div className="teacher-material-grid">
+                        {readingVideoMaterials.map((material) => (
+                          <article key={material.id} className="teacher-material-card">
+                            <div className="teacher-material-head">
+                              <strong>{material.title}</strong>
+                              <span className="mini-badge">{getFlagEmoji(material.countryCode)} {material.level}</span>
+                            </div>
+                            <p>{material.summary}</p>
+                            <div className="teacher-material-body">
+                              <button
+                                type="button"
+                                className="ghost-button ghost-button-small inline-link-button"
+                                onClick={() => openMaterialViewer(material, 'Learner video lesson')}
+                              >
+                                Watch in app
+                              </button>
+                            </div>
+                            <span className="teacher-material-meta">Added by {material.uploadedBy}</span>
+                          </article>
+                        ))}
+                      </div>
+                    </section>
+                  )}
+                  {featuredVideoMaterial && readingVideoMaterials.length === 1 && (
                     <div className="banner-actions">
                       <button
                         type="button"

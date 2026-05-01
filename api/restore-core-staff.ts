@@ -3,6 +3,7 @@ import {
   requireAuthorizedRole,
   setCorsHeaders,
   writeLearnerProfileWithSchemaFallback,
+  writeStaffMemberWithSchemaFallback,
   type VercelRequest,
   type VercelResponse,
 } from './supabase-server.js';
@@ -98,9 +99,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return;
   }
 
-  const { data: staffMember, error: staffError } = await supabaseAdmin
-    .from('staff_members')
-    .upsert({
+  const { data: staffMember, error: staffError } = await writeStaffMemberWithSchemaFallback(
+    async (row) => await supabaseAdmin.from('staff_members').upsert(row).select('*').single(),
+    {
       id: staffUserId,
       name: 'Review Buddy Staff',
       role: 'Learning mentor',
@@ -112,9 +113,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       qualifications: 'Curriculum coach',
       eligibility: 'Verified teacher',
       created_at: DEFAULT_CREATED_AT,
-    })
-    .select('*')
-    .single();
+    },
+  );
 
   if (staffError || !staffMember) {
     res.status(400).json({ error: staffError?.message ?? 'The main Staff record could not be restored.' });

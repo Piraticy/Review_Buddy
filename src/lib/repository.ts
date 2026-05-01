@@ -54,6 +54,22 @@ const OPTIONAL_SUPPORT_REQUEST_COLUMNS = new Set([
   'completed_by',
 ]);
 
+const OPTIONAL_STAFF_MATERIAL_COLUMNS = new Set([
+  'resource_type',
+  'attachment_name',
+  'attachment_data',
+  'video_url',
+  'question_limit',
+  'questions',
+  'uploaded_by_email',
+  'approval_status',
+  'ai_review_summary',
+  'admin_review_note',
+  'reviewed_at',
+  'reviewed_by',
+  'updated_at',
+]);
+
 const CACHE_TTL_MS = 15000;
 const listCache = new Map<string, { timestamp: number; data: unknown }>();
 
@@ -66,6 +82,12 @@ function getMissingLearnerProfileColumn(error: { message?: string } | null | und
 function getMissingSupportRequestColumn(error: { message?: string } | null | undefined) {
   const message = error?.message ?? '';
   const match = /Could not find the '([^']+)' column of 'support_requests' in the schema cache/i.exec(message);
+  return match?.[1] ?? null;
+}
+
+function getMissingStaffMaterialColumn(error: { message?: string } | null | undefined) {
+  const message = error?.message ?? '';
+  const match = /Could not find the '([^']+)' column of 'staff_materials' in the schema cache/i.exec(message);
   return match?.[1] ?? null;
 }
 
@@ -104,6 +126,27 @@ async function writeSupportRequestWithSchemaFallback(
 
     const missingColumn = getMissingSupportRequestColumn(result.error);
     if (!missingColumn || !OPTIONAL_SUPPORT_REQUEST_COLUMNS.has(missingColumn) || !(missingColumn in nextRow)) {
+      return { ...result, row: nextRow };
+    }
+
+    delete nextRow[missingColumn];
+  }
+}
+
+async function writeStaffMaterialWithSchemaFallback(
+  write: (row: Record<string, unknown>) => Promise<{ error: { message?: string } | null; data?: unknown }>,
+  initialRow: Record<string, unknown>,
+) {
+  const nextRow = { ...initialRow };
+
+  while (true) {
+    const result = await write(nextRow);
+    if (!result.error) {
+      return { ...result, error: null, row: nextRow };
+    }
+
+    const missingColumn = getMissingStaffMaterialColumn(result.error);
+    if (!missingColumn || !OPTIONAL_STAFF_MATERIAL_COLUMNS.has(missingColumn) || !(missingColumn in nextRow)) {
       return { ...result, row: nextRow };
     }
 
@@ -1105,14 +1148,7 @@ async function addStaffMember(member: AdminStaffMember) {
 
   const token = await getAccessToken();
   if (!token) {
-    const nextMember = {
-      ...member,
-      id: member.id ?? `staff-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
-    };
-    const localStaff = readStoredState().staffMembers ?? [];
-    mergeStoredState({ staffMembers: [...localStaff, nextMember] });
-    invalidateListCache('staffMembers', 'registeredUsers');
-    return nextMember;
+    throw new Error('Sign in again before creating a staff account.');
   }
 
   const response = await fetch('/api/create-staff', {
@@ -1205,19 +1241,16 @@ async function restoreCoreStaffAccount() {
 
 async function addStaffMaterial(material: StaffMaterial) {
   const localMaterials = readStoredState().staffMaterials ?? [];
+  const supabaseClient = supabase;
 
-  if (!supabase) {
+  if (!supabaseClient) {
     mergeStoredState({ staffMaterials: [material, ...localMaterials] });
     invalidateListCache('staffMaterials');
     return material;
   }
 
-  if (material.resourceType === 'document' && material.attachmentData?.startsWith('data:')) {
-    const token = await getAccessToken();
-    if (!token) {
-      throw new Error('Sign in again before uploading a document.');
-    }
-
+  const token = await getAccessToken();
+  if (token) {
     const response = await fetch('/api/upsert-material', {
       method: 'POST',
       headers: {
@@ -1235,7 +1268,7 @@ async function addStaffMaterial(material: StaffMaterial) {
       | null;
 
     if (!response.ok || !payload?.material) {
-      throw new Error(payload?.error ?? 'We could not upload that document just now.');
+      throw new Error(payload?.error ?? 'We could not save that material just now.');
     }
 
     invalidateListCache('staffMaterials');
@@ -1269,16 +1302,17 @@ async function addStaffMaterial(material: StaffMaterial) {
     reviewed_by: material.reviewedBy ?? null,
   };
 
-  const { data, error } = await supabase.from('staff_materials').insert(insertRow).select('*').single();
+  const { data, error } = await writeStaffMaterialWithSchemaFallback(
+    async (row) => await supabaseClient.from('staff_materials').insert(row).select('*').single(),
+    insertRow,
+  );
 
   if (error || !data) {
-    mergeStoredState({ staffMaterials: [material, ...localMaterials] });
-    invalidateListCache('staffMaterials');
-    return material;
+    throw error ?? new Error('We could not save that material just now.');
   }
 
   invalidateListCache('staffMaterials');
-  return mapStaffMaterialRow(data);
+  return mapStaffMaterialRow(data as Record<string, unknown>);
 }
 
 async function addFeedbackEntry(entry: FeedbackEntry) {
@@ -1504,8 +1538,9 @@ async function deleteFeedbackEntry(feedbackId: string) {
 
 async function updateStaffMaterial(material: StaffMaterial) {
   const localMaterials = readStoredState().staffMaterials ?? [];
+  const supabaseClient = supabase;
 
-  if (!supabase) {
+  if (!supabaseClient) {
     mergeStoredState({
       staffMaterials: [material, ...localMaterials.filter((entry) => entry.id !== material.id)],
     });
@@ -1513,12 +1548,8 @@ async function updateStaffMaterial(material: StaffMaterial) {
     return material;
   }
 
-  if (material.resourceType === 'document' && material.attachmentData?.startsWith('data:')) {
-    const token = await getAccessToken();
-    if (!token) {
-      throw new Error('Sign in again before updating that document.');
-    }
-
+  const token = await getAccessToken();
+  if (token) {
     const response = await fetch('/api/upsert-material', {
       method: 'POST',
       headers: {
@@ -1536,7 +1567,7 @@ async function updateStaffMaterial(material: StaffMaterial) {
       | null;
 
     if (!response.ok || !payload?.material) {
-      throw new Error(payload?.error ?? 'We could not update that document just now.');
+      throw new Error(payload?.error ?? 'We could not update that material just now.');
     }
 
     invalidateListCache('staffMaterials');
@@ -1568,23 +1599,23 @@ async function updateStaffMaterial(material: StaffMaterial) {
     reviewed_by: material.reviewedBy ?? null,
   };
 
-  const { data, error } = await supabase
-    .from('staff_materials')
-    .update(updateRow)
-    .eq('id', material.id)
-    .select('*')
-    .single();
+  const { data, error } = await writeStaffMaterialWithSchemaFallback(
+    async (row) =>
+      await supabaseClient
+        .from('staff_materials')
+        .update(row)
+        .eq('id', material.id)
+        .select('*')
+        .single(),
+    updateRow,
+  );
 
   if (error || !data) {
-    mergeStoredState({
-      staffMaterials: [material, ...localMaterials.filter((entry) => entry.id !== material.id)],
-    });
-    invalidateListCache('staffMaterials');
-    return material;
+    throw error ?? new Error('We could not update that material just now.');
   }
 
   invalidateListCache('staffMaterials');
-  return mapStaffMaterialRow(data);
+  return mapStaffMaterialRow(data as Record<string, unknown>);
 }
 
 async function removeStaffMember(memberIdOrName: string) {

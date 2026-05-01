@@ -60,6 +60,30 @@ const OPTIONAL_LEARNER_PROFILE_COLUMNS = new Set([
   'support_focus',
 ]);
 
+const OPTIONAL_STAFF_MEMBER_COLUMNS = new Set([
+  'email',
+  'username',
+  'password',
+  'qualifications',
+  'eligibility',
+]);
+
+const OPTIONAL_STAFF_MATERIAL_COLUMNS = new Set([
+  'resource_type',
+  'attachment_name',
+  'attachment_data',
+  'video_url',
+  'question_limit',
+  'questions',
+  'uploaded_by_email',
+  'approval_status',
+  'ai_review_summary',
+  'admin_review_note',
+  'reviewed_at',
+  'reviewed_by',
+  'updated_at',
+]);
+
 export type SupabaseAdminClient = NonNullable<ReturnType<typeof createSupabaseAdminClient>>;
 
 export async function listAuthUsersByEmail(supabaseAdmin: SupabaseAdminClient, email: string) {
@@ -258,6 +282,18 @@ function getMissingLearnerProfileColumn(error: { message?: string } | null | und
   return match?.[1] ?? null;
 }
 
+function getMissingStaffMemberColumn(error: { message?: string } | null | undefined) {
+  const message = error?.message ?? '';
+  const match = /Could not find the '([^']+)' column of 'staff_members' in the schema cache/i.exec(message);
+  return match?.[1] ?? null;
+}
+
+function getMissingStaffMaterialColumn(error: { message?: string } | null | undefined) {
+  const message = error?.message ?? '';
+  const match = /Could not find the '([^']+)' column of 'staff_materials' in the schema cache/i.exec(message);
+  return match?.[1] ?? null;
+}
+
 export async function writeLearnerProfileWithSchemaFallback(
   write: (row: Record<string, unknown>) => Promise<{ error: { message?: string } | null }>,
   initialRow: Record<string, unknown>,
@@ -273,6 +309,48 @@ export async function writeLearnerProfileWithSchemaFallback(
     const missingColumn = getMissingLearnerProfileColumn(error);
     if (!missingColumn || !OPTIONAL_LEARNER_PROFILE_COLUMNS.has(missingColumn) || !(missingColumn in nextRow)) {
       return { error, row: nextRow };
+    }
+
+    delete nextRow[missingColumn];
+  }
+}
+
+export async function writeStaffMemberWithSchemaFallback(
+  write: (row: Record<string, unknown>) => Promise<{ error: { message?: string } | null; data?: unknown }>,
+  initialRow: Record<string, unknown>,
+) {
+  const nextRow = { ...initialRow };
+
+  while (true) {
+    const result = await write(nextRow);
+    if (!result.error) {
+      return { ...result, error: null, row: nextRow };
+    }
+
+    const missingColumn = getMissingStaffMemberColumn(result.error);
+    if (!missingColumn || !OPTIONAL_STAFF_MEMBER_COLUMNS.has(missingColumn) || !(missingColumn in nextRow)) {
+      return { ...result, row: nextRow };
+    }
+
+    delete nextRow[missingColumn];
+  }
+}
+
+export async function writeStaffMaterialWithSchemaFallback(
+  write: (row: Record<string, unknown>) => Promise<{ error: { message?: string } | null; data?: unknown }>,
+  initialRow: Record<string, unknown>,
+) {
+  const nextRow = { ...initialRow };
+
+  while (true) {
+    const result = await write(nextRow);
+    if (!result.error) {
+      return { ...result, error: null, row: nextRow };
+    }
+
+    const missingColumn = getMissingStaffMaterialColumn(result.error);
+    if (!missingColumn || !OPTIONAL_STAFF_MATERIAL_COLUMNS.has(missingColumn) || !(missingColumn in nextRow)) {
+      return { ...result, row: nextRow };
     }
 
     delete nextRow[missingColumn];

@@ -2,6 +2,7 @@ import {
   parseJsonBody,
   requireAuthorizedRole,
   setCorsHeaders,
+  writeStaffMaterialWithSchemaFallback,
   type VercelRequest,
   type VercelResponse,
 } from './supabase-server.js';
@@ -148,11 +149,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     reviewed_by: isAdmin ? (payload.reviewedBy ?? profile.email) : null,
   };
 
-  const { data, error } = await supabaseAdmin
-    .from('staff_materials')
-    .upsert(row)
-    .select('*')
-    .single();
+  const { data, error } = await writeStaffMaterialWithSchemaFallback(
+    async (nextRow) => await supabaseAdmin.from('staff_materials').upsert(nextRow).select('*').single(),
+    row,
+  );
 
   if (error || !data) {
     res.status(400).json({ error: error?.message ?? 'We could not save that material just now.' });

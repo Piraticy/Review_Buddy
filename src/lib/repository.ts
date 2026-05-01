@@ -175,6 +175,34 @@ function invalidateListCache(...keys: string[]) {
   keys.forEach((key) => listCache.delete(key));
 }
 
+function mergeStaffMaterialSnapshot(primary: StaffMaterial, fallback?: StaffMaterial) {
+  if (!fallback) {
+    return primary;
+  }
+
+  return {
+    ...fallback,
+    ...primary,
+    attachmentName: primary.attachmentName ?? fallback.attachmentName,
+    attachmentData: primary.attachmentData ?? fallback.attachmentData,
+    videoUrl: primary.videoUrl ?? fallback.videoUrl,
+    questionLimit: primary.questionLimit ?? fallback.questionLimit,
+    questions: (primary.questions?.length ?? 0) > 0 ? primary.questions : fallback.questions,
+    uploadedByEmail: primary.uploadedByEmail ?? fallback.uploadedByEmail,
+    updatedAt: primary.updatedAt ?? fallback.updatedAt,
+    approvalStatus: primary.approvalStatus ?? fallback.approvalStatus,
+    aiReviewSummary: primary.aiReviewSummary ?? fallback.aiReviewSummary,
+    adminReviewNote: primary.adminReviewNote ?? fallback.adminReviewNote,
+    reviewedAt: primary.reviewedAt ?? fallback.reviewedAt,
+    reviewedBy: primary.reviewedBy ?? fallback.reviewedBy,
+  };
+}
+
+function saveLocalStaffMaterials(materials: StaffMaterial[]) {
+  mergeStoredState({ staffMaterials: materials });
+  return materials;
+}
+
 function readStoredState(): StoredState {
   if (typeof window === 'undefined') {
     return {};
@@ -1022,12 +1050,20 @@ async function listStaffMaterials() {
   }
 
   const remoteMaterials = data.map((row) => mapStaffMaterialRow(row));
-  return writeListCache('staffMaterials', [
-    ...remoteMaterials,
+  const mergedMaterials = [
+    ...remoteMaterials.map((remoteMaterial) =>
+      mergeStaffMaterialSnapshot(
+        remoteMaterial,
+        localMaterials.find((localMaterial) => localMaterial.id === remoteMaterial.id),
+      ),
+    ),
     ...localMaterials.filter(
       (localMaterial) => !remoteMaterials.some((remoteMaterial) => remoteMaterial.id === localMaterial.id),
     ),
-  ]);
+  ];
+
+  saveLocalStaffMaterials(mergedMaterials);
+  return writeListCache('staffMaterials', mergedMaterials);
 }
 
 async function listFeedbackEntries() {
@@ -1244,7 +1280,7 @@ async function addStaffMaterial(material: StaffMaterial) {
   const supabaseClient = supabase;
 
   if (!supabaseClient) {
-    mergeStoredState({ staffMaterials: [material, ...localMaterials] });
+    saveLocalStaffMaterials([material, ...localMaterials.filter((entry) => entry.id !== material.id)]);
     invalidateListCache('staffMaterials');
     return material;
   }
@@ -1271,8 +1307,10 @@ async function addStaffMaterial(material: StaffMaterial) {
       throw new Error(payload?.error ?? 'We could not save that material just now.');
     }
 
+    const savedMaterial = mergeStaffMaterialSnapshot(mapStaffMaterialRow(payload.material), material);
+    saveLocalStaffMaterials([savedMaterial, ...localMaterials.filter((entry) => entry.id !== savedMaterial.id)]);
     invalidateListCache('staffMaterials');
-    return mapStaffMaterialRow(payload.material);
+    return savedMaterial;
   }
 
   const insertRow = {
@@ -1311,8 +1349,10 @@ async function addStaffMaterial(material: StaffMaterial) {
     throw error ?? new Error('We could not save that material just now.');
   }
 
+  const savedMaterial = mergeStaffMaterialSnapshot(mapStaffMaterialRow(data as Record<string, unknown>), material);
+  saveLocalStaffMaterials([savedMaterial, ...localMaterials.filter((entry) => entry.id !== savedMaterial.id)]);
   invalidateListCache('staffMaterials');
-  return mapStaffMaterialRow(data as Record<string, unknown>);
+  return savedMaterial;
 }
 
 async function addFeedbackEntry(entry: FeedbackEntry) {
@@ -1541,9 +1581,7 @@ async function updateStaffMaterial(material: StaffMaterial) {
   const supabaseClient = supabase;
 
   if (!supabaseClient) {
-    mergeStoredState({
-      staffMaterials: [material, ...localMaterials.filter((entry) => entry.id !== material.id)],
-    });
+    saveLocalStaffMaterials([material, ...localMaterials.filter((entry) => entry.id !== material.id)]);
     invalidateListCache('staffMaterials');
     return material;
   }
@@ -1570,8 +1608,10 @@ async function updateStaffMaterial(material: StaffMaterial) {
       throw new Error(payload?.error ?? 'We could not update that material just now.');
     }
 
+    const savedMaterial = mergeStaffMaterialSnapshot(mapStaffMaterialRow(payload.material), material);
+    saveLocalStaffMaterials([savedMaterial, ...localMaterials.filter((entry) => entry.id !== savedMaterial.id)]);
     invalidateListCache('staffMaterials');
-    return mapStaffMaterialRow(payload.material);
+    return savedMaterial;
   }
 
   const updateRow = {
@@ -1614,8 +1654,10 @@ async function updateStaffMaterial(material: StaffMaterial) {
     throw error ?? new Error('We could not update that material just now.');
   }
 
+  const savedMaterial = mergeStaffMaterialSnapshot(mapStaffMaterialRow(data as Record<string, unknown>), material);
+  saveLocalStaffMaterials([savedMaterial, ...localMaterials.filter((entry) => entry.id !== savedMaterial.id)]);
   invalidateListCache('staffMaterials');
-  return mapStaffMaterialRow(data as Record<string, unknown>);
+  return savedMaterial;
 }
 
 async function removeStaffMember(memberIdOrName: string) {
@@ -1668,22 +1710,19 @@ async function removeStaffMaterial(materialId: string) {
   const localMaterials = readStoredState().staffMaterials ?? [];
 
   if (!supabase) {
-    mergeStoredState({
-      staffMaterials: localMaterials.filter((material) => material.id !== materialId),
-    });
+    saveLocalStaffMaterials(localMaterials.filter((material) => material.id !== materialId));
     invalidateListCache('staffMaterials');
     return;
   }
 
   const { error } = await supabase.from('staff_materials').delete().eq('id', materialId);
   if (!error) {
+    saveLocalStaffMaterials(localMaterials.filter((material) => material.id !== materialId));
     invalidateListCache('staffMaterials');
     return;
   }
 
-  mergeStoredState({
-    staffMaterials: localMaterials.filter((material) => material.id !== materialId),
-  });
+  saveLocalStaffMaterials(localMaterials.filter((material) => material.id !== materialId));
   invalidateListCache('staffMaterials');
 }
 

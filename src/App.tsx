@@ -49,6 +49,7 @@ type Screen = 'auth' | 'student' | 'admin' | 'staff' | 'quiz';
 type StudentView = 'home' | 'subject' | 'notes' | 'video' | 'review' | 'feedback';
 type AdminView = 'overview' | 'countries' | 'staff' | 'learners' | 'followups' | 'reports';
 type StaffView = 'lounge' | 'feedback';
+type StaffShortcutView = 'learners' | 'active' | 'uploads' | 'pending';
 type AssessmentKind = 'quiz' | 'exam';
 type ThemeVars = {
   '--theme-primary': string;
@@ -1351,6 +1352,23 @@ function getMaterialStatusBadge(status?: StaffMaterial['approvalStatus']) {
   return '🕒 Pending';
 }
 
+function resolveMaterialApprovalStatus(material: StaffMaterial) {
+  if (material.approvalStatus) return material.approvalStatus;
+
+  const reviewNote = material.adminReviewNote?.trim().toLowerCase() ?? '';
+  if (reviewNote.includes('waiting for admin review') || reviewNote.includes('waiting for school team review')) {
+    return 'pending';
+  }
+  if (reviewNote.includes('please revise') || reviewNote.includes('resubmit')) {
+    return 'denied';
+  }
+  if (reviewNote.includes('approved') || material.reviewedAt || material.reviewedBy) {
+    return 'approved';
+  }
+
+  return 'pending';
+}
+
 function getSupportCategoryLabel(category: SupportRequest['category']) {
   if (category === 'topic') return 'Topic help';
   if (category === 'mentor') return 'Learning support';
@@ -1587,6 +1605,7 @@ function App() {
   const [studentView, setStudentView] = useState<StudentView>('home');
   const [adminView, setAdminView] = useState<AdminView>('overview');
   const [staffView, setStaffView] = useState<StaffView>('lounge');
+  const [staffShortcutView, setStaffShortcutView] = useState<StaffShortcutView>('uploads');
   const [selectedSubject, setSelectedSubject] = useState<string | null>(null);
   const [reviewSnapshot, setReviewSnapshot] = useState<ReviewSnapshot | null>(null);
   const [quizState, setQuizState] = useState<QuizState | null>(null);
@@ -1646,6 +1665,7 @@ function App() {
   const speechKeyRef = useRef<string | null>(null);
   const birthdayPickerRef = useRef<HTMLDivElement | null>(null);
   const sharedRefreshPromiseRef = useRef<Promise<void> | null>(null);
+  const staffShortcutPanelRef = useRef<HTMLElement | null>(null);
   const detectedCountryCodeRef = useRef(inferCountryCode());
   const restoredCoreStaffRef = useRef(false);
 
@@ -2020,7 +2040,7 @@ function App() {
     ? (adminActivityByCountry[adminMetricsCode] ?? [])
     : realReportActivity;
   const pendingMaterials = [...staffMaterials]
-    .filter((material) => (material.approvalStatus ?? 'approved') === 'pending')
+    .filter((material) => resolveMaterialApprovalStatus(material) === 'pending')
     .sort(
       (left, right) =>
         new Date(right.updatedAt ?? right.createdAt).getTime() -
@@ -2108,19 +2128,28 @@ function App() {
   const chosenAvatarOption = generatedAvatarOptions.find((option) => option.emoji === profile.avatarEmoji);
   const matchingStaffMaterials = staffMaterials.filter(
     (material) =>
-      (material.approvalStatus ?? 'approved') === 'approved' &&
+      resolveMaterialApprovalStatus(material) === 'approved' &&
       material.countryCode === profile.countryCode &&
       material.stage === profile.stage &&
       material.level === profile.level &&
       material.subject === activeStudentSubject,
   );
   const myStaffMaterials = [...staffMaterials]
-    .filter((material) => (material.uploadedByEmail ?? '').toLowerCase() === profile.email.toLowerCase())
+    .filter((material) => {
+      const uploadedByEmail = material.uploadedByEmail?.trim().toLowerCase() ?? '';
+      const uploadedByName = material.uploadedBy.trim().toLowerCase();
+      const currentEmail = profile.email.trim().toLowerCase();
+      const currentName = profile.fullName.trim().toLowerCase();
+      return uploadedByEmail === currentEmail || (!!currentName && uploadedByName === currentName);
+    })
     .sort(
       (left, right) =>
         new Date(right.updatedAt ?? right.createdAt).getTime() -
         new Date(left.updatedAt ?? left.createdAt).getTime(),
     );
+  const pendingStaffMaterials = myStaffMaterials.filter((material) => resolveMaterialApprovalStatus(material) === 'pending');
+  const approvedStaffMaterials = myStaffMaterials.filter((material) => resolveMaterialApprovalStatus(material) === 'approved');
+  const deniedStaffMaterials = myStaffMaterials.filter((material) => resolveMaterialApprovalStatus(material) === 'denied');
   const readingMaterials = matchingStaffMaterials.filter((material) => material.category === 'reading');
   const readingTextMaterials = readingMaterials.filter((material) => material.resourceType !== 'video');
   const readingVideoMaterials = readingMaterials.filter((material) => material.resourceType === 'video');
@@ -2178,6 +2207,45 @@ function App() {
   const mySupportRequests = supportRequestsForAdmin
     .filter((request) => request.createdBy.toLowerCase() === (profile.email || profile.fullName).toLowerCase())
     .map(normalizeSupportRequestEntry);
+  const staffShortcutItems = [
+    {
+      key: 'learners' as const,
+      icon: '🧒',
+      label: 'Learners',
+      count: focusedLearners.length,
+      helper: focusedLearners.length === 1 ? '1 learner in your group' : `${focusedLearners.length} learners in your group`,
+    },
+    {
+      key: 'active' as const,
+      icon: '📚',
+      label: 'Active',
+      count: recentActiveLearners.length,
+      helper:
+        recentActiveLearners.length === 1
+          ? '1 learner active recently'
+          : `${recentActiveLearners.length} learners active recently`,
+    },
+    {
+      key: 'uploads' as const,
+      icon: '📤',
+      label: 'My uploads',
+      count: myStaffMaterials.length,
+      helper: myStaffMaterials.length === 1 ? '1 saved upload' : `${myStaffMaterials.length} saved uploads`,
+    },
+    {
+      key: 'pending' as const,
+      icon: '🕒',
+      label: 'Pending',
+      count: pendingStaffMaterials.length,
+      helper:
+        pendingStaffMaterials.length === 1
+          ? '1 waiting for review'
+          : `${pendingStaffMaterials.length} waiting for review`,
+    },
+  ];
+  const activeStaffShortcut =
+    staffShortcutItems.find((item) => item.key === staffShortcutView) ?? staffShortcutItems[0];
+  const shortcutMaterials = staffShortcutView === 'pending' ? pendingStaffMaterials : myStaffMaterials;
   const birthdayLearners = learnerRegistrations.filter((entry) => isBirthdayToday(entry));
   const openSupportRequests = supportRequestsForAdmin
     .map(normalizeSupportRequestEntry)
@@ -2609,6 +2677,13 @@ function App() {
     setAdminNotice('');
     startTransition(() => {
       setAdminView(view);
+    });
+  }
+
+  function openStaffShortcut(view: StaffShortcutView) {
+    setStaffShortcutView(view);
+    window.requestAnimationFrame(() => {
+      staffShortcutPanelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
   }
 
@@ -3160,7 +3235,7 @@ function App() {
     setAdminNotice(
       profile.role === 'admin'
         ? `${savedMaterial.title} was published for ${getFlagEmoji(savedMaterial.countryCode)} ${getCountryByCode(savedMaterial.countryCode).name}, ${savedMaterial.level}, ${savedMaterial.subject}.`
-        : `${savedMaterial.title} was sent to the school team for review before learners can see it.`,
+        : `${savedMaterial.title} was sent to the school team for review and now appears under My uploads.`,
     );
   }
 
@@ -5420,22 +5495,113 @@ function App() {
             </section>
 
             <section className="stats-grid">
-              <article className="info-card">
-                <strong>🧒 Learners</strong>
-                <p>{focusedLearners.length}</p>
-              </article>
-              <article className="info-card">
-                <strong>📚 Active</strong>
-                <p>{recentActiveLearners.length}</p>
-              </article>
-              <article className="info-card">
-                <strong>📤 My uploads</strong>
-                <p>{myStaffMaterials.length}</p>
-              </article>
-              <article className="info-card">
-                <strong>🕒 Pending</strong>
-                <p>{myStaffMaterials.filter((material) => material.approvalStatus === 'pending').length}</p>
-              </article>
+              {staffShortcutItems.map((item) => (
+                <button
+                  key={item.key}
+                  type="button"
+                  className={`info-card info-card-button${staffShortcutView === item.key ? ' info-card-button-active' : ''}`}
+                  onClick={() => openStaffShortcut(item.key)}
+                >
+                  <strong>{item.icon} {item.label}</strong>
+                  <p>{item.count}</p>
+                  <span>{item.helper}</span>
+                </button>
+              ))}
+            </section>
+
+            <section ref={staffShortcutPanelRef} className="setup-panel">
+              <div className="panel-heading">
+                <p className="eyebrow">Shortcut board</p>
+                <h2>{activeStaffShortcut.label}</h2>
+                <p>{activeStaffShortcut.helper}</p>
+              </div>
+              {staffShortcutView === 'learners' ? (
+                <div className="history-list">
+                  {focusedLearners.map((entry) => (
+                    <article key={entry.id} className="history-row">
+                      <div>
+                        <strong>{entry.fullName}</strong>
+                        <span>{getFlagEmoji(entry.countryCode)} {getCountryByCode(entry.countryCode).name} · {entry.level} · {entry.subject}</span>
+                        <span>{entry.lastLoginAt ? `Last seen ${new Date(entry.lastLoginAt).toLocaleString()}` : 'Waiting for first sign in'}</span>
+                      </div>
+                    </article>
+                  ))}
+                  {focusedLearners.length === 0 ? (
+                    <p className="empty-state">Learners in your class will appear here.</p>
+                  ) : null}
+                </div>
+              ) : null}
+              {staffShortcutView === 'active' ? (
+                <div className="history-list">
+                  {recentActiveLearners.map((entry) => (
+                    <article key={entry.id} className="history-row">
+                      <div>
+                        <strong>{entry.fullName}</strong>
+                        <span>{entry.level} · {entry.subject}</span>
+                        <span>{entry.lastLoginAt ? `Active ${new Date(entry.lastLoginAt).toLocaleString()}` : 'Seen recently'}</span>
+                      </div>
+                    </article>
+                  ))}
+                  {recentActiveLearners.length === 0 ? (
+                    <p className="empty-state">Recent learner activity will appear here once people sign in and practise.</p>
+                  ) : null}
+                </div>
+              ) : null}
+              {(staffShortcutView === 'uploads' || staffShortcutView === 'pending') ? (
+                <div className="teacher-material-grid">
+                  {shortcutMaterials.map((material) => (
+                    <article key={material.id} className="teacher-material-card">
+                      <div className="teacher-material-head">
+                        <strong>{material.title}</strong>
+                        <span className="mini-badge">{getMaterialStatusBadge(resolveMaterialApprovalStatus(material))}</span>
+                      </div>
+                      <p>{material.summary}</p>
+                      <span className="teacher-material-meta">
+                        {getFlagEmoji(material.countryCode)} {getCountryByCode(material.countryCode).name} · {material.subject} · {material.level}
+                      </span>
+                      <p className="teacher-material-meta">{material.aiReviewSummary ?? 'Waiting for review.'}</p>
+                      {material.adminReviewNote ? <p className="teacher-material-meta">{material.adminReviewNote}</p> : null}
+                      <div className="material-pill-row">
+                        <span className="mini-badge">{material.resourceType === 'document' ? '📄 File' : material.resourceType === 'video' ? '🎬 Video' : material.resourceType === 'question-bank' ? '🧠 Questions' : '📘 Notes'}</span>
+                        {material.questionLimit ? <span className="mini-badge">#{material.questionLimit}</span> : null}
+                      </div>
+                      <div className="row-actions">
+                        <strong>{material.uploadedBy}</strong>
+                        <div className="row-actions">
+                          <button
+                            type="button"
+                            className="ghost-button ghost-button-small"
+                            onClick={() => openMaterialViewer(material, 'Staff preview')}
+                          >
+                            Preview
+                          </button>
+                          <button
+                            type="button"
+                            className="ghost-button ghost-button-small"
+                            onClick={() => beginEditStaffMaterial(material)}
+                          >
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            className="ghost-button ghost-button-small"
+                            onClick={() => removeStaffMaterial(material.id)}
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      </div>
+                    </article>
+                  ))}
+                  {shortcutMaterials.length === 0 ? (
+                    <p className="empty-state">
+                      {staffShortcutView === 'pending'
+                        ? 'Pending uploads will appear here as soon as you send them for review.'
+                        : 'Your uploads will appear here after you send material for review.'}
+                    </p>
+                  ) : null}
+                </div>
+              ) : null}
             </section>
 
             <section className="setup-panel">
@@ -5703,7 +5869,7 @@ function App() {
                   <article key={material.id} className="teacher-material-card">
                     <div className="teacher-material-head">
                       <strong>{material.title}</strong>
-                      <span className="mini-badge">{getMaterialStatusBadge(material.approvalStatus)}</span>
+                      <span className="mini-badge">{getMaterialStatusBadge(resolveMaterialApprovalStatus(material))}</span>
                     </div>
                     <p>{material.summary}</p>
                     <span className="teacher-material-meta">
@@ -5753,21 +5919,21 @@ function App() {
                 <section className="side-card accent-side-card">
                   <div className="panel-heading">
                     <p className="eyebrow">Your materials</p>
-                    <h2>{myStaffMaterials.filter((material) => material.approvalStatus === 'approved').length} published</h2>
+                    <h2>{approvedStaffMaterials.length} published</h2>
                     <p>Approved items are visible to learners. Waiting and returned items stay with staff and the school team only.</p>
                   </div>
               <div className="mini-stat-list">
                 <article className="mini-stat-card">
                   <span>🕒</span>
-                  <strong>{myStaffMaterials.filter((material) => material.approvalStatus === 'pending').length}</strong>
+                  <strong>{pendingStaffMaterials.length}</strong>
                 </article>
                 <article className="mini-stat-card">
                   <span>✅</span>
-                  <strong>{myStaffMaterials.filter((material) => material.approvalStatus === 'approved').length}</strong>
+                  <strong>{approvedStaffMaterials.length}</strong>
                 </article>
                 <article className="mini-stat-card">
                   <span>🛠️</span>
-                  <strong>{myStaffMaterials.filter((material) => material.approvalStatus === 'denied').length}</strong>
+                  <strong>{deniedStaffMaterials.length}</strong>
                 </article>
               </div>
               {!hasSubmittedFeedback ? (
@@ -6804,7 +6970,7 @@ function App() {
                           <strong>{entry.title}</strong>
                           <span>{entry.uploadedBy} · {entry.subject}</span>
                         </div>
-                        <strong>{getMaterialStatusLabel(entry.approvalStatus)}</strong>
+                        <strong>{getMaterialStatusLabel(resolveMaterialApprovalStatus(entry))}</strong>
                       </article>
                     ))}
                     {pendingMaterials.length === 0 ? <p className="empty-state">No uploads are waiting for review right now.</p> : null}

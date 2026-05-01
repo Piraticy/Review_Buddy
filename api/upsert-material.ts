@@ -159,5 +159,24 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return;
   }
 
-  res.status(200).json({ material: data });
+  const savedRow = data as Record<string, unknown>;
+
+  res.status(200).json({
+    material: {
+      ...row,
+      ...savedRow,
+      attachment_name: savedRow.attachment_name ?? row.attachment_name,
+      attachment_data: savedRow.attachment_data ?? row.attachment_data,
+      video_url: savedRow.video_url ?? row.video_url,
+      question_limit: savedRow.question_limit ?? row.question_limit,
+      questions: savedRow.questions ?? row.questions,
+      uploaded_by_email: savedRow.uploaded_by_email ?? row.uploaded_by_email,
+      updated_at: savedRow.updated_at ?? row.updated_at,
+      approval_status: savedRow.approval_status ?? row.approval_status,
+      ai_review_summary: savedRow.ai_review_summary ?? row.ai_review_summary,
+      admin_review_note: savedRow.admin_review_note ?? row.admin_review_note,
+      reviewed_at: savedRow.reviewed_at ?? row.reviewed_at,
+      reviewed_by: savedRow.reviewed_by ?? row.reviewed_by,
+    },
+  });
 }

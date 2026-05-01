@@ -873,6 +873,34 @@ button:disabled {
   border: 1px solid color-mix(in srgb, var(--theme-primary) 14%, white);
 }
 
+.info-card-button {
+  width: 100%;
+  text-align: left;
+  color: inherit;
+  cursor: pointer;
+  transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+}
+
+.info-card-button span {
+  color: color-mix(in srgb, var(--theme-ink) 68%, #64748b);
+  font-size: 0.92rem;
+}
+
+.info-card-button:hover {
+  transform: translateY(-1px);
+  border-color: color-mix(in srgb, var(--theme-accent) 28%, white);
+  box-shadow: 0 20px 36px rgba(15, 23, 42, 0.1);
+}
+
+.info-card-button-active {
+  border-color: color-mix(in srgb, var(--theme-accent) 34%, white);
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--theme-secondary) 14%, white),
+    color-mix(in srgb, var(--theme-surface) 92%, white)
+  );
+}
+
 .info-card strong {
   display: block;
   margin-bottom: 6px;
